@@ -57,7 +57,7 @@ export const AboutContent: React.FC = () => {
                 </div>
 
                 <div className="mt-10 pt-6 border-t border-gray-700 text-center">
-                    <h2 className="text-xl font-semibold text-white mb-2">Contact</h2>
+                    <h2 className="text-xl font-semibold text-white mb-2">Contact developer</h2>
                     <p className="text-gray-400">
                         Have questions, feedback, or feature requests?
                     </p>
