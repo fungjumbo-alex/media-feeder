@@ -1,5 +1,6 @@
 
 
+
 import React, { createContext, useState, useEffect, useCallback, useMemo, useRef, useContext, ReactNode } from 'react';
 import { fetchAndParseRss } from '../services/rssService';
 import { generateRecommendations, generateRelatedChannels, translateDigestContent, generateTranscriptDigest, fetchAvailableCaptionChoices, fetchAndParseTranscript } from '../services/geminiService';
@@ -113,7 +114,7 @@ const getInitialView = (): CurrentView => {
     if (type === 'search' && value) return { type: 'search', value: decodeURIComponent(value) };
     if (type === 'import' && value) return { type: 'import', value: decodeURIComponent(value) };
     
-    const validTypes = ['all-subscriptions', 'favorites', 'readLater', 'published-today', 'history', 'inactive-feeds', 'dump', 'privacy-policy'];
+    const validTypes = ['all-subscriptions', 'favorites', 'readLater', 'published-today', 'history', 'inactive-feeds', 'dump', 'privacy-policy', 'about'];
     if (validTypes.includes(type)) return { type };
     
     return { type: 'all-subscriptions' }; // Fallback
@@ -121,7 +122,7 @@ const getInitialView = (): CurrentView => {
 
 interface AppContextType {
     feeds: Feed[]; isInitialLoad: boolean; isViewLoading: boolean; selectedFeedId: string | null; selectedArticle: Article | null; setSelectedArticle: React.Dispatch<React.SetStateAction<Article | null>>;
-    currentView: CurrentView; contentView: 'articles' | 'feedsGrid' | 'inactiveFeeds' | 'dump' | 'privacyPolicy'; readArticleIds: Map<string, number>; readLaterArticleIds: Set<string>; likedVideoIds: Set<string>;
+    currentView: CurrentView; contentView: 'articles' | 'feedsGrid' | 'inactiveFeeds' | 'dump' | 'privacyPolicy' | 'about'; readArticleIds: Map<string, number>; readLaterArticleIds: Set<string>; likedVideoIds: Set<string>;
     isSidebarCollapsed: boolean; isViewsCollapsed: boolean; isYoutubeFeedsCollapsed: boolean; isRssFeedsCollapsed: boolean; isRedditFeedsCollapsed: boolean; isTagsCollapsed: boolean;
     isYoutubePlaylistsCollapsed: boolean; 
     expandedTags: Set<string>; isFavoritesCollapsed: boolean;
@@ -460,11 +461,12 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     const unreadFavoritesCount = useMemo(() => {
         return favoriteFeeds.reduce((sum, feed) => sum + (unreadCounts[feed.id] || 0), 0);
     }, [favoriteFeeds, unreadCounts]);
-    const contentView: 'articles' | 'feedsGrid' | 'inactiveFeeds' | 'dump' | 'privacyPolicy' = useMemo(() => {
+    const contentView: 'articles' | 'feedsGrid' | 'inactiveFeeds' | 'dump' | 'privacyPolicy' | 'about' = useMemo(() => {
         if (currentView.type === 'all-subscriptions') return 'feedsGrid';
         if (currentView.type === 'inactive-feeds') return 'inactiveFeeds';
         if (currentView.type === 'dump') return 'dump';
         if (currentView.type === 'privacy-policy') return 'privacyPolicy';
+        if (currentView.type === 'about') return 'about';
         return 'articles';
     }, [currentView]);
 
@@ -589,6 +591,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
             case 'inactive-feeds': return 'Inactive Feeds';
             case 'dump': return 'URL Dump';
             case 'privacy-policy': return 'Privacy Policy';
+            case 'about': return 'About Media-Feeder';
             default: return 'Media-Feeder';
         }
     }, [currentView, feedsById]);
@@ -630,7 +633,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
 
     useEffect(() => {
         const initialView = getInitialView();
-        const shouldBypassHomepage = initialView.type === 'article' || initialView.type === 'import' || initialView.type === 'privacy-policy';
+        const shouldBypassHomepage = initialView.type === 'article' || initialView.type === 'import' || initialView.type === 'privacy-policy' || initialView.type === 'about';
         if (shouldBypassHomepage) {
             setHasEnteredApp(true);
         }

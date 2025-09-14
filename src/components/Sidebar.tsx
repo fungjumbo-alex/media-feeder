@@ -330,6 +330,7 @@ export const Sidebar: React.FC = () => {
                                     <button onClick={createMenuAction(() => setIsImportTextModalOpen(true))} className={menuButtonClass}><ImportIcon className="w-4 h-4 mr-2"/> Import Data</button>
                                     <button onClick={createMenuAction(() => setIsExportModalOpen(true))} className={menuButtonClass}><ExportIcon className="w-4 h-4 mr-2"/> Export Data</button>
                                     <div className="my-1 border-t border-gray-700"></div>
+                                    <button onClick={createMenuAction(() => handleViewChange('about'))} className={menuButtonClass}><InfoIcon className="w-4 h-4 mr-2"/> About</button>
                                     <button onClick={createMenuAction(() => handleViewChange('privacy-policy'))} className={menuButtonClass}><InfoIcon className="w-4 h-4 mr-2"/> Privacy Policy</button>
                                     <div className="my-1 border-t border-gray-700"></div>
                                     <button onClick={createMenuAction(handleOpenClearDataModal)} className="w-full flex items-center px-3 py-2 text-sm text-red-400 hover:bg-red-500/20 rounded-md"><TrashIcon className="w-4 h-4 mr-2"/> Clear All Data</button>

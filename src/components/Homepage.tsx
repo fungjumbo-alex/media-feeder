@@ -6,10 +6,10 @@ import { YouTubeIcon, SparklesIcon, TagIcon, ImportIcon, ExportIcon } from './ic
 export const Homepage: React.FC = () => {
     const { handleEnterApp } = useAppContext();
 
-    const handlePrivacyLinkClick = () => {
+    const handleFooterLinkClick = () => {
         // We need to launch the app so the main router can handle the hash change
         handleEnterApp();
-        // The default anchor behavior will handle the navigation to the privacy policy hash
+        // The default anchor behavior will handle the navigation to the correct hash
     };
 
     return (
@@ -69,9 +69,15 @@ export const Homepage: React.FC = () => {
                         By using Media-Feeder, you agree to its terms. The app requests permissions for your Google account to enable features like importing YouTube subscriptions and liking videos. 
                         All your data is stored locally in your browser.
                     </p>
-                    <a href="#/privacy-policy" onClick={handlePrivacyLinkClick} className="underline hover:text-gray-300">
-                        Read our full Privacy Policy
-                    </a>
+                    <div className="flex justify-center items-center gap-4">
+                        <a href="#/about" onClick={handleFooterLinkClick} className="underline hover:text-gray-300">
+                            About the App
+                        </a>
+                        <span className="text-gray-600">|</span>
+                        <a href="#/privacy-policy" onClick={handleFooterLinkClick} className="underline hover:text-gray-300">
+                            Privacy Policy
+                        </a>
+                    </div>
                 </footer>
             </main>
         </div>

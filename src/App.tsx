@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useEffect } from 'react';
 import { useAppContext } from './contexts/AppContext';
 import { Sidebar } from './components/Sidebar';
@@ -31,6 +32,7 @@ import { ImportYouTubeModal } from './components/ImportYouTubeModal';
 import { BundledChannelsModal } from './components/BundledChannelsModal';
 import { ClearDataModal } from './components/ClearDataModal';
 import { PrivacyPolicyContent } from './components/PrivacyPolicyContent';
+import { AboutContent } from './components/AboutContent';
 import { EditArticleTagsModal } from './components/EditArticleTagsModal';
 import { BulkEditArticleTagsModal } from './components/BulkEditArticleTagsModal';
 import { ConfirmAddVideoOrChannelModal } from './components/ConfirmAddVideoOrChannelModal';
@@ -377,6 +379,8 @@ const App: React.FC = () => {
                     <DumpContent />
                 ) : contentView === 'privacyPolicy' ? (
                     <PrivacyPolicyContent />
+                ) : contentView === 'about' ? (
+                    <AboutContent />
                 ) : (
                     <FeedContent
                         articles={articlesToShow}
