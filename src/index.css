@@ -1,0 +1,62 @@
+
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+    .highlight-on-target:target {
+      @apply bg-indigo-500/20 rounded-md;
+    }
+
+    .highlight-source {
+      animation: highlight-animation 1.5s ease-out;
+    }
+
+    @keyframes highlight-animation {
+      0% {
+        @apply bg-transparent;
+      }
+      25% {
+        @apply bg-indigo-500/30;
+      }
+      100% {
+        @apply bg-transparent;
+      }
+    }
+
+    .wait-cursor, .wait-cursor * {
+        cursor: wait !important;
+    }
+
+    /* Custom screen reader utilities to avoid -ms-high-contrast media query */
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border-width: 0;
+    }
+
+    .not-sr-only {
+        position: static;
+        width: auto;
+        height: auto;
+        padding: 0;
+        margin: 0;
+        overflow: visible;
+        clip: auto;
+        white-space: normal;
+    }
+
+    .demo-highlight {
+        @apply ring-4 ring-indigo-500 ring-offset-4 ring-offset-gray-800 rounded-md;
+        z-index: 1001;
+        position: relative;
+        transition: all 0.3s ease-in-out;
+    }
+}
