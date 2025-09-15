@@ -1,9 +1,3 @@
-
-
-
-
-
-
 import React, { createContext, useState, useEffect, useCallback, useMemo, useRef, useContext, ReactNode } from 'react';
 import { fetchAndParseRss } from '../services/rssService';
 import { generateRecommendations, generateRelatedChannels, translateDigestContent, generateTranscriptDigest, fetchAvailableCaptionChoices, fetchAndParseTranscript } from '../services/geminiService';
@@ -393,9 +387,6 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     }, [feedsToShowInApp]);
     const favoriteFeeds = useMemo(() => sortedFeeds.filter(f => f.isFavorite), [sortedFeeds]);
     
-    // FIX: Do not deduplicate articles here. If the same article is in two feeds with different tags,
-    // premature deduplication might remove the version associated with the correct feed for a tag view.
-    // Deduplication should happen in the view logic where needed.
     const allArticles: Article[] = useMemo(() => {
         const articles = feedsToShowInApp.flatMap(feed => feed.items);
         return articles.map(article => ({
@@ -407,15 +398,12 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     const allTags = useMemo(() => {
         const activeTags = new Set<string>();
         
-        // Get tags from all feeds, regardless of whether they have articles
         feedsToShowInApp.forEach(feed => {
             if (feed.tags) {
                 feed.tags.forEach(tag => activeTags.add(tag));
             }
         });
         
-        // Get tags from all individual articles
-        // Use a deduplicated list of articles to check for article-specific tags
         deduplicateArticles(allArticles).forEach(article => {
             if (article.tags) {
                 article.tags.forEach(tag => activeTags.add(tag));
@@ -434,16 +422,40 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         }
         return counts;
     }, [feedsToShowInApp, readArticleIds]);
+    
     const feedsByTag = useMemo(() => {
         const map = new Map<string, Feed[]>();
+        const feedIdsByTag = new Map<string, Set<string>>();
+
+        // Step 1: Collect all tags and the feed IDs associated with them
         sortedFeeds.forEach(feed => {
+            // From feed tags
             (feed.tags || []).forEach(tag => {
-                if (!map.has(tag)) map.set(tag, []);
-                map.get(tag)!.push(feed);
+                if (!feedIdsByTag.has(tag)) feedIdsByTag.set(tag, new Set());
+                feedIdsByTag.get(tag)!.add(feed.id);
+            });
+            // From article tags within the feed
+            feed.items.forEach(item => {
+                const articleSpecificTags = articleTags.get(item.id);
+                (articleSpecificTags || []).forEach(tag => {
+                    if (!feedIdsByTag.has(tag)) feedIdsByTag.set(tag, new Set());
+                    feedIdsByTag.get(tag)!.add(feed.id);
+                });
             });
         });
+
+        // Step 2: Build the final map of tag -> Feed[]
+        for (const [tag, feedIds] of feedIdsByTag.entries()) {
+            // We want to preserve the order from sortedFeeds
+            const feedsForThisTag = sortedFeeds.filter(feed => feedIds.has(feed.id));
+            if (feedsForThisTag.length > 0) {
+                map.set(tag, feedsForThisTag);
+            }
+        }
+
         return map;
-    }, [sortedFeeds]);
+    }, [sortedFeeds, articleTags]);
+
     const unreadTagCounts = useMemo(() => {
         const counts: Record<string, number> = {};
         allTags.forEach(tag => counts[tag] = 0);
