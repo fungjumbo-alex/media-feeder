@@ -2140,18 +2140,13 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         const { type, value } = currentView;
         if (type === 'favorites') {
             await handleRefreshFavorites();
-        } else if (type === 'tag') {
-            const feedsToRefresh = deduplicateArticles(allArticles).filter(article => {
-                const feed = feedsById.get(article.feedId);
-                return feed?.tags?.includes(value) || article.tags?.includes(value);
-            }).map(article => feedsById.get(article.feedId)).filter((feed): feed is Feed => !!feed);
-            
-            const uniqueFeeds = Array.from(new Map(feedsToRefresh.map(feed => [feed.id, feed])).values());
-            await batchRefreshHandler(uniqueFeeds, `tag #${value}`);
+        } else if (type === 'tag' && value) {
+            const feedsToRefresh = feedsByTag.get(value) || [];
+            await batchRefreshHandler(feedsToRefresh, `tag #${value}`);
         } else {
             setToast({ message: `Refresh is not supported for the "${headerTitle}" view.`, type: 'error' });
         }
-    }, [currentView, handleRefreshFavorites, allArticles, feedsById, batchRefreshHandler, setToast, headerTitle]);
+    }, [currentView, handleRefreshFavorites, feedsByTag, batchRefreshHandler, setToast, headerTitle]);
 
     const handleImportBundledChannels = useCallback((feedsToImport: Omit<Feed, 'id' | 'items' | 'error'>[]) => {
         const existingUrls = new Set(feeds.map(f => f.url));
