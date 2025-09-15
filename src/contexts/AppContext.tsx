@@ -388,11 +388,17 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     const favoriteFeeds = useMemo(() => sortedFeeds.filter(f => f.isFavorite), [sortedFeeds]);
     
     const allArticles: Article[] = useMemo(() => {
-        const articles = feedsToShowInApp.flatMap(feed => feed.items);
-        return articles.map(article => ({
-            ...article,
-            tags: articleTags.get(article.id)
-        }));
+        return feedsToShowInApp.flatMap(feed => {
+            const feedTags = new Set(feed.tags || []);
+            return feed.items.map(item => {
+                const articleSpecificTags = new Set(articleTags.get(item.id) || []);
+                const allCurrentTags = new Set([...feedTags, ...articleSpecificTags]);
+                return {
+                    ...item,
+                    tags: allCurrentTags.size > 0 ? Array.from(allCurrentTags).sort() : undefined
+                };
+            });
+        });
     }, [feedsToShowInApp, articleTags]);
     
     const allTags = useMemo(() => {
@@ -404,7 +410,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
             }
         });
         
-        deduplicateArticles(allArticles).forEach(article => {
+        allArticles.forEach(article => {
             if (article.tags) {
                 article.tags.forEach(tag => activeTags.add(tag));
             }
@@ -465,17 +471,14 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         const unreadArticles = allArticles.filter(a => !readArticleIds.has(a.id));
 
         unreadArticles.forEach(article => {
-            const feed = feedsById.get(article.feedId);
-            const tagsForThisInstance = new Set<string>();
-            if (feed?.tags) feed.tags.forEach(t => tagsForThisInstance.add(t));
-            if (article.tags) article.tags.forEach(t => tagsForThisInstance.add(t));
-
-            tagsForThisInstance.forEach(tag => {
-                if (!unreadTaggedArticleIds.has(tag)) {
-                    unreadTaggedArticleIds.set(tag, new Set());
-                }
-                unreadTaggedArticleIds.get(tag)!.add(article.id);
-            });
+            if (article.tags) {
+                article.tags.forEach(tag => {
+                    if (!unreadTaggedArticleIds.has(tag)) {
+                        unreadTaggedArticleIds.set(tag, new Set());
+                    }
+                    unreadTaggedArticleIds.get(tag)!.add(article.id);
+                });
+            }
         });
         
         for (const [tag, articleIds] of unreadTaggedArticleIds.entries()) {
@@ -483,7 +486,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         }
 
         return counts;
-    }, [allTags, allArticles, readArticleIds, feedsById]);
+    }, [allTags, allArticles, readArticleIds]);
     const unreadFavoritesCount = useMemo(() => {
         return favoriteFeeds.reduce((sum, feed) => sum + (unreadCounts[feed.id] || 0), 0);
     }, [favoriteFeeds, unreadCounts]);
@@ -502,8 +505,19 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
 
         switch (currentView.type) {
             case 'feed':
-                rawArticles = feedsById.get(currentView.value || '')?.items || [];
-                rawArticles = rawArticles.map(a => ({ ...a, tags: articleTags.get(a.id) }));
+                // Re-map over the original items to get the correct tags, preserving order.
+                const feedToDisplay = feedsById.get(currentView.value || '');
+                if (feedToDisplay) {
+                    const articleIdsInFeed = new Set(feedToDisplay.items.map(i => i.id));
+                    // Filter allArticles to get the correctly tagged versions, then sort by the original order.
+                    const taggedItemsMap = new Map(allArticles
+                        .filter(a => a.feedId === currentView.value && articleIdsInFeed.has(a.id))
+                        .map(a => [a.id, a])
+                    );
+                    rawArticles = feedToDisplay.items.map(item => taggedItemsMap.get(item.id) || item);
+                } else {
+                    rawArticles = [];
+                }
                 break;
             case 'search':
                 if (!currentView.value) rawArticles = [];
@@ -520,16 +534,13 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                 rawArticles = Array.from(readArticleIds.keys()).map(id => articlesById.get(id)).filter((a): a is Article => !!a);
                 break;
             case 'favorites':
-                rawArticles = favoriteFeeds.flatMap(feed => feed.items);
-                rawArticles = rawArticles.map(a => ({ ...a, tags: articleTags.get(a.id) }));
+                const favoriteFeedIds = new Set(favoriteFeeds.map(f => f.id));
+                rawArticles = allArticles.filter(a => favoriteFeedIds.has(a.feedId));
                 needsDeduplication = true;
                 break;
             case 'tag':
                 const tag = currentView.value || '';
-                rawArticles = allArticles.filter(article => {
-                    const feed = feedsById.get(article.feedId);
-                    return feed?.tags?.includes(tag) || article.tags?.includes(tag);
-                });
+                rawArticles = allArticles.filter(article => article.tags?.includes(tag));
                 needsDeduplication = true;
                 break;
             case 'published-today':
@@ -582,27 +593,20 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
 
         if (viewsWithTagFilter.includes(currentView.type)) {
             processedArticles.forEach(article => {
-                const feed = feedsById.get(article.feedId);
-                if (feed?.tags) feed.tags.forEach(tag => availableTags.add(tag));
                 if (article.tags) article.tags.forEach(tag => availableTags.add(tag));
             });
         }
         
         let finalArticles = processedArticles;
         if (viewsWithTagFilter.includes(currentView.type) && activeTagFilter) {
-            finalArticles = processedArticles.filter(article => {
-                const feed = feedsById.get(article.feedId);
-                const feedTags = feed?.tags || [];
-                const articleSpecificTags = article.tags || [];
-                return feedTags.includes(activeTagFilter) || articleSpecificTags.includes(activeTagFilter);
-            });
+            finalArticles = processedArticles.filter(article => article.tags?.includes(activeTagFilter));
         }
         
         return {
             articlesToShow: finalArticles,
             availableTagsForFilter: Array.from(availableTags).sort()
         };
-    }, [currentView, feedsById, allArticles, readLaterArticleIds, readArticleIds, articlesById, favoriteFeeds, activeTagFilter, articleTags, readLaterOrder, tagOrders, favoritesOrder]);
+    }, [currentView, feedsById, allArticles, readLaterArticleIds, readArticleIds, articlesById, favoriteFeeds, activeTagFilter, readLaterOrder, tagOrders, favoritesOrder]);
 
     const unreadVisibleCount = useMemo(() => articlesToShow.filter(a => !readArticleIds.has(a.id)).length, [articlesToShow, readArticleIds]);
     const headerTitle = useMemo(() => {
