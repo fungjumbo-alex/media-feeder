@@ -1,6 +1,7 @@
 
 
 
+
 import React, { createContext, useState, useEffect, useCallback, useMemo, useRef, useContext, ReactNode } from 'react';
 import { fetchAndParseRss } from '../services/rssService';
 import { generateRecommendations, generateRelatedChannels, translateDigestContent, generateTranscriptDigest, fetchAvailableCaptionChoices, fetchAndParseTranscript } from '../services/geminiService';
@@ -401,17 +402,23 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     
     const allTags = useMemo(() => {
         const activeTags = new Set<string>();
-        allArticles.forEach(article => {
-            const feed = sortedFeeds.find(f => f.id === article.feedId);
-            if (feed?.tags) {
+        
+        // Get tags from all feeds, regardless of whether they have articles
+        feedsToShowInApp.forEach(feed => {
+            if (feed.tags) {
                 feed.tags.forEach(tag => activeTags.add(tag));
             }
+        });
+        
+        // Get tags from all individual articles
+        allArticles.forEach(article => {
             if (article.tags) {
                 article.tags.forEach(tag => activeTags.add(tag));
             }
         });
+        
         return Array.from(activeTags).sort();
-    }, [allArticles, sortedFeeds]);
+    }, [feedsToShowInApp, allArticles]);
 
     const feedsById = useMemo(() => new Map(feedsToShowInApp.map(feed => [feed.id, feed])), [feedsToShowInApp]);
     const articlesById = useMemo(() => new Map(allArticles.map(article => [article.id, article])), [allArticles]);
