@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { createContext, useState, useEffect, useCallback, useMemo, useRef, useContext, ReactNode } from 'react';
 import { fetchAndParseRss } from '../services/rssService';
 import { generateRecommendations, generateRelatedChannels, translateDigestContent, generateTranscriptDigest, fetchAvailableCaptionChoices, fetchAndParseTranscript } from '../services/geminiService';
@@ -391,9 +393,11 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     }, [feedsToShowInApp]);
     const favoriteFeeds = useMemo(() => sortedFeeds.filter(f => f.isFavorite), [sortedFeeds]);
     
-    // FIX: Explicitly type `allArticles` to prevent incorrect type inference downstream.
+    // FIX: Do not deduplicate articles here. If the same article is in two feeds with different tags,
+    // premature deduplication might remove the version associated with the correct feed for a tag view.
+    // Deduplication should happen in the view logic where needed.
     const allArticles: Article[] = useMemo(() => {
-        const articles = deduplicateArticles(feedsToShowInApp.flatMap(feed => feed.items));
+        const articles = feedsToShowInApp.flatMap(feed => feed.items);
         return articles.map(article => ({
             ...article,
             tags: articleTags.get(article.id)
@@ -411,7 +415,8 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         });
         
         // Get tags from all individual articles
-        allArticles.forEach(article => {
+        // Use a deduplicated list of articles to check for article-specific tags
+        deduplicateArticles(allArticles).forEach(article => {
             if (article.tags) {
                 article.tags.forEach(tag => activeTags.add(tag));
             }
@@ -421,7 +426,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     }, [feedsToShowInApp, allArticles]);
 
     const feedsById = useMemo(() => new Map(feedsToShowInApp.map(feed => [feed.id, feed])), [feedsToShowInApp]);
-    const articlesById = useMemo(() => new Map(allArticles.map(article => [article.id, article])), [allArticles]);
+    const articlesById = useMemo(() => new Map(deduplicateArticles(allArticles).map(article => [article.id, article])), [allArticles]);
     const unreadCounts = useMemo(() => {
         const counts: Record<string, number> = {};
         for (const feed of feedsToShowInApp) {
@@ -441,27 +446,29 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     }, [sortedFeeds]);
     const unreadTagCounts = useMemo(() => {
         const counts: Record<string, number> = {};
-        allTags.forEach(tag => counts[tag] = 0); // Initialize all tags to 0
+        allTags.forEach(tag => counts[tag] = 0);
+
+        const unreadTaggedArticleIds = new Map<string, Set<string>>(); // Map<tag, Set<articleId>>
 
         const unreadArticles = allArticles.filter(a => !readArticleIds.has(a.id));
 
         unreadArticles.forEach(article => {
             const feed = feedsById.get(article.feedId);
-            const tagsForArticle = new Set<string>();
-            
-            if (feed?.tags) {
-                feed.tags.forEach(tag => tagsForArticle.add(tag));
-            }
-            if (article.tags) {
-                article.tags.forEach(tag => tagsForArticle.add(tag));
-            }
+            const tagsForThisInstance = new Set<string>();
+            if (feed?.tags) feed.tags.forEach(t => tagsForThisInstance.add(t));
+            if (article.tags) article.tags.forEach(t => tagsForThisInstance.add(t));
 
-            tagsForArticle.forEach(tag => {
-                if (counts[tag] !== undefined) {
-                    counts[tag]++;
+            tagsForThisInstance.forEach(tag => {
+                if (!unreadTaggedArticleIds.has(tag)) {
+                    unreadTaggedArticleIds.set(tag, new Set());
                 }
+                unreadTaggedArticleIds.get(tag)!.add(article.id);
             });
         });
+        
+        for (const [tag, articleIds] of unreadTaggedArticleIds.entries()) {
+            counts[tag] = articleIds.size;
+        }
 
         return counts;
     }, [allTags, allArticles, readArticleIds, feedsById]);
@@ -492,6 +499,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                     const query = currentView.value.toLowerCase();
                     rawArticles = allArticles.filter(a => a.title.toLowerCase().includes(query) || a.description.toLowerCase().includes(query));
                 }
+                needsDeduplication = true;
                 break;
             case 'readLater':
                 rawArticles = Array.from(readLaterArticleIds).map(id => articlesById.get(id)).filter((a): a is Article => !!a);
@@ -510,7 +518,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                     const feed = feedsById.get(article.feedId);
                     return feed?.tags?.includes(tag) || article.tags?.includes(tag);
                 });
-                needsDeduplication = false;
+                needsDeduplication = true;
                 break;
             case 'published-today':
                 const today = new Date();
@@ -677,6 +685,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                     const query = backgroundView.value.toLowerCase();
                     rawArticles = allArticles.filter(a => a.title.toLowerCase().includes(query) || a.description.toLowerCase().includes(query));
                 }
+                needsDeduplication = true;
                 break;
             case 'readLater':
                 rawArticles = Array.from(readLaterArticleIds).map(id => articlesById.get(id)).filter((a): a is Article => !!a);
@@ -694,7 +703,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
                     const feed = feedsById.get(article.feedId);
                     return feed?.tags?.includes(tag) || article.tags?.includes(tag);
                 });
-                needsDeduplication = false;
+                needsDeduplication = true;
                 break;
             case 'published-today':
                 const today = new Date();
@@ -2116,7 +2125,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
         if (type === 'favorites') {
             await handleRefreshFavorites();
         } else if (type === 'tag') {
-            const feedsToRefresh = allArticles.filter(article => {
+            const feedsToRefresh = deduplicateArticles(allArticles).filter(article => {
                 const feed = feedsById.get(article.feedId);
                 return feed?.tags?.includes(value) || article.tags?.includes(value);
             }).map(article => feedsById.get(article.feedId)).filter((feed): feed is Feed => !!feed);
@@ -2324,7 +2333,7 @@ export const AppProvider: React.FC<{children: ReactNode}> = ({ children }) => {
     }, []);
 
     const handleRemoveArticle = useCallback((articleId: string, feedId: string) => {
-        const articleToRemove = allArticles.find(a => a.id === articleId);
+        const articleToRemove = deduplicateArticles(allArticles).find(a => a.id === articleId);
         if (!articleToRemove) {
             console.warn(`handleRemoveArticle: Could not find article with ID ${articleId}`);
             return;
