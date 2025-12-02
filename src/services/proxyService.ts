@@ -32,25 +32,6 @@ export const PROXIES = [
         }
     },
     {
-        name: 'corsproxy.io',
-        buildUrl: (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        parseResponse: async (response: Response): Promise<string> => {
-            if (!response.ok) {
-                const errorBody = await response.text().catch(() => null);
-                if (errorBody) {
-                    try {
-                        const errorJson = JSON.parse(errorBody);
-                        if (errorJson?.error?.message) {
-                            throw new Error(`Proxy corsproxy.io responded with status ${response.status}: ${errorJson.error.message}`);
-                        }
-                    } catch (e) { /* ignore json parsing error */ }
-                }
-                throw new Error(`Proxy corsproxy.io responded with status ${response.status}`);
-            }
-            return response.text();
-        }
-    },
-    {
         name: 'AllOrigins',
         buildUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
         parseResponse: async (response: Response): Promise<string> => {
@@ -67,6 +48,25 @@ export const PROXIES = [
                 throw new Error('Proxy AllOrigins returned null/undefined content.');
             }
             return data.contents;
+        }
+    },
+    {
+        name: 'corsproxy.io',
+        buildUrl: (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        parseResponse: async (response: Response): Promise<string> => {
+            if (!response.ok) {
+                const errorBody = await response.text().catch(() => null);
+                if (errorBody) {
+                    try {
+                        const errorJson = JSON.parse(errorBody);
+                        if (errorJson?.error?.message) {
+                            throw new Error(`Proxy corsproxy.io responded with status ${response.status}: ${errorJson.error.message}`);
+                        }
+                    } catch (e) { /* ignore json parsing error */ }
+                }
+                throw new Error(`Proxy corsproxy.io responded with status ${response.status}`);
+            }
+            return response.text();
         }
     }
 ];
@@ -182,7 +182,29 @@ export const fetchViaProxy = async (
         }
     };
 
-    // 1. Try stored config first if available and fresh (less than 1 hour old)
+    // 1. Try direct fetch for Invidious instances (they often support CORS)
+    const isInvidious = INVIDIOUS_INSTANCES.some(inst => url.startsWith(inst));
+    if (isInvidious) {
+        try {
+            console.log(`[ProxyService] Trying direct fetch for Invidious URL: ${url}`);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort('signal is aborted without reason'), 10000);
+            const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (response.ok) {
+                const content = await response.text();
+                // Simple validation to ensure we got XML/RSS
+                if (content.startsWith('<') && !content.includes('<!DOCTYPE html>')) {
+                    console.log(`[ProxyService] Direct fetch success for: ${url}`);
+                    return content;
+                }
+            }
+        } catch (e) {
+            console.warn(`[ProxyService] Direct fetch failed for ${url}`, e);
+        }
+    }
+
+    // 2. Try stored config first if available and fresh (less than 1 hour old)
     const stored = getStoredConfig();
     if (stored && (Date.now() - stored.timestamp < 3600000)) {
         const proxy = proxiesToUse.find(p => p.name === stored.proxyName);
@@ -199,7 +221,7 @@ export const fetchViaProxy = async (
         }
     }
 
-    // 2. Fallback to trying all proxies
+    // 3. Fallback to trying all proxies
     let remainingProxies = [...proxiesToUse];
     while (remainingProxies.length > 0) {
         const getSuccessRate = (name: string) => {
