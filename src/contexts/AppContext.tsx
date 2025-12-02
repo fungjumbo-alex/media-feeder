@@ -144,7 +144,7 @@ const getInitialView = (): CurrentView => {
     }
 
     if (!hash) return { type: 'all-subscriptions' };
-    
+
     if (hash.startsWith('url=')) {
         const url = hash.substring(4);
         if (url) return { type: 'add-feed-from-url', value: decodeURIComponent(url) };
@@ -193,14 +193,14 @@ const getInitialView = (): CurrentView => {
 
     const validTypes = ['all-subscriptions', 'inactive-feeds', 'dump', 'privacy-policy', 'about', 'help', 'ai-summary-yt'];
     if (validTypes.includes(type)) return { type };
-    
+
     return { type: 'all-subscriptions' };
 };
 
 const filterArticlesForTag = (articles: Article[], tagValue: any, feedsById: Map<string, Feed>): Article[] => {
     if (typeof tagValue === 'object' && tagValue.name && tagValue.type) {
         const { name, type } = tagValue;
-        
+
         const filtered = articles.filter(article => {
             const hasTag = article.tags?.includes(name) ?? false;
             if (!hasTag) return false;
@@ -212,7 +212,7 @@ const filterArticlesForTag = (articles: Article[], tagValue: any, feedsById: Map
 
             const isYouTube = feed.url.toLowerCase().includes('youtube.com');
             const typeMatch = type === 'youtube' ? isYouTube : !isYouTube;
-            
+
             return typeMatch;
         });
         return filtered;
@@ -250,7 +250,7 @@ const generateArticleMarkdown = async (article: Article): Promise<string> => {
             articleMarkdown += `${textContent.substring(0, 500)}...\n\n`;
         }
     }
-    
+
     // If it's a YouTube video, try to fetch and append the transcript.
     if (article.isVideo && article.link) {
         const videoId = getYouTubeId(article.link);
@@ -285,11 +285,11 @@ interface AppContextType {
     isNotesCollapsed: boolean; onToggleNotesCollapse: () => void;
     sidebarFeedsView: SidebarFeedsView;
     handleSetSidebarFeedsView: (view: SidebarFeedsView) => void;
-    isYoutubePlaylistsCollapsed: boolean; 
+    isYoutubePlaylistsCollapsed: boolean;
     expandedTags: Set<string>;
     expandedViews: Set<string>;
     onToggleViewExpansion: (viewType: 'published-today' | 'readLater' | 'history') => void;
-    isAddFeedModalOpen: boolean; setAddFeedModalOpen: React.Dispatch<React.SetStateAction<boolean>>; 
+    isAddFeedModalOpen: boolean; setAddFeedModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
     isExportModalOpen: boolean; setIsExportModalOpen: React.Dispatch<React.SetStateAction<boolean>>; isAdvancedInfoModalOpen: boolean; setIsAdvancedInfoModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
     isAiSettingsModalOpen: boolean; setIsAiSettingsModalOpen: React.Dispatch<React.SetStateAction<boolean>>; isImportTextModalOpen: boolean; setIsImportTextModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
     isProxyStatsModalOpen: boolean; setIsProxyStatsModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -312,7 +312,7 @@ interface AppContextType {
     bulkEditModalConfig: BulkEditModalConfig; setBulkEditModalConfig: React.Dispatch<React.SetStateAction<BulkEditModalConfig>>;
     toast: { message: string; type: 'success' | 'error' } | null; setToast: React.Dispatch<React.SetStateAction<{ message: string; type: 'success' | 'error' } | null>>;
     isRefreshingAll: boolean; refreshingFeedId: string | null; refreshProgress: number | null; allArticles: Article[]; inactiveFeeds: (Feed & { lastPostTimestamp: number })[];
-    inactivePeriod: 1 | 3 | 6 | 12 | 'all'; setInactivePeriod: React.Dispatch<React.SetStateAction<1 | 3 | 6 | 12 | 'all'>>; 
+    inactivePeriod: 1 | 3 | 6 | 12 | 'all'; setInactivePeriod: React.Dispatch<React.SetStateAction<1 | 3 | 6 | 12 | 'all'>>;
     allTags: string[]; youtubeTags: string[]; rssTags: string[];
     sortedFeeds: Feed[]; favoriteFeeds: Feed[]; unreadCounts: Record<string, number>;
     commentsState: CommentState;
@@ -374,10 +374,10 @@ interface AppContextType {
     handleDeleteTag: (tagToDelete: string) => void;
     handleRenameTag: (oldName: string, newName: string) => void;
     handleBulkDeleteFeeds: (feedIds: Set<string>) => void; handleToggleFavorite: (feedId: string) => void; handleSaveFeedTitle: (feedId: string, title: string) => void;
-    handleSaveFeedTags: (feedId: string, tags: string[]) => void; 
+    handleSaveFeedTags: (feedId: string, tags: string[]) => void;
     handleSaveFeedMaxArticles: (feedId: string, max: number) => void;
     handleToggleReadStatus: (articleId: string) => void; handleToggleReadLater: (articleId: string) => void;
-    handleSummaryGenerated: (articleId: string, summary: string | StructuredVideoSummary, sources?: WebSource[]) => void; 
+    handleSummaryGenerated: (articleId: string, summary: string | StructuredVideoSummary, sources?: WebSource[]) => void;
     handleRefreshSingleFeed: (feedId: string) => Promise<void>;
     handleRefreshCurrentView: () => Promise<void>; handleRefreshMissingIcons: () => Promise<void>;
     handleGenerateDigest: () => void; handleExecuteDetailedDigest: (selectedArticles: Article[], targetLanguage: string) => Promise<void>; handleExecuteThematicDigest: (selectedArticles: Article[], targetLanguage: string) => Promise<void>; handleGenerateRecommendations: (customQuery?: string) => Promise<void>; handleGenerateMoreRecommendations: (customQuery?: string) => Promise<void>;
@@ -389,7 +389,7 @@ interface AppContextType {
     handleClearArticles: (options: { clearYT: boolean; clearNonYT: boolean; keepReadLater: boolean; }) => void;
     handleFactoryReset: () => void;
     handleSearch: (query: string) => void; handleClearSearch: () => void;
-    handleClearHistory: () => void; handleClearReadLater: () => void; handleMarkAllInAllFeedsAsRead: () => void; handleMarkAllRead: () => void; 
+    handleClearHistory: () => void; handleClearReadLater: () => void; handleMarkAllInAllFeedsAsRead: () => void; handleMarkAllRead: () => void;
     handleMarkSelectedAsRead: () => void;
     handleOpenArticle: (article: Article) => void;
     handleCloseArticleModal: () => void;
@@ -400,7 +400,7 @@ interface AppContextType {
     handleBulkUpdateTags: (feedIds: Set<string>, tags: string[], mode: 'add' | 'set' | 'favorite') => void;
     handleOpenBulkEdit: () => void; handleOpenBulkEditForTag: (tag: string) => void; handleOpenBulkEditForFavorites: () => void; onToggleSidebar: () => void; onToggleViewsCollapse: () => void;
     onToggleYoutubeFeedsCollapse: () => void; onToggleRssFeedsCollapse: () => void; onToggleRedditFeedsCollapse: () => void; onToggleTagsCollapse: () => void; onToggleTagExpansion: (tag: string, tagType: 'youtube' | 'rss') => void;
-    onToggleYoutubePlaylistsCollapse: () => void; 
+    onToggleYoutubePlaylistsCollapse: () => void;
     isYoutubeTagsCollapsed: boolean;
     onToggleYoutubeTagsCollapse: () => void;
     isRssTagsCollapsed: boolean;
@@ -499,7 +499,7 @@ export const useAppContext = (): AppContextType => {
     return context;
 };
 
-export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
+export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
     const [feeds, setFeeds] = useState<Feed[]>(() => {
         const storedFeeds = getStoredData<Feed[]>(FEEDS_STORAGE_KEY, []);
@@ -564,7 +564,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     const handleLikeVideo = useCallback(async (article: Article, options?: { isAutoLike?: boolean }) => {
         const videoId = getYouTubeId(article.link);
         if (!videoId || likedVideoIds.has(videoId)) return;
-    
+
         if (!accessToken) {
             if (options?.isAutoLike) {
                 return;
@@ -577,7 +577,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             }
             return;
         }
-    
+
         try {
             await likeYouTubeVideo(videoId, accessToken);
             setLikedVideoIds(prev => new Set(prev).add(videoId));
@@ -601,7 +601,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     useEffect(() => {
         handleLikeVideoRef.current = handleLikeVideo;
     }, [handleLikeVideo]);
-    
+
     useEffect(() => {
         const checkGsi = setInterval(() => {
             if (window.google && window.google.accounts) {
@@ -618,7 +618,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file',
                     callback: async (tokenResponse) => {
                         isReAuthingRef.current = false;
-                        
+
                         if (tokenResponse.error) {
                             if (tokenResponse.error !== 'popup_closed_by_user' && tokenResponse.error !== 'access_denied' && !isSilentAuthRef.current) {
                                 setToast({ message: `Sign-in failed: ${tokenResponse.error_description || tokenResponse.error}`, type: 'error' });
@@ -636,7 +636,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                             localStorage.setItem('gapi_access_token', newAccessToken);
                             localStorage.setItem('gapi_access_token_expires_at', expiresAt.toString());
                             setAccessToken(newAccessToken);
-                            
+
                             if (tokenRefreshTimerRef.current) clearTimeout(tokenRefreshTimerRef.current);
                             const refreshTimeout = expiresIn - 5 * 60 * 1000;
                             tokenRefreshTimerRef.current = window.setTimeout(() => {
@@ -648,16 +648,16 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                                     headers: { 'Authorization': `Bearer ${newAccessToken}` }
                                 });
                                 if (!profileResponse.ok) throw new Error('Failed to fetch user profile.');
-                                
+
                                 const profile = await profileResponse.json();
                                 const userProfileData: UserProfile = { email: profile.email };
                                 setUserProfile(userProfileData);
                                 localStorage.setItem('gapi_user_profile', JSON.stringify(userProfileData));
-                                
+
                                 if (!isSilentAuthRef.current) {
                                     setToast({ message: `Signed in as ${profile.email}`, type: 'success' });
                                 }
-                                
+
                                 if (queuedLikeRef.current) {
                                     handleLikeVideoRef.current(queuedLikeRef.current.article, { isAutoLike: queuedLikeRef.current.isAutoLike });
                                     queuedLikeRef.current = null;
@@ -683,7 +683,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     useEffect(() => {
         isImportYouTubeModalOpenRef.current = isImportYouTubeModalOpen;
     }, [isImportYouTubeModalOpen]);
-    
+
     const [readLaterArticleIds, setReadLaterArticleIds] = useState<Set<string>>(() => getStoredData(READ_LATER_KEY, new Set(), (k, v) => k === "" ? new Set(Array.isArray(v) ? v : undefined) : v));
     const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -795,9 +795,9 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
     const [isRefreshOptionsModalOpen, setIsRefreshOptionsModalOpen] = useState(false);
     const [refreshModalInitialState, setRefreshModalInitialState] = useState<{ favoritesOnly?: boolean } | null>(null);
-    
+
     const aiModel: AiModel = AVAILABLE_MODELS[0];
-    
+
     useEffect(() => {
         const handleResize = () => {
             const isMobile = window.innerWidth < 768;
@@ -829,7 +829,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         });
     }, [feedsToShowInApp]);
     const favoriteFeeds = useMemo(() => sortedFeeds.filter(f => f.isFavorite), [sortedFeeds]);
-    
+
     const allArticles: Article[] = useMemo(() => {
         return feedsToShowInApp.flatMap(feed => {
             const feedTags = new Set(feed.tags || []);
@@ -845,10 +845,10 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             });
         });
     }, [feedsToShowInApp, articleTags]);
-    
+
     const feedsById = useMemo(() => new Map(feedsToShowInApp.map(feed => [feed.id, feed])), [feedsToShowInApp]);
     const articlesById = useMemo(() => new Map(deduplicateArticles(allArticles).map(article => [article.id, article])), [allArticles]);
-    
+
     const handleFetchComments = useCallback(async (videoId: string) => {
         setCommentsState({ comments: null, isLoading: true, error: null });
         try {
@@ -863,33 +863,54 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         try {
             const article = articlesById.get(articleId);
             const videoId = getYouTubeId(article?.link || null);
-    
+
             if (!videoId) {
                 return;
             }
-    
+
             const { description, views } = await fetchYouTubeVideoDetails(videoId);
-            
+
+            // Auto-download transcript
+            let transcriptText: string | undefined = undefined;
+            try {
+                const choices = await fetchAvailableCaptionChoices(videoId);
+                if (choices.length > 0) {
+                    const transcriptLines = await fetchAndParseTranscript(choices[0].url);
+                    if (transcriptLines.length > 0) {
+                        // Store transcript as formatted text in the content
+                        transcriptText = transcriptLines.map(line => `[${formatTranscriptTime(line.start)}] ${line.text}`).join('\n');
+                    }
+                }
+            } catch (e) {
+                console.warn(`Could not auto-download transcript for video ${videoId}:`, e);
+                // Continue without transcript - not a critical error
+            }
+
             setFeeds(prevFeeds => {
                 return prevFeeds.map(feed => {
                     const itemIndex = feed.items.findIndex(item => item.id === articleId);
                     if (itemIndex > -1) {
                         const newItems = [...feed.items];
-                        const updatedItem = { ...newItems[itemIndex], content: description, description: description, views: views };
+                        const updatedItem = {
+                            ...newItems[itemIndex],
+                            content: transcriptText || description,
+                            description: description,
+                            views: views
+                        };
                         newItems[itemIndex] = updatedItem;
                         return { ...feed, items: newItems };
                     }
                     return feed;
                 });
             });
-    
+
             setSelectedArticle(prevArticle => {
                 if (prevArticle?.id === articleId) {
-                    return { ...prevArticle, content: description, description, views: views };
+                    return { ...prevArticle, content: transcriptText || description, description, views: views };
                 }
                 return prevArticle;
             });
-    
+
         } catch (e: any) {
             setToast({ message: `Could not load video details: ${e.message}`, type: 'error' });
         }
@@ -900,23 +921,23 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         if (!forceRefresh && trendingKeywordsRef.current.length > 0) {
             return;
         }
-    
+
         isGeneratingKeywordsRef.current = true;
         setIsGeneratingKeywords(true);
         setKeywordGenerationError(null);
-    
+
         try {
-            
+
             const textCorpus = allArticles.map(article => {
                 const title = (article.title || '');
                 return title.replace(/<[^>]*>?/gm, ' ');
             }).join('\n\n');
-            
-    
+
+
             if (textCorpus.length < 100) {
                 throw new Error("Not enough content from downloaded article titles to generate keywords.");
             }
-    
+
 
             let words: string[];
 
@@ -954,8 +975,8 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 'vs', 're', 'vs.', 'ft.', 'feat'
             ]);
 
-            const filteredWords = words.filter(word => 
-                !stopWords.has(word) && 
+            const filteredWords = words.filter(word =>
+                !stopWords.has(word) &&
                 word.length > 1 &&
                 !/^\d+$/.test(word)
             );
@@ -971,11 +992,11 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 .map(([word, count]) => ({ keyword: word, count }));
 
             const keywords = sortedKeywordsWithCounts;
-            
+
             if (isGeneratingKeywordsRef.current) {
                 setTrendingKeywords(keywords);
             }
-    
+
         } catch (e) {
             const message = e instanceof Error ? e.message : "An unknown error occurred while extracting keywords.";
             if (isGeneratingKeywordsRef.current) {
@@ -1031,7 +1052,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 }
             }
         }
-        
+
         const sortedYoutubeTags = Array.from(youtubeTagsSet).sort();
         const sortedRssTags = Array.from(rssTagsSet).sort();
         const allTagsSet = new Set([...sortedYoutubeTags, ...sortedRssTags]);
@@ -1050,7 +1071,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         }
         return counts;
     }, [feedsToShowInApp, readArticleIds]);
-    
+
     const feedsByTag = useMemo(() => {
         const map = new Map<string, Feed[]>();
         const feedIdsByTag = new Map<string, Set<string>>();
@@ -1092,7 +1113,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             if (feed && article.tags) {
                 const isYouTube = feed.url.toLowerCase().includes('youtube.com');
                 const targetMap = isYouTube ? ytUnreadArticleIdsByTag : rssUnreadArticleIdsByTag;
-                
+
                 article.tags.forEach(tag => {
                     if (!targetMap.has(tag)) {
                         targetMap.set(tag, new Set());
@@ -1111,7 +1132,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
         return { youtubeUnreadTagCounts: ytCounts, rssUnreadTagCounts: rssCounts };
     }, [allArticles, readArticleIds, feedsById]);
-    
+
     const {
         unreadPublishedTodayYtCount, unreadPublishedTodayRssCount,
         unreadReadLaterYtCount, unreadReadLaterRssCount,
@@ -1133,7 +1154,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         for (const article of unreadArticles) {
             const feed = feedsById.get(article.feedId);
             if (!feed) continue;
-            
+
             const isYtFeed = isYouTube(feed.url);
 
             if (article.pubDateTimestamp && article.pubDateTimestamp >= todayTimestamp) {
@@ -1149,9 +1170,9 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 unreadAiSummaryYt++;
             }
         }
-        
+
         const readArticles = Array.from(readArticleIds.keys()).map(id => articlesById.get(id)).filter((a): a is Article => !!a);
-        for(const article of readArticles) {
+        for (const article of readArticles) {
             const feed = feedsById.get(article.feedId);
             if (!feed) continue;
             if (isYouTube(feed.url)) hYt++; else hRss++;
@@ -1187,16 +1208,16 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         const ptFeeds = new Map<string, Feed>();
         const rlFeeds = new Map<string, Feed>();
         const hFeeds = new Map<string, Feed>();
-    
+
         const ptUnreadCountsByCanonicalKey: Record<string, number> = {};
         const rlUnreadCountsByCanonicalKey: Record<string, number> = {};
-    
+
         for (const article of allArticles) {
             const feed = feedsById.get(article.feedId);
             if (!feed) continue;
-    
+
             const canonicalKey = (isYouTubeFeed(feed) && feed.channelUrl) ? feed.channelUrl : feed.id;
-    
+
             if (article.pubDateTimestamp && article.pubDateTimestamp >= todayTimestamp) {
                 if (!ptFeeds.has(canonicalKey)) {
                     ptFeeds.set(canonicalKey, feed);
@@ -1205,7 +1226,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     ptUnreadCountsByCanonicalKey[canonicalKey] = (ptUnreadCountsByCanonicalKey[canonicalKey] || 0) + 1;
                 }
             }
-    
+
             if (readLaterArticleIds.has(article.id)) {
                 if (!rlFeeds.has(canonicalKey)) {
                     rlFeeds.set(canonicalKey, feed);
@@ -1214,14 +1235,14 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     rlUnreadCountsByCanonicalKey[canonicalKey] = (rlUnreadCountsByCanonicalKey[canonicalKey] || 0) + 1;
                 }
             }
-    
+
             if (readArticleIds.has(article.id)) {
                 if (!hFeeds.has(canonicalKey)) {
                     hFeeds.set(canonicalKey, feed);
                 }
             }
         }
-    
+
         const finalPtUnreadCounts: Record<string, number> = {};
         for (const feed of ptFeeds.values()) {
             const canonicalKey = (isYouTubeFeed(feed) && feed.channelUrl) ? feed.channelUrl : feed.id;
@@ -1233,7 +1254,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             const canonicalKey = (isYouTubeFeed(feed) && feed.channelUrl) ? feed.channelUrl : feed.id;
             finalRlUnreadCounts[feed.id] = rlUnreadCountsByCanonicalKey[canonicalKey] || 0;
         }
-    
+
         return {
             feedsForPublishedToday: Array.from(ptFeeds.values()),
             feedsForReadLater: Array.from(rlFeeds.values()),
@@ -1290,7 +1311,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                             return feed ? feed.url.toLowerCase().includes('youtube.com') : false;
                         });
                     } else { // sidebarTab === 'rss'
-                         articlesToSearch = allArticles.filter(a => {
+                        articlesToSearch = allArticles.filter(a => {
                             const feed = feedsById.get(a.feedId);
                             return feed ? !feed.url.toLowerCase().includes('youtube.com') : false;
                         });
@@ -1305,7 +1326,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     rawArticles = [];
                 } else {
                     const query = String(currentView.value).toLowerCase();
-                    rawArticles = allArticles.filter(a => 
+                    rawArticles = allArticles.filter(a =>
                         (a.title || '').toLowerCase().includes(query)
                     );
                 }
@@ -1331,7 +1352,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 today.setHours(0, 0, 0, 0);
                 const todayTimestamp = today.getTime();
                 rawArticles = allArticles.filter(a => a.pubDateTimestamp && a.pubDateTimestamp >= todayTimestamp);
-                needsDeduplication = true; 
+                needsDeduplication = true;
                 break;
             case 'ai-summary-yt':
                 rawArticles = allArticles.filter(a => {
@@ -1345,16 +1366,16 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             default:
                 rawArticles = [];
         }
-        
+
         const viewsToFilterByTab = ['favorites', 'published-today', 'readLater', 'history'];
         if (viewsToFilterByTab.includes(currentView.type)) {
             rawArticles = rawArticles.filter(article => {
                 const feed = feedsById.get(article.feedId);
                 if (!feed) return false;
-                
+
                 const isYouTubeFeed = feed.url.toLowerCase().includes('youtube.com');
                 const tabForView = currentView.value === 'rss' ? 'rss' : 'yt';
-                
+
                 if (tabForView === 'yt') {
                     return isYouTubeFeed;
                 } else { // 'rss'
@@ -1362,7 +1383,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 }
             });
         }
-        
+
         const sortArticles = (articles: Article[]): Article[] => {
             const sortByCustomOrder = (order: string[]) => {
                 const orderMap = new Map(order.map((id, index) => [id, index]));
@@ -1414,12 +1435,12 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 if (article.tags) article.tags.forEach(tag => availableTags.add(tag));
             });
         }
-        
+
         let finalArticles = processedArticles;
         if (['favorites', 'published-today', 'readLater', 'history'].includes(currentView.type) && activeTagFilter) {
             finalArticles = processedArticles.filter(article => article.tags?.includes(activeTagFilter));
         }
-        
+
         return {
             articlesToShow: finalArticles,
             availableTagsForFilter: Array.from(availableTags).sort()
@@ -1478,7 +1499,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             default: return 'No articles to display.';
         }
     }, [currentView, isViewLoading, activeTagFilter]);
-    
+
     const canZoomIn = useMemo(() => ZOOM_LEVELS.indexOf(gridZoomLevel) > 0, [gridZoomLevel]);
     const canZoomOut = useMemo(() => ZOOM_LEVELS.indexOf(gridZoomLevel) < ZOOM_LEVELS.length - 1, [gridZoomLevel]);
     const canArticleZoomIn = useMemo(() => ZOOM_LEVELS.indexOf(articleZoomLevel) > 0, [articleZoomLevel]);
@@ -1575,12 +1596,12 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             if (data.autoplayMode) setAutoplayMode(data.autoplayMode);
 
             setFeeds(Array.from(currentFeedsMap.values()));
-            
+
             const totalImportedFeeds = currentFeedsMap.size;
             if (!options?.silent) {
                 setToast({ message: `Import successful! ${totalImportedFeeds} feeds and their articles have been loaded.`, type: 'success' });
             }
-            
+
             if (currentView.type === 'import') {
                 handleViewChange('all-subscriptions');
             }
@@ -1603,7 +1624,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     const handleCancelAddVideoOrChannel = useCallback(() => {
         setVideoToAdd(null);
     }, []);
-    
+
     const handleSelectFeed = useCallback((feedId: string) => {
         handleViewChange('feed', feedId);
     }, [handleViewChange]);
@@ -1674,7 +1695,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     ...feed,
                     items: feed.items.filter(item => !articlesToRemoveIds.has(item.id))
                 }));
-                
+
                 setFeeds(prunedFeeds);
             }
         }
@@ -1877,7 +1898,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     }
                 }
             ];
-            
+
             const servicesToTry = forceService ? allServices.filter(s => s.name === forceService) : allServices;
             if (forceService && servicesToTry.length === 0) {
                 throw new Error(`Forced service "${forceService}" is not available.`);
@@ -1907,7 +1928,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     setToast({ message: "Backup is large, using high-capacity share service...", type: 'success' });
                 }
                 const result = await uploadChunk(
-                    compressed, 
+                    compressed,
                     `Media-Feeder Backup ${new Date().toISOString()}`,
                     isLargeForDpaste ? 'pastegg' : undefined
                 );
@@ -1939,10 +1960,10 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
         try {
             setToast({ message: `Uploading part 1 of ${totalChunks}...`, type: 'success' });
-            
+
             const isFirstChunkLargeForDpaste = chunks[0].length > DPASTE_SIZE_LIMIT;
             const firstChunkResult = await uploadChunk(
-                chunks[0], 
+                chunks[0],
                 `Media-Feeder Multipart Backup ${shareId} (1/${totalChunks})`,
                 isFirstChunkLargeForDpaste ? 'pastegg' : undefined
             );
@@ -1956,7 +1977,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
             const remainingPasteResults = await Promise.all(remainingPastePromises);
             const allPasteResults = [firstChunkResult, ...remainingPasteResults];
-            
+
             if (allPasteResults.some(r => r.service !== chosenService)) {
                 throw new Error("Multipart upload failed: chunks were uploaded to different services. Please try again.");
             }
@@ -1969,18 +1990,18 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             } else {
                 shortCode = `md:${pasteIds.join(',')}`;
             }
-            
+
             const fullUrl = `${window.location.origin}${window.location.pathname}#/import=${encodeURIComponent(shortCode)}`;
             addRecentShareCode(shortCode);
             return { fullUrl, shortCode };
-            
+
         } catch (e) {
             const message = e instanceof Error ? e.message : "An unknown error occurred during multipart upload.";
             throw new Error(`Cloud sharing failed: ${message}`);
         }
     }, [
-        feeds, gridZoomLevel, articleZoomLevel, autoplayMode, articleTags, feedsByTag, 
-        readLaterOrderYt, readLaterOrderRss, tagOrders, favoritesOrderYt, favoritesOrderRss, 
+        feeds, gridZoomLevel, articleZoomLevel, autoplayMode, articleTags, feedsByTag,
+        readLaterOrderYt, readLaterOrderRss, tagOrders, favoritesOrderYt, favoritesOrderRss,
         addRecentShareCode, readLaterArticleIds, setToast, notes, noteFolders
     ]);
 
@@ -1988,7 +2009,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         setIsProcessingUrl(true);
         try {
             let url = rawUrl.trim();
-            
+
             const handleSharedDataImport = async (content: string) => {
                 let importedData: SyncData;
                 if (content.startsWith('media-feeder-compressed:v2:')) {
@@ -2000,19 +2021,19 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                         throw new Error("Failed to decompress data from the link.");
                     }
                 } else {
-                     throw new Error("This share link uses an old, unsupported compression format. Please generate a new link.");
+                    throw new Error("This share link uses an old, unsupported compression format. Please generate a new link.");
                 }
                 handleImportData(importedData, { silent: options?.silent });
                 if (!options?.silent) {
                     setToast({ message: "Successfully imported data from share link/code.", type: 'success' });
                 }
             };
-            
+
             const multiPartRegex = /(?:multi\/(pastegg|dpaste)|(mp|md)):([\w,-_]+)$/;
             const multiPartMatch = url.match(multiPartRegex);
             const serviceCodeRegex = /(?:(pastegg|dpaste)|(p|d))(?::|\/)([\w,-_]+)$/;
             const serviceCodeMatch = !multiPartMatch ? url.match(serviceCodeRegex) : null;
-            
+
             if (multiPartMatch) {
                 try {
                     const serviceName = multiPartMatch[1] || (multiPartMatch[2] === 'mp' ? 'pastegg' : 'dpaste');
@@ -2113,11 +2134,11 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                         throw new Error("Could not fetch content for the provided code.");
                     }
                 } catch (e) {
-                     const message = e instanceof Error ? e.message : "An unknown error occurred.";
-                     throw new Error(`Import from share link/code failed: ${message}`);
+                    const message = e instanceof Error ? e.message : "An unknown error occurred.";
+                    throw new Error(`Import from share link/code failed: ${message}`);
                 }
             }
-            
+
             const isJson = url.startsWith('{') || url.startsWith('[');
             const looksLikeUrl = url.includes('.') || url.includes(':');
             const looksLikeSimpleCode = /^[a-zA-Z0-9]{4,}$/.test(url);
@@ -2160,11 +2181,11 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                         throw lastError || new Error("Could not fetch content from any share service for the provided code.");
                     }
                 } catch (e) {
-                     const message = e instanceof Error ? e.message : "An unknown error occurred.";
-                     throw new Error(`Import from share link/code failed: ${message}`);
+                    const message = e instanceof Error ? e.message : "An unknown error occurred.";
+                    throw new Error(`Import from share link/code failed: ${message}`);
                 }
             }
-            
+
             if (url.includes('pastebin.com')) {
                 try {
                     const jsonContent = await fetchContentFromPastebinUrl(url);
@@ -2202,11 +2223,11 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     throw new Error(`Import from Pastebin failed: ${message}`);
                 }
             }
-            
+
             if (!url.startsWith('http://') && !url.startsWith('https')) {
                 url = `https://${url}`;
             }
-            
+
             const isYouTubeVideo = (url.includes('youtube.com/watch?v=') || url.includes('youtu.be/')) && !url.includes('list=');
 
             if (isYouTubeVideo && !options?.headless) {
@@ -2232,7 +2253,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     throw new Error(message);
                 }
             }
-            
+
             let newFeed: Feed | null = null;
             const isPlaylist = url.toLowerCase().includes('youtube.com') && new URL(url).searchParams.has('list');
 
@@ -2256,21 +2277,21 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             } else {
                 newFeed = await fetchAndParseRss(url, undefined, handleProxyAttempt, disabledProxies, proxyStats);
             }
-            
+
             if (!newFeed) {
                 throw new Error(`Failed to fetch or parse feed from "${url}".`);
             }
             const isDuplicate = feeds.some(f => f.id === newFeed!.id);
-        
+
             if (isDuplicate) {
                 throw new Error("This feed is already in your subscriptions.");
             }
-        
+
             let feedToAdd: Feed = { ...newFeed, error: null };
-        
+
             setFeeds(prevFeeds => [...prevFeeds, feedToAdd]);
             updateArticlesCache([feedToAdd]);
-        
+
             if (!options?.headless) {
                 handleSelectFeed(feedToAdd.id);
                 setToast({ message: `Added "${feedToAdd.title}". Now add some tags.`, type: 'success' });
@@ -2281,30 +2302,30 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setIsProcessingUrl(false);
         }
     }, [
-        feeds, accessToken, handleProxyAttempt, disabledProxies, proxyStats, handleSelectFeed, 
-        updateArticlesCache, setToast, setFeedToEditTags, handleImportData, addRecentShareCode, 
-        setVideoToAdd, setAddFeedModalOpen, allArticles, handleOpenArticle, urlFromExtension, 
+        feeds, accessToken, handleProxyAttempt, disabledProxies, proxyStats, handleSelectFeed,
+        updateArticlesCache, setToast, setFeedToEditTags, handleImportData, addRecentShareCode,
+        setVideoToAdd, setAddFeedModalOpen, allArticles, handleOpenArticle, urlFromExtension,
         setUrlFromExtension
     ]);
 
     const handleAddFromRecommendation = useCallback(async (url: string, title: string, inheritedTags: string[] = []) => {
         const newFeedData = await fetchAndParseRss(url, title, handleProxyAttempt, disabledProxies, proxyStats, 500);
-        
+
         const isDuplicate = feeds.some(f => f.id === newFeedData.id);
-    
+
         if (isDuplicate) {
             throw new Error(`"${newFeedData.title}" is already in your subscriptions.`);
         }
-    
+
         let feedToAdd: Feed = {
             ...newFeedData,
             tags: inheritedTags.length > 0 ? inheritedTags : undefined,
             error: null,
         };
-    
+
         setFeeds(prevFeeds => [...prevFeeds, feedToAdd]);
         updateArticlesCache([feedToAdd]);
-    
+
         setToast({ message: `Added "${feedToAdd.title}". Now add some tags.`, type: 'success' });
         setFeedToEditTags(feedToAdd);
     }, [feeds, handleProxyAttempt, disabledProxies, proxyStats, setToast, updateArticlesCache, setFeedToEditTags]);
@@ -2323,11 +2344,11 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
     const handleSearch = useCallback((query: string) => {
         const trimmedQuery = query.trim();
-    
+
         const isFullUrl = trimmedQuery.startsWith('http://') || trimmedQuery.startsWith('https');
         const isShareCode = /^(mp:|md:|p:|d\/|multi\/)/.test(trimmedQuery);
         const looksLikeUrl = !trimmedQuery.includes(' ') && trimmedQuery.includes('.') && trimmedQuery.includes('/');
-    
+
         if (isFullUrl || isShareCode || looksLikeUrl) {
             handleAddFeed(trimmedQuery).catch(err => {
                 console.error("Attempt to add from search bar failed:", err);
@@ -2336,7 +2357,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             handleViewChange('search', trimmedQuery);
         }
     }, [handleAddFeed, handleViewChange]);
-    
+
     useEffect(() => {
         const initialView = getInitialView();
         const shouldBypassHomepage = initialView.type === 'article' || initialView.type === 'import' || initialView.type === 'privacy-policy' || initialView.type === 'about' || initialView.type === 'add-feed-from-url';
@@ -2347,7 +2368,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
     const handleCloseArticleModal = useCallback(() => {
         setSelectedArticle(null);
-    
+
         let newHash = `#/${backgroundView.type}`;
         if (backgroundView.value) {
             if (typeof backgroundView.value === 'string') {
@@ -2409,12 +2430,12 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 today.setHours(0, 0, 0, 0);
                 const todayTimestamp = today.getTime();
                 rawArticles = allArticles.filter(a => a.pubDateTimestamp && a.pubDateTimestamp >= todayTimestamp);
-                needsDeduplication = true; 
+                needsDeduplication = true;
                 break;
             default:
                 rawArticles = [];
         }
-        
+
         const tabFilteredArticles = rawArticles.filter(article => {
             const feed = feedsById.get(article.feedId);
             if (!feed) return false;
@@ -2425,7 +2446,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 return !isYouTubeFeed;
             }
         });
-        
+
         const sortArticles = (articles: Article[]): Article[] => {
             const sortByCustomOrder = (order: string[]) => {
                 const orderMap = new Map(order.map((id, index) => [id, index]));
@@ -2475,12 +2496,12 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         if (['favorites', 'published-today', 'readLater', 'history'].includes(viewForFiltering.type) && activeTagFilter) {
             finalArticles = processedArticles.filter(article => article.tags?.includes(activeTagFilter));
         }
-        
+
         return finalArticles;
     }, [backgroundView, feedsById, allArticles, readLaterArticleIds, readArticleIds, articlesById, favoriteFeeds, activeTagFilter, readLaterOrderYt, readLaterOrderRss, tagOrders, favoritesOrderYt, favoritesOrderRss, sidebarTab]);
-    
+
     const articleNavigation = useMemo(() => {
-        if (!selectedArticle) return { hasNextArticle: false, hasPreviousArticle: false, onNextArticle: () => {}, onPreviousArticle: () => {} };
+        if (!selectedArticle) return { hasNextArticle: false, hasPreviousArticle: false, onNextArticle: () => { }, onPreviousArticle: () => { } };
         const currentIndex = articlesForNavigation.findIndex(a => a.id === selectedArticle.id);
         const hasNextArticle = currentIndex >= 0 && currentIndex < articlesForNavigation.length - 1;
         const hasPreviousArticle = currentIndex > 0;
@@ -2511,9 +2532,9 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             if (feed.lastPostTimestamp === 0 && feed.items.length > 0) return false;
             if (feed.lastPostTimestamp === 0) return true;
             return feed.lastPostTimestamp < cutoffTimestamp;
-        }).sort((a,b) => a.lastPostTimestamp - b.lastPostTimestamp);
+        }).sort((a, b) => a.lastPostTimestamp - b.lastPostTimestamp);
     }, [feedsToShowInApp, inactivePeriod]);
-    
+
     useEffect(() => {
         const handleHashChange = async () => {
             setIsViewLoading(true);
@@ -2521,11 +2542,11 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 const newView = getInitialView();
                 setCurrentView(newView);
                 setActiveTagFilter(null);
-                
+
                 if (newView.type !== 'article') {
                     setBackgroundView(newView);
                 }
-                
+
                 if (newView.type === 'feed') {
                     setSelectedFeedId(newView.value || null);
                 } else if (['tag', 'favorites', 'readLater', 'history', 'published-today', 'all-subscriptions', 'search', 'note-folder', 'keyword-articles'].includes(newView.type)) {
@@ -2541,17 +2562,17 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     setUrlFromExtension(newView.value || null);
                     setAddFeedModalOpen(true);
                 }
-                
+
                 if (newView.type === 'article' && newView.value) {
                     setIsResolvingArticleUrl(true);
                     try {
                         const { articleId } = newView.value;
                         let article = articlesById.get(articleId);
-                        
+
                         if (article) {
                             setSelectedArticle(article);
                         } else {
-                             try {
+                            try {
                                 const isLikelyVideo = articleId.length === 11 && !articleId.includes(' ');
                                 if (isLikelyVideo) {
                                     const fetchedArticle = await fetchSingleYouTubeVideoAsArticle(articleId);
@@ -2566,8 +2587,8 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                             }
                         }
                     } catch (e) {
-                         setToast({ message: 'Error loading shared article.', type: 'error' });
-                         window.location.hash = '#/all-subscriptions';
+                        setToast({ message: 'Error loading shared article.', type: 'error' });
+                        window.location.hash = '#/all-subscriptions';
                     } finally {
                         setIsResolvingArticleUrl(false);
                     }
@@ -2643,28 +2664,28 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         const sizeInKB = total / 1024;
         return sizeInKB > 1024 ? `${(sizeInKB / 1024).toFixed(2)} MB` : `${sizeInKB.toFixed(2)} KB`;
     }, []);
-    
+
     const handleClearProxyStats = useCallback(() => { setProxyStats({}); setToast({ message: "Network statistics have been cleared.", type: 'success' }); }, [setToast]);
     const handleToggleProxy = useCallback((proxyName: string, feedType: FeedType) => {
         setDisabledProxies(prev => {
             const compositeKey = `${proxyName}_${feedType}`;
             const newSet = new Set(prev);
             const action = newSet.has(compositeKey) ? 'enabled' : 'disabled';
-            
+
             if (action === 'enabled') {
                 newSet.delete(compositeKey);
             } else {
                 newSet.add(compositeKey);
             }
-            
+
             setToast({ message: `${proxyName} proxy ${action} for ${feedType.toUpperCase()} feeds.`, type: 'success' });
             return newSet;
         });
     }, [setToast]);
-    
+
     const handleGoogleSignOut = useCallback(() => {
         if (accessToken) {
-            google.accounts.oauth2.revoke(accessToken, () => {});
+            google.accounts.oauth2.revoke(accessToken, () => { });
         }
         if (tokenRefreshTimerRef.current) {
             clearTimeout(tokenRefreshTimerRef.current);
@@ -2685,14 +2706,14 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             }
             return { ...article, structuredSummary: summary, sources: sources || [] };
         };
-    
+
         setFeeds(prevFeeds =>
             prevFeeds.map(feed => ({
                 ...feed,
                 items: feed.items.map(item => item.id === articleId ? updateArticle(item) : item),
             }))
         );
-    
+
         setSelectedArticle(prevArticle => prevArticle?.id === articleId ? updateArticle(prevArticle) : prevArticle);
     }, []);
 
@@ -2715,7 +2736,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             if (newArticles.length === 0) console.debug('[AutoSummary] Aborting: No new articles to process.');
             return;
         }
-    
+
         let articlesToConsider = [...newArticles];
         if (isBroadRefresh) {
             const today = new Date();
@@ -2724,16 +2745,16 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             articlesToConsider = articlesToConsider.filter(a => a.pubDateTimestamp && a.pubDateTimestamp >= todayTimestamp);
             console.debug(`[AutoSummary] Broad refresh detected. Filtering to articles published today. Found ${articlesToConsider.length} articles.`);
         }
-        
+
         const videosToSummarize = articlesToConsider
             .filter(a => a.isVideo && !a.summary && !a.structuredSummary && getYouTubeId(a.link))
             .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
-    
+
         console.debug(`[AutoSummary] Found ${videosToSummarize.length} eligible new videos to summarize.`);
         if (videosToSummarize.length === 0) {
             return;
         }
-    
+
         for (const article of videosToSummarize) {
             const videoId = getYouTubeId(article.link)!;
             console.debug(`[AutoSummary] Processing video: "${article.title}" (ID: ${videoId})`);
@@ -2756,7 +2777,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 } else {
                     console.debug(`[AutoSummary] No transcripts found. Falling back to text-based summary.`);
                 }
-                
+
                 console.debug(`[AutoSummary] Attempting fallback summary from title/description for "${article.title}".`);
                 const textForSummary = `Title: ${article.title}\nDescription: ${(article.content || article.description).replace(/<[^>]*>?/gm, '').trim()}`;
                 if (textForSummary.length > 100) {
@@ -2784,7 +2805,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             handleGoogleSignIn({ showConsentPrompt: true });
             throw new Error("Not authenticated for Drive upload.");
         }
-    
+
         if (!options?.silent) {
             setToast({ message: "Uploading data to Google Drive...", type: 'success' });
         }
@@ -2819,14 +2840,14 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             }
         } catch (e: any) {
             if (e.isPermissionError) {
-                 setDriveSyncStatus({ status: 'no_permission', error: e.message });
+                setDriveSyncStatus({ status: 'no_permission', error: e.message });
             }
             throw e;
         }
     }, [
-        accessToken, feeds, readLaterArticleIds, readArticleIds, likedVideoIds, 
-        gridZoomLevel, articleZoomLevel, autoplayMode, articleTags, 
-        readLaterOrderYt, readLaterOrderRss, tagOrders, favoritesOrderYt, favoritesOrderRss, 
+        accessToken, feeds, readLaterArticleIds, readArticleIds, likedVideoIds,
+        gridZoomLevel, articleZoomLevel, autoplayMode, articleTags,
+        readLaterOrderYt, readLaterOrderRss, tagOrders, favoritesOrderYt, favoritesOrderRss,
         notes, noteFolders, driveSyncStatus.fileMetadata, setToast, handleGoogleSignIn
     ]);
 
@@ -2836,12 +2857,12 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             handleGoogleSignIn({ showConsentPrompt: true });
             throw new Error("Not authenticated for Drive download.");
         }
-    
+
         setToast({ message: "Checking Google Drive for data...", type: 'success' });
-    
+
         try {
             const { data, metadata } = await loadDataFromDrive(accessToken);
-    
+
             if (data) {
                 handleImportData(data, { silent: true });
                 setDriveSyncStatus({ status: 'ready', fileMetadata: metadata });
@@ -2851,13 +2872,13 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 setToast({ message: "No sync data found in your Google Drive. Upload data from a device first.", type: 'error' });
             }
         } catch (e: any) {
-             if (e.isPermissionError) {
-                 setDriveSyncStatus({ status: 'no_permission', error: e.message });
+            if (e.isPermissionError) {
+                setDriveSyncStatus({ status: 'no_permission', error: e.message });
             }
             throw e;
         }
     }, [accessToken, handleImportData, setToast, handleGoogleSignIn]);
-    
+
     useEffect(() => {
         if (triggerAutoUpload) {
             handleUploadToDrive({ silent: true }).catch(e => {
@@ -2868,7 +2889,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             });
         }
     }, [triggerAutoUpload, handleUploadToDrive, setToast]);
-    
+
     const isYouTubeFeed = (feed: Feed) => feed.url.toLowerCase().includes('youtube.com');
 
     const batchRefreshHandler = useCallback(async (
@@ -2880,28 +2901,28 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: `No feeds to refresh in ${viewTitle}.`, type: 'error' });
             return;
         }
-    
+
         setIsRefreshingAll(true);
         setRefreshProgress(1);
 
         setToast({ message: `Refreshing ${viewTitle}...`, type: 'success' });
-        
+
         try {
             const totalFeeds = feedsToRefresh.length;
             let processedCount = 0;
             let totalFailedCount = 0;
             const allNewArticles: Article[] = [];
-    
+
             const processBatchResults = (results: { status: 'fulfilled' | 'rejected', value?: Feed, reason?: any, originalFeed: Feed }[]) => {
                 const successfulFeeds: Feed[] = [];
                 const failedFeeds: (Feed & { error: string })[] = [];
-                
+
                 results.forEach(result => {
                     const originalFeed = result.originalFeed;
                     if (result.status === 'fulfilled' && result.value) {
                         const newFeedData = result.value;
-                         if (newFeedData.items.length === 0 && originalFeed.items.length > 0) {
-                             failedFeeds.push({ ...originalFeed, error: 'Refresh returned an empty feed. Old articles kept.' });
+                        if (newFeedData.items.length === 0 && originalFeed.items.length > 0) {
+                            failedFeeds.push({ ...originalFeed, error: 'Refresh returned an empty feed. Old articles kept.' });
                             return;
                         }
 
@@ -2915,7 +2936,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
                         const combinedArticles = [...newArticlesInFeed, ...originalFeed.items];
                         const deduplicatedArticles = Array.from(new Map(combinedArticles.map(a => [a.id, a])).values());
-                        
+
                         const sortedAndCleanedArticles = deduplicatedArticles
                             .map(({ order, ...rest }) => rest)
                             .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
@@ -2934,21 +2955,21 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                         failedFeeds.push({ ...originalFeed, error });
                     }
                 });
-    
+
                 setFeeds(currentFeeds => {
                     const updatedFeedsMap = new Map(currentFeeds.map(f => [f.id, f]));
                     successfulFeeds.forEach(f => updatedFeedsMap.set(f.id, f));
                     failedFeeds.forEach(f => {
                         const existing = updatedFeedsMap.get(f.id);
-                        if(existing) updatedFeedsMap.set(f.id, { ...existing, error: f.error });
+                        if (existing) updatedFeedsMap.set(f.id, { ...existing, error: f.error });
                     });
                     return Array.from(updatedFeedsMap.values());
                 });
-    
+
                 if (successfulFeeds.length > 0) {
                     updateArticlesCache(successfulFeeds);
                 }
-    
+
                 processedCount += results.length;
                 totalFailedCount += failedFeeds.length;
                 setRefreshProgress((processedCount / totalFeeds) * 100);
@@ -2959,7 +2980,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
             for (let i = 0; i < feedsToRefresh.length; i += CHUNK_SIZE) {
                 const chunk = feedsToRefresh.slice(i, i + CHUNK_SIZE);
-        
+
                 const promises = chunk.map(async (feed) => {
                     try {
                         const isYt = isYouTubeFeed(feed);
@@ -2994,28 +3015,28 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                         return { status: 'rejected' as const, reason, originalFeed: feed };
                     }
                 });
-                
+
                 processBatchResults(await Promise.all(promises));
 
                 if (i + CHUNK_SIZE < totalFeeds) {
                     await wait(refreshDelaySeconds * 1000);
                 }
             }
-    
+
             const successCount = totalFeeds - totalFailedCount;
             if (totalFailedCount > 0) {
                 setToast({ message: `Refresh complete. ${successCount} succeeded, ${totalFailedCount} failed.`, type: 'error' });
             } else {
                 setToast({ message: `Refresh complete. All ${successCount} feeds updated.`, type: 'success' });
             }
-            
+
             const isBroadRefresh = viewTitle === 'all feeds' || viewTitle === 'favorite feeds';
             runInBackgroundSummaryGeneration(allNewArticles, isBroadRefresh);
 
             if (autoUploadAfterRefresh) {
                 setTriggerAutoUpload(true);
             }
-    
+
         } catch (e) {
             const error = e instanceof Error ? e.message : 'An unknown error occurred.';
             setToast({ message: `An unexpected error occurred during refresh: ${error}`, type: 'error' });
@@ -3027,7 +3048,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
     const handleExecuteRefresh = useCallback(async (options: RefreshOptions) => {
         setIsRefreshOptionsModalOpen(false);
-        
+
         let feedsToRefresh: Feed[] = [];
         let viewTitle = '';
 
@@ -3038,12 +3059,12 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             const ytFeedsToRefresh = options.yt ? feeds.filter(isYouTubeFeed) : [];
             const nonYtFeedsToRefresh = options.nonYt ? feeds.filter(f => !isYouTubeFeed(f)) : [];
             feedsToRefresh = [...ytFeedsToRefresh, ...nonYtFeedsToRefresh];
-            
+
             if (options.yt && options.nonYt) viewTitle = 'all feeds';
             else if (options.yt) viewTitle = 'all YouTube feeds';
             else if (options.nonYt) viewTitle = 'all non-YouTube feeds';
         }
-        
+
         if (feedsToRefresh.length > 0) {
             await batchRefreshHandler(feedsToRefresh, viewTitle, { ytMax: options.ytMax, nonYtMax: options.nonYtMax });
         } else {
@@ -3054,7 +3075,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     const handleRefreshSingleFeed = useCallback(async (feedId: string) => {
         const feedToRefresh = feeds.find(f => f.id === feedId);
         if (!feedToRefresh) return;
-    
+
         setRefreshingFeedId(feedId);
         try {
             let newFeedData: Feed | null = null;
@@ -3078,13 +3099,13 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     newFeedData = await fetchAndParseRss(feedToRefresh.url, feedToRefresh.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
                 }
             } else {
-                 newFeedData = await fetchAndParseRss(feedToRefresh.url, feedToRefresh.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
+                newFeedData = await fetchAndParseRss(feedToRefresh.url, feedToRefresh.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
             }
-            
+
             if (newFeedData.items.length === 0 && feedToRefresh.items && feedToRefresh.items.length > 0) {
                 throw new Error("Refresh failed: The source returned an empty feed. Old articles have been kept.");
             }
-            
+
             newFeedData.items.forEach(item => {
                 item.feedId = feedToRefresh.id;
             });
@@ -3111,17 +3132,17 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setFeeds(currentFeeds => {
                 return currentFeeds.map(f => f.id === feedId ? updatedFeed : f);
             });
-    
+
             updateArticlesCache([updatedFeed]);
-    
+
             setToast({ message: `Refreshed "${updatedFeed.title}"`, type: 'success' });
-            
+
             runInBackgroundSummaryGeneration(newArticles, false);
 
             if (autoUploadAfterRefresh) {
                 setTriggerAutoUpload(true);
             }
-    
+
         } catch (e: any) {
             const error = e instanceof Error ? e.message : 'An unknown error occurred.';
             setFeeds(currentFeeds => currentFeeds.map(f => f.id === feedId ? { ...f, error } : f));
@@ -3149,7 +3170,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     }, [currentView, feeds, favoriteFeeds, batchRefreshHandler, setToast]);
 
     const handleRefreshMissingIcons = useCallback(async () => {
-        const feedsToRefresh = feeds.filter(f => 
+        const feedsToRefresh = feeds.filter(f =>
             f.url.toLowerCase().includes('youtube.com') && !f.iconUrl
         );
         if (feedsToRefresh.length === 0) {
@@ -3215,14 +3236,14 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: `Tag "#${newTagName}" already exists.`, type: 'error' });
             return;
         }
-    
+
         setFeeds(prevFeeds => prevFeeds.map(feed => {
             if (!feed.tags?.includes(oldName)) return feed;
             const newTags = new Set(feed.tags.filter(t => t !== oldName));
             newTags.add(newTagName);
             return { ...feed, tags: Array.from(newTags).sort() };
         }));
-    
+
         setArticleTags(prevArticleTags => {
             const newArticleTags = new Map<string, string[]>();
             for (const [articleId, tags] of prevArticleTags.entries()) {
@@ -3236,33 +3257,33 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             }
             return newArticleTags;
         });
-        
+
         setTagOrders(prevTagOrders => {
             const newTagOrders = { ...prevTagOrders };
             const keysToUpdate = Object.keys(newTagOrders).filter(key => key.endsWith(`-${oldName}`) || key === oldName);
-    
+
             for (const key of keysToUpdate) {
                 const newKey = key.replace(oldName, newTagName);
                 newTagOrders[newKey] = newTagOrders[key];
                 delete newTagOrders[key];
             }
-            
+
             return newTagOrders;
         });
-    
+
         setToast({ message: `Tag "#${oldName}" renamed to "#${newTagName}".`, type: 'success' });
-    
+
         if (currentView.type === 'tag') {
             let currentTagName: string;
             let currentTagType: 'youtube' | 'rss' | undefined;
-    
+
             if (typeof currentView.value === 'object' && currentView.value.name) {
                 currentTagName = currentView.value.name;
                 currentTagType = currentView.value.type;
             } else {
                 currentTagName = currentView.value;
             }
-    
+
             if (currentTagName === oldName) {
                 if (currentTagType) {
                     handleViewChange('tag', { name: newTagName, type: currentTagType });
@@ -3271,7 +3292,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 }
             }
         }
-    
+
     }, [feeds, articleTags, tagOrders, allTags, currentView, setToast, handleViewChange]);
 
     const handleBulkDeleteFeeds = useCallback((feedIds: Set<string>) => {
@@ -3320,7 +3341,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             return newSet;
         });
     }, [articlesById, feedsById]);
-    
+
     const handleGenerateDigest = useCallback(() => {
         if (selectedArticleIdsForBatch.size === 0) {
             setToast({ message: 'Please select one or more articles or videos to create a digest from.', type: 'error' });
@@ -3340,16 +3361,16 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: 'Please select one or more articles to create an EPUB.', type: 'error' });
             return;
         }
-    
+
         const selectedArticles = Array.from(selectedArticleIdsForBatch)
             .map(id => articlesById.get(id))
             .filter((a): a is Article => !!a);
-        
+
         if (selectedArticles.length === 0) {
             setToast({ message: 'Could not find selected articles.', type: 'error' });
             return;
         }
-    
+
         const date = new Date().toISOString().split('T')[0];
         setEpubDefaults({
             title: `Media-Feeder Export - ${new Date().toLocaleDateString()}`,
@@ -3359,17 +3380,17 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         setArticlesForEpub(selectedArticles);
         setIsEpubSettingsModalOpen(true);
     }, [selectedArticleIdsForBatch, articlesById, setToast]);
-    
+
     const handleGenerateEbookFromView = useCallback(async () => {
         if (articlesToShow.length === 0) {
             setToast({ message: 'There are no articles in the current view to create an EPUB.', type: 'error' });
             return;
         }
-    
+
         const date = new Date().toISOString().split('T')[0];
         const safeHeaderTitle = headerTitle.replace(/[^a-zA-Z0-9 ]/g, '');
         const safeFileName = safeHeaderTitle.replace(/\s+/g, '_');
-    
+
         setEpubDefaults({
             title: `Media-Feeder - ${safeHeaderTitle}`,
             filename: `media-feeder_${safeFileName}_${date}`,
@@ -3384,11 +3405,11 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: 'No articles selected for summary generation.', type: 'error' });
             return;
         }
-    
+
         setIsGeneratingSummaries(true);
         setSummaryGenerationProgress(0);
         setToast({ message: `Checking selected articles for summarization eligibility...`, type: 'success' });
-    
+
         const selectedVideos = Array.from(selectedArticleIdsForBatch)
             .map(id => articlesById.get(id))
             .filter((a): a is Article => !!a && !a.summary && !a.structuredSummary && !!a.isVideo && !!getYouTubeId(a.link));
@@ -3429,24 +3450,24 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         }
 
         setToast({ message: `Found ${articlesToSummarize.length} videos with transcripts. Starting summarization...`, type: 'success' });
-        
+
         let summarizedCount = 0;
         const totalToSummarize = articlesToSummarize.length;
-    
+
         for (const { article, captionUrl } of articlesToSummarize) {
             try {
                 const transcriptLines = await fetchAndParseTranscript(captionUrl);
-    
+
                 const { summary, sources } = await summarizeYouTubeVideo(
                     article.title,
                     transcriptLines,
                     aiModel,
                     defaultAiLanguage
                 );
-    
+
                 handleSummaryGenerated(article.id, summary, sources);
                 summarizedCount++;
-    
+
             } catch (error) {
                 console.error(`Failed to generate summary for "${article.title}":`, error);
                 const message = error instanceof Error ? error.message : "An unknown error occurred.";
@@ -3461,7 +3482,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 setSummaryGenerationProgress((processedCount / totalToSummarize) * 100);
             }
         }
-    
+
         let finalMessage = `Generated summaries for ${summarizedCount} of ${totalToSummarize} eligible videos.`;
         if (skippedCount > 0) {
             finalMessage += ` ${skippedCount} were skipped.`;
@@ -3485,20 +3506,20 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: 'No articles in the current view to summarize.', type: 'error' });
             return;
         }
-    
+
         setIsGeneratingSummaries(true);
         setSummaryGenerationProgress(0);
         setToast({ message: `Checking articles in view for summarization eligibility...`, type: 'success' });
-    
+
         const eligibleVideos = articlesToShow
             .filter((a): a is Article => !!a && !a.summary && !a.structuredSummary && !!a.isVideo && !!getYouTubeId(a.link));
-    
+
         if (eligibleVideos.length === 0) {
             setToast({ message: 'No eligible videos found in this view. Summaries can be generated for YouTube videos that do not already have a summary.', type: 'error' });
             setIsGeneratingSummaries(false);
             return;
         }
-    
+
         let skippedCount = 0;
         const articlesToSummarize: { article: Article, captionUrl: string }[] = [];
         const checkBatchSize = 10;
@@ -3523,42 +3544,42 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 }
                 return null;
             });
-    
+
             const results = await Promise.all(choicePromises);
             articlesToSummarize.push(...results.filter((r): r is { article: Article, captionUrl: string } => r !== null));
             setSummaryGenerationProgress(((i + batch.length) / eligibleVideos.length) * 20);
         }
-    
+
         if (articlesToSummarize.length === 0) {
             setToast({ message: `None of the eligible videos in this view have transcripts available for summarization. ${skippedCount > 0 ? `${skippedCount} were skipped for having short transcripts.` : ''}`.trim(), type: 'error' });
             setIsGeneratingSummaries(false);
             setSummaryGenerationProgress(null);
             return;
         }
-    
+
         setToast({ message: `Found ${articlesToSummarize.length} videos with transcripts. Starting summarization...`, type: 'success' });
-        
+
         let summarizedCount = 0;
         const totalToSummarize = articlesToSummarize.length;
-    
+
         for (const { article, captionUrl } of articlesToSummarize) {
             try {
                 const transcriptLines = await fetchAndParseTranscript(captionUrl);
-    
+
                 const { summary, sources } = await summarizeYouTubeVideo(
                     article.title,
                     transcriptLines,
                     aiModel,
                     defaultAiLanguage
                 );
-    
+
                 handleSummaryGenerated(article.id, summary, sources);
                 summarizedCount++;
-    
+
             } catch (error) {
                 console.error(`Failed to generate summary for "${article.title}":`, error);
                 const message = error instanceof Error ? error.message : "An unknown error occurred.";
-                 if (!message.includes('too short')) {
+                if (!message.includes('too short')) {
                     setToast({ message: `Failed to summarize "${article.title}": ${message}`, type: 'error' });
                 } else {
                     skippedCount++;
@@ -3569,7 +3590,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 setSummaryGenerationProgress(baseProgress + ((processedCount / totalToSummarize) * 80));
             }
         }
-    
+
         let finalMessage = `Generated summaries for ${summarizedCount} of ${totalToSummarize} eligible videos.`;
         if (skippedCount > 0) {
             finalMessage += ` ${skippedCount} were skipped.`;
@@ -3588,18 +3609,18 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     const handleExecuteDetailedDigest = useCallback(async (selectedArticles: Article[], targetLanguage: string) => {
         setIsDigestConfigModalOpen(false);
         setInitialDigestLanguage(targetLanguage);
-    
+
         if (selectedArticles.length === 0) {
             setToast({ message: 'No items were selected to create a digest from.', type: 'error' });
             return;
         }
-    
+
         setIsDigestModalOpen(true);
         setDigestState({ digest: null, type: 'detailed', error: null, isLoading: true, loadingMessage: `Summarizing ${selectedArticles.length} selected items...` });
-    
+
         try {
             const topItems = selectedArticles.slice(0, 10);
-            
+
             const summaryPromises = topItems.map(async (article): Promise<DetailedDigestItem | null> => {
                 if (article.structuredSummary) {
                     return { title: article.title, link: article.link, summary: article.structuredSummary, sources: article.sources || [] };
@@ -3607,7 +3628,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 if (article.summary) {
                     return { title: article.title, link: article.link, summary: article.summary, sources: article.sources || [] };
                 }
-                
+
                 if (article.isVideo && article.link) {
                     const videoId = getYouTubeId(article.link);
                     if (videoId) {
@@ -3641,11 +3662,11 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
             const settledSummaries = await Promise.all(summaryPromises);
             const successfulSummaries = settledSummaries.filter((s): s is DetailedDigestItem => s !== null);
-            
+
             if (successfulSummaries.length === 0) {
                 throw new Error("Failed to generate a summary for any of the selected items.");
             }
-            
+
             const digest: DetailedDigest = successfulSummaries;
 
             setDigestState({ digest, type: 'detailed', error: null, isLoading: false, loadingMessage: null });
@@ -3657,7 +3678,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     const handleExecuteThematicDigest = useCallback(async (selectedArticles: Article[], targetLanguage: string) => {
         setIsDigestConfigModalOpen(false);
         setInitialDigestLanguage(targetLanguage);
-        
+
         if (selectedArticles.length === 0) {
             setToast({ message: 'No items were selected to create a digest from.', type: 'error' });
             return;
@@ -3717,7 +3738,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             });
 
         } catch (e) {
-             setRecommendationsState(prev => ({ ...prev, error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false }));
+            setRecommendationsState(prev => ({ ...prev, error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false }));
         }
     }, [feeds, readArticleIds, articlesById, aiModel, recommendationsState.recommendations]);
 
@@ -3734,7 +3755,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         } else {
             feedsToExport = feeds;
         }
-        
+
         const articlesByFeedUrl: Record<string, Article[]> = {};
         const feedsForJson = feedsToExport.map(feed => {
             const { id, items, error, ...rest } = feed;
@@ -3766,8 +3787,8 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         setToast({ message: 'Backup file has been created.', type: 'success' });
         setIsExportModalOpen(false);
     }, [
-        feeds, favoriteFeeds, readLaterArticleIds, gridZoomLevel, articleZoomLevel, 
-        autoplayMode, articleTags, feedsByTag, readLaterOrderYt, readLaterOrderRss, 
+        feeds, favoriteFeeds, readLaterArticleIds, gridZoomLevel, articleZoomLevel,
+        autoplayMode, articleTags, feedsByTag, readLaterOrderYt, readLaterOrderRss,
         tagOrders, favoritesOrderYt, favoritesOrderRss, setToast, setIsExportModalOpen,
         notes, noteFolders
     ]);
@@ -3780,10 +3801,10 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     }, [feeds, setExportTextContent, setIsExportTextModalOpen]);
 
     const handleOpenClearDataModal = useCallback(() => setIsClearDataModalOpen(true), []);
-    
+
     const handleClearArticles = useCallback((options: { clearYT: boolean; clearNonYT: boolean; keepReadLater: boolean; }) => {
         const { clearYT, clearNonYT, keepReadLater } = options;
-        
+
         let target = '';
         if (clearYT && !clearNonYT) target = 'YouTube';
         else if (!clearYT && clearNonYT) target = 'Non-YouTube';
@@ -3804,7 +3825,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 }
             });
 
-            setFeeds(prevFeeds => 
+            setFeeds(prevFeeds =>
                 prevFeeds.map(feed => {
                     const shouldClearThisFeed = (clearYT && isYouTubeFeed(feed)) || (clearNonYT && !isYouTubeFeed(feed));
                     if (shouldClearThisFeed) {
@@ -3813,7 +3834,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     return feed;
                 })
             );
-            
+
             setReadArticleIds(prev => {
                 const newMap = new Map(prev);
                 articleIdsToDelete.forEach(id => newMap.delete(id));
@@ -3829,7 +3850,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: `${target} articles and history have been cleared.`, type: 'success' });
         }
     }, [feeds, readLaterArticleIds, setToast]);
-    
+
     const handleFactoryReset = useCallback(() => {
         if (window.confirm("Are you sure you want to factory reset the app? This will delete ALL your subscriptions, articles, tags, and settings. This is irreversible.")) {
             localStorage.clear();
@@ -3843,7 +3864,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: "Reading history cleared.", type: 'success' });
         }
     }, [setToast]);
-    
+
     const handleClearReadLater = useCallback(() => {
         if (window.confirm("Are you sure you want to clear all articles from your Read Later list?")) {
             setReadLaterArticleIds(new Set());
@@ -3863,7 +3884,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: "All articles marked as read.", type: 'success' });
         }
     }, [allArticles, setToast]);
-    
+
     const handleMarkAllRead = useCallback(() => {
         if (articlesToShow.length === 0) return;
         if (window.confirm(`Are you sure you want to mark all ${articlesToShow.length} articles in this view as read?`)) {
@@ -3903,12 +3924,12 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 return feed;
             });
         });
-        
+
         setReadArticleIds(prev => { const newMap = new Map(prev); newMap.delete(articleId); return newMap; });
         setReadLaterArticleIds(prev => { const newSet = new Set(prev); newSet.delete(articleId); return newSet; });
         setArticleTags(prev => { const newMap = new Map(prev); newMap.delete(articleId); return newMap; });
-        
-        if(selectedArticle?.id === articleId) {
+
+        if (selectedArticle?.id === articleId) {
             handleCloseArticleModal();
         }
 
@@ -3921,7 +3942,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
         const idsToDelete = selectedArticleIdsForBatch;
 
-        setFeeds(prevFeeds => 
+        setFeeds(prevFeeds =>
             prevFeeds.map(feed => ({
                 ...feed,
                 items: feed.items.filter(item => !idsToDelete.has(item.id))
@@ -3931,7 +3952,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         setReadArticleIds(prev => { const newMap = new Map(prev); idsToDelete.forEach(id => newMap.delete(id)); return newMap; });
         setReadLaterArticleIds(prev => { const newSet = new Set(prev); idsToDelete.forEach(id => newSet.delete(id)); return newSet; });
         setArticleTags(prev => { const newMap = new Map(prev); idsToDelete.forEach(id => newMap.delete(id)); return newMap; });
-        
+
         setSelectedArticleIdsForBatch(new Set());
         setToast({ message: `Deleted ${idsToDelete.size} articles.`, type: 'success' });
     }, [selectedArticleIdsForBatch, setToast]);
@@ -3941,7 +3962,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             const newOrder = [...currentOrder];
             const sourceIndex = newOrder.indexOf(sourceId);
             if (sourceIndex > -1) newOrder.splice(sourceIndex, 1);
-            
+
             if (targetId === null) {
                 newOrder.push(sourceId);
             } else {
@@ -3951,7 +3972,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             }
             setOrder(newOrder);
         };
-    
+
         if (view.type === 'readLater') {
             const source = view.value || 'yt';
             if (source === 'yt') updateOrder(readLaterOrderYt, setReadLaterOrderYt);
@@ -3969,22 +3990,24 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 tagKey = tagValue;
             }
             if (tagKey) {
-                setTagOrders(prev => ({ ...prev, [tagKey!]: (currentOrder => {
-                    const newOrder = [...(currentOrder || [])];
-                    const sourceIndex = newOrder.indexOf(sourceId);
-                    if (sourceIndex > -1) newOrder.splice(sourceIndex, 1);
-                    if (targetId === null) newOrder.push(sourceId);
-                    else {
-                        const targetIndex = newOrder.indexOf(targetId);
-                        if (targetIndex > -1) newOrder.splice(targetIndex, 0, sourceId);
-                        else newOrder.unshift(sourceId);
-                    }
-                    return newOrder;
-                })(prev[tagKey!])}));
+                setTagOrders(prev => ({
+                    ...prev, [tagKey!]: (currentOrder => {
+                        const newOrder = [...(currentOrder || [])];
+                        const sourceIndex = newOrder.indexOf(sourceId);
+                        if (sourceIndex > -1) newOrder.splice(sourceIndex, 1);
+                        if (targetId === null) newOrder.push(sourceId);
+                        else {
+                            const targetIndex = newOrder.indexOf(targetId);
+                            if (targetIndex > -1) newOrder.splice(targetIndex, 0, sourceId);
+                            else newOrder.unshift(sourceId);
+                        }
+                        return newOrder;
+                    })(prev[tagKey!])
+                }));
             }
         }
     }, [readLaterOrderYt, readLaterOrderRss, favoritesOrderYt, favoritesOrderRss, tagOrders]);
-    
+
     const handleOpenRelatedModal = useCallback((feedId: string) => {
         setRelatedSourceFeedId(feedId);
         setIsRelatedModalOpen(true);
@@ -4029,7 +4052,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         }));
         setToast({ message: `${feedIds.size} feeds updated successfully.`, type: 'success' });
     }, [setToast]);
-    
+
     const handleOpenBulkEdit = useCallback(() => {
         setBulkEditModalConfig({ isOpen: true, mode: 'add' });
     }, []);
@@ -4081,7 +4104,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             return currentIndex > 0 ? ZOOM_LEVELS[currentIndex - 1] : prev;
         });
     }, []);
-    
+
     const handleZoomOut = useCallback(() => {
         setGridZoomLevel(prev => {
             const currentIndex = ZOOM_LEVELS.indexOf(prev);
@@ -4095,7 +4118,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             return currentIndex > 0 ? ZOOM_LEVELS[currentIndex - 1] : prev;
         });
     }, []);
-    
+
     const handleArticleZoomOut = useCallback(() => {
         setArticleZoomLevel(prev => {
             const currentIndex = ZOOM_LEVELS.indexOf(prev);
@@ -4110,12 +4133,12 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
     const handleClearAllTags = useCallback(() => {
         if (window.confirm("Are you sure you want to remove all tags from all feeds? This cannot be undone.")) {
-            setFeeds(prevFeeds => prevFeeds.map(feed => ({...feed, tags: undefined})));
+            setFeeds(prevFeeds => prevFeeds.map(feed => ({ ...feed, tags: undefined })));
             setArticleTags(new Map());
             setToast({ message: "All tags have been cleared from all feeds.", type: 'success' });
         }
     }, [setToast]);
-    
+
     const handleToggleAutoplayNext = useCallback(() => setAutoplayMode(prev => prev === 'on' ? 'off' : 'on'), []);
     const handleToggleAutoplayRandom = useCallback(() => setAutoplayMode(prev => prev === 'random' ? 'off' : 'random'), []);
     const handleToggleAutoplayRepeat = useCallback(() => setAutoplayMode(prev => prev === 'repeat' ? 'off' : 'repeat'), []);
@@ -4133,7 +4156,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 items: [],
                 error: null,
             }));
-        
+
         if (newFeeds.length > 0) {
             setFeeds(prev => [...prev, ...newFeeds]);
             setToast({ message: `Successfully added ${newFeeds.length} new feeds. Refreshing them now...`, type: 'success' });
@@ -4142,7 +4165,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: "All channels from the bundle are already in your subscriptions.", type: 'success' });
         }
     }, [feeds, setToast, batchRefreshHandler]);
-    
+
     const handleFetchYouTubeSubscriptions = useCallback(async () => {
         if (!accessToken) {
             setToast({ message: "Please sign in to Google to import subscriptions.", type: 'error' });
@@ -4165,7 +4188,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
 
     const handleAddYouTubeChannels = useCallback(async (subscriptions: YouTubeSubscription[]) => {
         if (subscriptions.length === 0) return;
-        
+
         const newFeedsData = subscriptions.map((sub): Omit<Feed, 'id' | 'items' | 'error'> => ({
             url: `https://www.youtube.com/channel/${sub.channelId}/home`,
             title: sub.title,
@@ -4226,7 +4249,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 let newTags: Set<string>;
                 if (mode === 'add') newTags = new Set([...currentTags, ...tagsToApply]);
                 else newTags = tagsToApply;
-                
+
                 const sortedTags = Array.from(newTags).sort();
                 if (sortedTags.length > 0) newMap.set(id, sortedTags);
                 else newMap.delete(id);
@@ -4266,7 +4289,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             endDemo();
         }
     }, [demoStep, handleViewChange, handleSelectFeed, endDemo, feeds]);
-    
+
     const handleOpenNoteEditor = useCallback((note?: Note, initialContent?: { title: string, content: string, sourceArticleIds: { feedId: string, articleId: string }[] }) => {
         setNoteToEdit(note || null);
         setInitialNoteContent(initialContent || null);
@@ -4325,7 +4348,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             setToast({ message: "Folder deleted.", type: 'success' });
         }
     }, [setToast]);
-    
+
     const handleSaveSummaryAsNote = useCallback(async (article: Article) => {
         if (!article.summary && !article.structuredSummary) {
             setToast({ message: 'No AI summary available to save.', type: 'error' });
@@ -4349,7 +4372,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         if (article.link) {
             summaryContent += `\n\n---\n\n**Original Source:** [${article.title}](${article.link})`;
         }
-        
+
         handleOpenNoteEditor(undefined, {
             title: `Note for: ${article.title}`,
             content: summaryContent,
@@ -4373,12 +4396,12 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                     noteContent += `### Overall Summary\n${item.summary.overallSummary}\n\n`;
                     if (item.summary.sections && item.summary.sections.length > 0) {
                         noteContent += `### Key Moments\n`;
-                        noteContent += item.summary.sections.map(section => 
+                        noteContent += item.summary.sections.map(section =>
                             `- **[${formatTranscriptTime(section.timestamp)}](${item.link}&t=${Math.floor(section.timestamp)}s) - ${section.title}**: ${section.summary}`
                         ).join('\n') + '\n\n';
                     }
                 }
-                 if (item.sources && item.sources.length > 0) {
+                if (item.sources && item.sources.length > 0) {
                     noteContent += `**Sources:**\n`;
                     noteContent += item.sources.map(source => `- [${source.title || source.uri}](${source.uri})`).join('\n') + '\n\n';
                 }
@@ -4424,7 +4447,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 sourceArticleIds: articlesToShow.map(a => ({ feedId: a.feedId, articleId: a.id }))
             });
         } catch (e) {
-            setToast({ message: `Failed to save view as note: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error'});
+            setToast({ message: `Failed to save view as note: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' });
         } finally {
             setIsSavingViewAsNote(false);
         }
@@ -4440,7 +4463,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
             const selectedArticles = Array.from(selectedArticleIdsForBatch)
                 .map(id => articlesById.get(id))
                 .filter((a): a is Article => !!a);
-            
+
             const content = await generateMarkdownForMultipleArticles(selectedArticles);
             handleOpenNoteEditor(undefined, {
                 title: `Note for selection of ${selectedArticles.length} articles`,
@@ -4448,7 +4471,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
                 sourceArticleIds: selectedArticles.map(a => ({ feedId: a.feedId, articleId: a.id }))
             });
         } catch (e) {
-            setToast({ message: `Failed to save selection as note: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error'});
+            setToast({ message: `Failed to save selection as note: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' });
         } finally {
             setIsSavingSelectionAsNote(false);
         }
@@ -4488,7 +4511,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
         setRefreshModalInitialState(initialState || null);
         setIsRefreshOptionsModalOpen(true);
     }, []);
-    
+
     const handleSuccessfulApiCall = useCallback(() => {
         if (isAiDisabled) {
             setIsAiDisabled(false);
@@ -4540,7 +4563,7 @@ export const AppProvider: FC<{children: ReactNode}> = ({ children }) => {
     useEffect(() => { safeSetLocalStorage(NOTES_COLLAPSED_KEY, isNotesCollapsed); }, [isNotesCollapsed, safeSetLocalStorage]);
     useEffect(() => { safeSetLocalStorage(TRENDING_KEYWORDS_KEY, trendingKeywords); }, [trendingKeywords, safeSetLocalStorage]);
     useEffect(() => { safeSetLocalStorage(AI_DISABLED_KEY, isAiDisabled); }, [isAiDisabled, safeSetLocalStorage]);
-    
+
     const contextValue: AppContextType = {
         feeds, isInitialLoad, isViewLoading, selectedFeedId, selectedArticle, setSelectedArticle,
         currentView, contentView, readArticleIds, readLaterArticleIds, likedVideoIds,
