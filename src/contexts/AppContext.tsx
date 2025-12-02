@@ -535,9 +535,18 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const [accessToken, setAccessToken] = useState<string | null>(() => {
         const token = localStorage.getItem('gapi_access_token');
         const expiresAt = localStorage.getItem('gapi_access_token_expires_at');
-        if (token && expiresAt && Date.now() < parseInt(expiresAt, 10)) {
+
+        // Helper to check if token is expired
+        const isExpired = (expiresAtStr: string | null): boolean => {
+            if (!expiresAtStr) return true;
+            return Date.now() >= parseInt(expiresAtStr, 10);
+        };
+
+        if (token && expiresAt && !isExpired(expiresAt)) {
             return token;
         }
+
+        // Clear expired or invalid tokens
         localStorage.removeItem('gapi_access_token');
         localStorage.removeItem('gapi_access_token_expires_at');
         localStorage.removeItem('gapi_user_profile');
@@ -578,6 +587,18 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
             return;
         }
 
+        // Proactive token validation - check if token is expired before API call
+        const storedExpiresAt = localStorage.getItem('gapi_access_token_expires_at');
+        if (storedExpiresAt && Date.now() >= parseInt(storedExpiresAt, 10)) {
+            console.log('Token expired before API call. Attempting refresh...');
+            if (!isReAuthingRef.current) {
+                isReAuthingRef.current = true;
+                queuedLikeRef.current = { article, isAutoLike: options?.isAutoLike || false };
+                handleGoogleSignIn({ isSilent: true });
+            }
+            return;
+        }
+
         try {
             await likeYouTubeVideo(videoId, accessToken);
             setLikedVideoIds(prev => new Set(prev).add(videoId));
@@ -602,6 +623,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         handleLikeVideoRef.current = handleLikeVideo;
     }, [handleLikeVideo]);
 
+    const silentRefreshRetryCountRef = useRef(0);
+    const maxSilentRefreshRetries = 3;
+
     useEffect(() => {
         const checkGsi = setInterval(() => {
             if (window.google && window.google.accounts) {
@@ -623,6 +647,26 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                             if (tokenResponse.error !== 'popup_closed_by_user' && tokenResponse.error !== 'access_denied' && !isSilentAuthRef.current) {
                                 setToast({ message: `Sign-in failed: ${tokenResponse.error_description || tokenResponse.error}`, type: 'error' });
                             }
+
+                            // Handle silent refresh failures with retry
+                            if (isSilentAuthRef.current && silentRefreshRetryCountRef.current < maxSilentRefreshRetries) {
+                                silentRefreshRetryCountRef.current++;
+                                const retryDelay = Math.min(1000 * Math.pow(2, silentRefreshRetryCountRef.current - 1), 10000);
+                                console.warn(`Silent refresh failed (attempt ${silentRefreshRetryCountRef.current}/${maxSilentRefreshRetries}). Retrying in ${retryDelay}ms...`);
+
+                                setTimeout(() => {
+                                    handleGoogleSignIn({ isSilent: true });
+                                }, retryDelay);
+                            } else if (isSilentAuthRef.current) {
+                                // All retries exhausted
+                                console.error('Silent refresh failed after all retries. User will need to sign in manually.');
+                                setAccessToken(null);
+                                setUserProfile(null);
+                                localStorage.removeItem('gapi_access_token');
+                                localStorage.removeItem('gapi_access_token_expires_at');
+                                localStorage.removeItem('gapi_user_profile');
+                            }
+
                             queuedLikeRef.current = null;
                             isSilentAuthRef.current = false;
                             return;
@@ -637,8 +681,12 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                             localStorage.setItem('gapi_access_token_expires_at', expiresAt.toString());
                             setAccessToken(newAccessToken);
 
+                            // Reset retry counter on successful refresh
+                            silentRefreshRetryCountRef.current = 0;
+
+                            // Setup auto-refresh timer
                             if (tokenRefreshTimerRef.current) clearTimeout(tokenRefreshTimerRef.current);
-                            const refreshTimeout = expiresIn - 5 * 60 * 1000;
+                            const refreshTimeout = expiresIn - 5 * 60 * 1000; // Refresh 5 minutes before expiry
                             tokenRefreshTimerRef.current = window.setTimeout(() => {
                                 handleGoogleSignIn({ isSilent: true });
                             }, Math.max(refreshTimeout, 0));
@@ -673,6 +721,32 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                         }
                     },
                 });
+
+                // Auto-refresh token on app load if it exists and is expiring soon
+                const storedToken = localStorage.getItem('gapi_access_token');
+                const storedExpiresAt = localStorage.getItem('gapi_access_token_expires_at');
+
+                if (storedToken && storedExpiresAt) {
+                    const expiresAt = parseInt(storedExpiresAt, 10);
+                    const now = Date.now();
+                    const fiveMinutes = 5 * 60 * 1000;
+
+                    if (now >= expiresAt) {
+                        // Token is expired, attempt silent refresh
+                        console.log('Token expired on app load. Attempting silent refresh...');
+                        setTimeout(() => handleGoogleSignIn({ isSilent: true }), 500);
+                    } else if (now >= expiresAt - fiveMinutes) {
+                        // Token is expiring soon, attempt silent refresh
+                        console.log('Token expiring soon. Attempting silent refresh...');
+                        setTimeout(() => handleGoogleSignIn({ isSilent: true }), 500);
+                    } else {
+                        // Token is still valid, setup refresh timer
+                        const timeUntilRefresh = expiresAt - now - fiveMinutes;
+                        tokenRefreshTimerRef.current = window.setTimeout(() => {
+                            handleGoogleSignIn({ isSilent: true });
+                        }, Math.max(timeUntilRefresh, 0));
+                    }
+                }
             }
         }, 100);
 
