@@ -80,7 +80,7 @@ export const ArticleListItem: React.FC<ArticleListItemProps> = ({
                         </div>
                     )}
                 </div>
-                
+
                 {/* Title */}
                 <div className="flex-grow min-w-0">
                     <p className="font-semibold text-gray-100 truncate" title={article.title}>{article.title}</p>
@@ -89,12 +89,25 @@ export const ArticleListItem: React.FC<ArticleListItemProps> = ({
                 {/* Metadata (desktop only) */}
                 <div className="hidden sm:flex flex-shrink-0 flex-col items-end text-xs text-gray-400 w-32 ml-auto">
                     <p className="truncate w-full text-right" title={article.feedTitle}>{article.feedTitle}</p>
-                    <p>{formatRelativeDate(article.pubDateTimestamp)}</p>
+                    <div className="flex items-center gap-2 justify-end w-full">
+                        {article.isVideo && article.duration != null && (
+                            <span className="text-indigo-400 font-medium">
+                                {(() => {
+                                    const hours = Math.floor(article.duration / 3600);
+                                    const minutes = Math.floor((article.duration % 3600) / 60);
+                                    const seconds = article.duration % 60;
+                                    if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                                    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                                })()}
+                            </span>
+                        )}
+                        <p>{formatRelativeDate(article.pubDateTimestamp)}</p>
+                    </div>
                 </div>
-                
+
                 {/* Actions */}
                 <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-                    {isRead && <span title="Read"><EyeIcon className="w-5 h-5 text-indigo-400"/></span>}
+                    {isRead && <span title="Read"><EyeIcon className="w-5 h-5 text-indigo-400" /></span>}
                     <button
                         onClick={handleToggleReadLater}
                         className={`p-1.5 rounded-full transition-colors ${isReadLater ? 'text-indigo-400' : 'text-gray-400 hover:text-white'}`}
@@ -105,7 +118,7 @@ export const ArticleListItem: React.FC<ArticleListItemProps> = ({
                     </button>
                 </div>
             </a>
-             {isReorderable && isDragInProgress && !isBeingDragged && (
+            {isReorderable && isDragInProgress && !isBeingDragged && (
                 <div
                     onDrop={(e) => onDrop(e, article.id)}
                     onDragOver={handleDragOver}
