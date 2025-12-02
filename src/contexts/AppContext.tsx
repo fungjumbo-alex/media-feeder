@@ -2843,239 +2843,268 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                     const { summary, sources } = await summarizeText(textForSummary, article.link, aiModel, defaultAiLanguage, 'video');
                     handleSummaryGenerated(article.id, summary, sources);
                 }
-            }
             } catch (error) {
-            console.warn(`[AutoSummary] Auto-summary failed for "${article.title}":`, error);
-            if (error instanceof QuotaExceededError) {
-                handleQuotaError({ source: 'auto' });
-                break;
+                console.warn(`[AutoSummary] Auto-summary failed for "${article.title}":`, error);
+                if (error instanceof QuotaExceededError) {
+                    handleQuotaError({ source: 'auto' });
+                    break;
+                }
             }
         }
-    }
 
     }, [aiModel, defaultAiLanguage, handleSummaryGenerated, autoSummarizeOnRefresh, handleQuotaError]);
 
-const handleUploadToDrive = useCallback(async (options?: { silent?: boolean }) => {
-    if (!accessToken) {
-        setToast({ message: "Please sign in to sync with Google Drive.", type: 'error' });
-        handleGoogleSignIn({ showConsentPrompt: true });
-        throw new Error("Not authenticated for Drive upload.");
-    }
+    const handleUploadToDrive = useCallback(async (options?: { silent?: boolean }) => {
+        if (!accessToken) {
+            setToast({ message: "Please sign in to sync with Google Drive.", type: 'error' });
+            handleGoogleSignIn({ showConsentPrompt: true });
+            throw new Error("Not authenticated for Drive upload.");
+        }
 
-    if (!options?.silent) {
-        setToast({ message: "Uploading data to Google Drive...", type: 'success' });
-    }
-
-    const articlesByFeedUrl: Record<string, Article[]> = {};
-    feeds.forEach(feed => {
-        articlesByFeedUrl[feed.url] = feed.items.map(item => {
-            const { sources, ...restItem } = item;
-            return restItem as Article;
-        });
-    });
-
-    const dataToExport: SyncData = {
-        feeds: feeds.map(({ id, items, error, ...rest }) => rest),
-        articlesByFeedUrl,
-        readLaterArticleIds: Array.from(readLaterArticleIds),
-        readArticleIds: Array.from(readArticleIds.entries()),
-        likedVideoIds: Array.from(likedVideoIds),
-        gridZoomLevel, articleZoomLevel, autoplayMode,
-        articleTags: Array.from(articleTags.entries()),
-        readLaterOrderYt, readLaterOrderRss, tagOrders,
-        favoritesOrderYt, favoritesOrderRss,
-        notes, noteFolders,
-    };
-
-    try {
-        const { modifiedTime } = await saveDataToDrive(dataToExport, accessToken);
-        const fileId = driveSyncStatus.fileMetadata?.id || (await getDriveFileMetadata(accessToken))?.id;
-        setDriveSyncStatus(prev => ({ ...prev, status: 'ready', fileMetadata: { ...prev.fileMetadata, id: fileId!, modifiedTime } }));
         if (!options?.silent) {
-            setToast({ message: "Data successfully uploaded to Google Drive.", type: 'success' });
+            setToast({ message: "Uploading data to Google Drive...", type: 'success' });
         }
-    } catch (e: any) {
-        if (e.isPermissionError) {
-            setDriveSyncStatus({ status: 'no_permission', error: e.message });
-        }
-        throw e;
-    }
-}, [
-    accessToken, feeds, readLaterArticleIds, readArticleIds, likedVideoIds,
-    gridZoomLevel, articleZoomLevel, autoplayMode, articleTags,
-    readLaterOrderYt, readLaterOrderRss, tagOrders, favoritesOrderYt, favoritesOrderRss,
-    notes, noteFolders, driveSyncStatus.fileMetadata, setToast, handleGoogleSignIn
-]);
 
-const handleDownloadFromDrive = useCallback(async () => {
-    if (!accessToken) {
-        setToast({ message: "Please sign in to sync with Google Drive.", type: 'error' });
-        handleGoogleSignIn({ showConsentPrompt: true });
-        throw new Error("Not authenticated for Drive download.");
-    }
-
-    setToast({ message: "Checking Google Drive for data...", type: 'success' });
-
-    try {
-        const { data, metadata } = await loadDataFromDrive(accessToken);
-
-        if (data) {
-            handleImportData(data, { silent: true });
-            setDriveSyncStatus({ status: 'ready', fileMetadata: metadata });
-            setToast({ message: "Data successfully downloaded and imported from Google Drive.", type: 'success' });
-        } else {
-            setDriveSyncStatus({ status: 'ready', fileMetadata: metadata });
-            setToast({ message: "No sync data found in your Google Drive. Upload data from a device first.", type: 'error' });
-        }
-    } catch (e: any) {
-        if (e.isPermissionError) {
-            setDriveSyncStatus({ status: 'no_permission', error: e.message });
-        }
-        throw e;
-    }
-}, [accessToken, handleImportData, setToast, handleGoogleSignIn]);
-
-useEffect(() => {
-    if (triggerAutoUpload) {
-        handleUploadToDrive({ silent: true }).catch(e => {
-            console.error("Auto-upload after refresh failed:", e);
-            setToast({ message: `Auto-upload failed: ${e instanceof Error ? e.message : 'Unknown error.'}`, type: 'error' });
-        }).finally(() => {
-            setTriggerAutoUpload(false);
+        const articlesByFeedUrl: Record<string, Article[]> = {};
+        feeds.forEach(feed => {
+            articlesByFeedUrl[feed.url] = feed.items.map(item => {
+                const { sources, ...restItem } = item;
+                return restItem as Article;
+            });
         });
-    }
-}, [triggerAutoUpload, handleUploadToDrive, setToast]);
 
-const isYouTubeFeed = (feed: Feed) => feed.url.toLowerCase().includes('youtube.com');
-
-const batchRefreshHandler = useCallback(async (
-    feedsToRefresh: Feed[],
-    viewTitle: string,
-    limits?: { ytMax: number, nonYtMax: number }
-) => {
-    if (feedsToRefresh.length === 0) {
-        setToast({ message: `No feeds to refresh in ${viewTitle}.`, type: 'error' });
-        return;
-    }
-
-    setIsRefreshingAll(true);
-    setRefreshProgress(1);
-
-    setToast({ message: `Refreshing ${viewTitle}...`, type: 'success' });
-
-    try {
-        const totalFeeds = feedsToRefresh.length;
-        let processedCount = 0;
-        let totalFailedCount = 0;
-        const allNewArticles: Article[] = [];
-
-        const processBatchResults = (results: { status: 'fulfilled' | 'rejected', value?: Feed, reason?: any, originalFeed: Feed }[]) => {
-            const successfulFeeds: Feed[] = [];
-            const failedFeeds: (Feed & { error: string })[] = [];
-
-            results.forEach(result => {
-                const originalFeed = result.originalFeed;
-                if (result.status === 'fulfilled' && result.value) {
-                    const newFeedData = result.value;
-                    if (newFeedData.items.length === 0 && originalFeed.items.length > 0) {
-                        failedFeeds.push({ ...originalFeed, error: 'Refresh returned an empty feed. Old articles kept.' });
-                        return;
-                    }
-
-                    newFeedData.items.forEach(item => {
-                        item.feedId = originalFeed.id;
-                    });
-
-                    const existingArticles = new Map(originalFeed.items.map(a => [a.id, a]));
-                    const newArticlesInFeed = newFeedData.items.filter(a => !existingArticles.has(a.id));
-                    allNewArticles.push(...newArticlesInFeed);
-
-                    const combinedArticles = [...newArticlesInFeed, ...originalFeed.items];
-                    const deduplicatedArticles = Array.from(new Map(combinedArticles.map(a => [a.id, a])).values());
-
-                    const sortedAndCleanedArticles = deduplicatedArticles
-                        .map(({ order, ...rest }) => rest)
-                        .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
-
-                    successfulFeeds.push({
-                        ...newFeedData,
-                        isFavorite: originalFeed.isFavorite,
-                        tags: originalFeed.tags,
-                        items: sortedAndCleanedArticles,
-                        iconUrl: newFeedData.iconUrl || originalFeed.iconUrl,
-                        error: null,
-                        maxArticles: originalFeed.maxArticles,
-                    });
-                } else {
-                    const error = result.reason instanceof Error ? result.reason.message : String(result.reason);
-                    failedFeeds.push({ ...originalFeed, error });
-                }
-            });
-
-            setFeeds(currentFeeds => {
-                const updatedFeedsMap = new Map(currentFeeds.map(f => [f.id, f]));
-                successfulFeeds.forEach(f => updatedFeedsMap.set(f.id, f));
-                failedFeeds.forEach(f => {
-                    const existing = updatedFeedsMap.get(f.id);
-                    if (existing) updatedFeedsMap.set(f.id, { ...existing, error: f.error });
-                });
-                return Array.from(updatedFeedsMap.values());
-            });
-
-            if (successfulFeeds.length > 0) {
-                updateArticlesCache(successfulFeeds);
-            }
-
-            processedCount += results.length;
-            totalFailedCount += failedFeeds.length;
-            setRefreshProgress((processedCount / totalFeeds) * 100);
+        const dataToExport: SyncData = {
+            feeds: feeds.map(({ id, items, error, ...rest }) => rest),
+            articlesByFeedUrl,
+            readLaterArticleIds: Array.from(readLaterArticleIds),
+            readArticleIds: Array.from(readArticleIds.entries()),
+            likedVideoIds: Array.from(likedVideoIds),
+            gridZoomLevel, articleZoomLevel, autoplayMode,
+            articleTags: Array.from(articleTags.entries()),
+            readLaterOrderYt, readLaterOrderRss, tagOrders,
+            favoritesOrderYt, favoritesOrderRss,
+            notes, noteFolders,
         };
 
-        const CHUNK_SIZE = refreshBatchSize;
-        const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+        try {
+            const { modifiedTime } = await saveDataToDrive(dataToExport, accessToken);
+            const fileId = driveSyncStatus.fileMetadata?.id || (await getDriveFileMetadata(accessToken))?.id;
+            setDriveSyncStatus(prev => ({ ...prev, status: 'ready', fileMetadata: { ...prev.fileMetadata, id: fileId!, modifiedTime } }));
+            if (!options?.silent) {
+                setToast({ message: "Data successfully uploaded to Google Drive.", type: 'success' });
+            }
+        } catch (e: any) {
+            if (e.isPermissionError) {
+                setDriveSyncStatus({ status: 'no_permission', error: e.message });
+            }
+            throw e;
+        }
+    }, [
+        accessToken, feeds, readLaterArticleIds, readArticleIds, likedVideoIds,
+        gridZoomLevel, articleZoomLevel, autoplayMode, articleTags,
+        readLaterOrderYt, readLaterOrderRss, tagOrders, favoritesOrderYt, favoritesOrderRss,
+        notes, noteFolders, driveSyncStatus.fileMetadata, setToast, handleGoogleSignIn
+    ]);
 
-        for (let i = 0; i < feedsToRefresh.length; i += CHUNK_SIZE) {
-            const chunk = feedsToRefresh.slice(i, i + CHUNK_SIZE);
+    const handleDownloadFromDrive = useCallback(async () => {
+        if (!accessToken) {
+            setToast({ message: "Please sign in to sync with Google Drive.", type: 'error' });
+            handleGoogleSignIn({ showConsentPrompt: true });
+            throw new Error("Not authenticated for Drive download.");
+        }
 
-            const promises = chunk.map(async (feed) => {
-                try {
-                    const isYt = isYouTubeFeed(feed);
-                    let maxArticlesForFeed: number | undefined;
-                    if (limits) {
-                        maxArticlesForFeed = isYt ? limits.ytMax : limits.nonYtMax;
-                    } else {
-                        maxArticlesForFeed = feed.maxArticles;
-                    }
+        setToast({ message: "Checking Google Drive for data...", type: 'success' });
 
-                    if (feed.isPlaylist) {
-                        let playlistFeed: Feed | null = null;
-                        if (accessToken) {
-                            try {
-                                const playlistId = new URL(feed.url).searchParams.get('list');
-                                if (!playlistId) throw new Error("Invalid playlist URL.");
-                                playlistFeed = await fetchPlaylistAsFeed(playlistId, accessToken);
-                            } catch (reason: any) {
-                                if (!reason.isAuthError) throw reason;
-                                playlistFeed = null;
-                            }
+        try {
+            const { data, metadata } = await loadDataFromDrive(accessToken);
+
+            if (data) {
+                handleImportData(data, { silent: true });
+                setDriveSyncStatus({ status: 'ready', fileMetadata: metadata });
+                setToast({ message: "Data successfully downloaded and imported from Google Drive.", type: 'success' });
+            } else {
+                setDriveSyncStatus({ status: 'ready', fileMetadata: metadata });
+                setToast({ message: "No sync data found in your Google Drive. Upload data from a device first.", type: 'error' });
+            }
+        } catch (e: any) {
+            if (e.isPermissionError) {
+                setDriveSyncStatus({ status: 'no_permission', error: e.message });
+            }
+            throw e;
+        }
+    }, [accessToken, handleImportData, setToast, handleGoogleSignIn]);
+
+    useEffect(() => {
+        if (triggerAutoUpload) {
+            handleUploadToDrive({ silent: true }).catch(e => {
+                console.error("Auto-upload after refresh failed:", e);
+                setToast({ message: `Auto-upload failed: ${e instanceof Error ? e.message : 'Unknown error.'}`, type: 'error' });
+            }).finally(() => {
+                setTriggerAutoUpload(false);
+            });
+        }
+    }, [triggerAutoUpload, handleUploadToDrive, setToast]);
+
+    const isYouTubeFeed = (feed: Feed) => feed.url.toLowerCase().includes('youtube.com');
+
+    const batchRefreshHandler = useCallback(async (
+        feedsToRefresh: Feed[],
+        viewTitle: string,
+        limits?: { ytMax: number, nonYtMax: number }
+    ) => {
+        if (feedsToRefresh.length === 0) {
+            setToast({ message: `No feeds to refresh in ${viewTitle}.`, type: 'error' });
+            return;
+        }
+
+        setIsRefreshingAll(true);
+        setRefreshProgress(1);
+
+        setToast({ message: `Refreshing ${viewTitle}...`, type: 'success' });
+
+        try {
+            const totalFeeds = feedsToRefresh.length;
+            let processedCount = 0;
+            let totalFailedCount = 0;
+            const allNewArticles: Article[] = [];
+
+            const processBatchResults = (results: { status: 'fulfilled' | 'rejected', value?: Feed, reason?: any, originalFeed: Feed }[]) => {
+                const successfulFeeds: Feed[] = [];
+                const failedFeeds: (Feed & { error: string })[] = [];
+
+                results.forEach(result => {
+                    const originalFeed = result.originalFeed;
+                    if (result.status === 'fulfilled' && result.value) {
+                        const newFeedData = result.value;
+                        if (newFeedData.items.length === 0 && originalFeed.items.length > 0) {
+                            failedFeeds.push({ ...originalFeed, error: 'Refresh returned an empty feed. Old articles kept.' });
+                            return;
                         }
-                        if (!playlistFeed) {
-                            playlistFeed = await fetchAndParseRss(feed.url, feed.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
 
-                            // Fetch durations for YouTube playlist videos if we have access token
-                            const hasVideoItems = playlistFeed.items.some(item => item.isVideo && item.id);
+                        newFeedData.items.forEach(item => {
+                            item.feedId = originalFeed.id;
+                        });
+
+                        const existingArticles = new Map(originalFeed.items.map(a => [a.id, a]));
+                        const newArticlesInFeed = newFeedData.items.filter(a => !existingArticles.has(a.id));
+                        allNewArticles.push(...newArticlesInFeed);
+
+                        const combinedArticles = [...newArticlesInFeed, ...originalFeed.items];
+                        const deduplicatedArticles = Array.from(new Map(combinedArticles.map(a => [a.id, a])).values());
+
+                        const sortedAndCleanedArticles = deduplicatedArticles
+                            .map(({ order, ...rest }) => rest)
+                            .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
+
+                        successfulFeeds.push({
+                            ...newFeedData,
+                            isFavorite: originalFeed.isFavorite,
+                            tags: originalFeed.tags,
+                            items: sortedAndCleanedArticles,
+                            iconUrl: newFeedData.iconUrl || originalFeed.iconUrl,
+                            error: null,
+                            maxArticles: originalFeed.maxArticles,
+                        });
+                    } else {
+                        const error = result.reason instanceof Error ? result.reason.message : String(result.reason);
+                        failedFeeds.push({ ...originalFeed, error });
+                    }
+                });
+
+                setFeeds(currentFeeds => {
+                    const updatedFeedsMap = new Map(currentFeeds.map(f => [f.id, f]));
+                    successfulFeeds.forEach(f => updatedFeedsMap.set(f.id, f));
+                    failedFeeds.forEach(f => {
+                        const existing = updatedFeedsMap.get(f.id);
+                        if (existing) updatedFeedsMap.set(f.id, { ...existing, error: f.error });
+                    });
+                    return Array.from(updatedFeedsMap.values());
+                });
+
+                if (successfulFeeds.length > 0) {
+                    updateArticlesCache(successfulFeeds);
+                }
+
+                processedCount += results.length;
+                totalFailedCount += failedFeeds.length;
+                setRefreshProgress((processedCount / totalFeeds) * 100);
+            };
+
+            const CHUNK_SIZE = refreshBatchSize;
+            const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+            for (let i = 0; i < feedsToRefresh.length; i += CHUNK_SIZE) {
+                const chunk = feedsToRefresh.slice(i, i + CHUNK_SIZE);
+
+                const promises = chunk.map(async (feed) => {
+                    try {
+                        const isYt = isYouTubeFeed(feed);
+                        let maxArticlesForFeed: number | undefined;
+                        if (limits) {
+                            maxArticlesForFeed = isYt ? limits.ytMax : limits.nonYtMax;
+                        } else {
+                            maxArticlesForFeed = feed.maxArticles;
+                        }
+
+                        if (feed.isPlaylist) {
+                            let playlistFeed: Feed | null = null;
+                            if (accessToken) {
+                                try {
+                                    const playlistId = new URL(feed.url).searchParams.get('list');
+                                    if (!playlistId) throw new Error("Invalid playlist URL.");
+                                    playlistFeed = await fetchPlaylistAsFeed(playlistId, accessToken);
+                                } catch (reason: any) {
+                                    if (!reason.isAuthError) throw reason;
+                                    playlistFeed = null;
+                                }
+                            }
+                            if (!playlistFeed) {
+                                playlistFeed = await fetchAndParseRss(feed.url, feed.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
+
+                                // Fetch durations for YouTube playlist videos if we have access token
+                                const hasVideoItems = playlistFeed.items.some(item => item.isVideo && item.id);
+
+
+                                if (accessToken && hasVideoItems) {
+                                    try {
+                                        const videoIds = playlistFeed.items
+                                            .filter(item => item.isVideo && item.id)
+                                            .map(item => item.id);
+
+                                        if (videoIds.length > 0) {
+                                            const durations = await fetchVideosDuration(videoIds, accessToken);
+
+                                            playlistFeed.items = playlistFeed.items.map(item => {
+                                                const duration = durations.get(item.id);
+                                                return {
+                                                    ...item,
+                                                    duration: duration || item.duration
+                                                };
+                                            });
+                                        }
+                                    } catch (error) {
+                                        // Continue without durations - non-critical
+                                    }
+                                }
+                            }
+                            return { status: 'fulfilled' as const, value: playlistFeed, originalFeed: feed };
+                        } else {
+                            const rssFeed = await fetchAndParseRss(feed.url, feed.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
+
+                            // Fetch durations for YouTube channel videos if we have access token
+                            const hasVideoItems = rssFeed.items.some(item => item.isVideo && item.id);
 
 
                             if (accessToken && hasVideoItems) {
                                 try {
-                                    const videoIds = playlistFeed.items
+                                    const videoIds = rssFeed.items
                                         .filter(item => item.isVideo && item.id)
                                         .map(item => item.id);
 
                                     if (videoIds.length > 0) {
                                         const durations = await fetchVideosDuration(videoIds, accessToken);
 
-                                        playlistFeed.items = playlistFeed.items.map(item => {
+                                        rssFeed.items = rssFeed.items.map(item => {
                                             const duration = durations.get(item.id);
                                             return {
                                                 ...item,
@@ -3087,586 +3116,453 @@ const batchRefreshHandler = useCallback(async (
                                     // Continue without durations - non-critical
                                 }
                             }
+
+                            return { status: 'fulfilled' as const, value: rssFeed, originalFeed: feed };
                         }
-                        return { status: 'fulfilled' as const, value: playlistFeed, originalFeed: feed };
-                    } else {
-                        const rssFeed = await fetchAndParseRss(feed.url, feed.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
-
-                        // Fetch durations for YouTube channel videos if we have access token
-                        const hasVideoItems = rssFeed.items.some(item => item.isVideo && item.id);
-
-
-                        if (accessToken && hasVideoItems) {
-                            try {
-                                const videoIds = rssFeed.items
-                                    .filter(item => item.isVideo && item.id)
-                                    .map(item => item.id);
-
-                                if (videoIds.length > 0) {
-                                    const durations = await fetchVideosDuration(videoIds, accessToken);
-
-                                    rssFeed.items = rssFeed.items.map(item => {
-                                        const duration = durations.get(item.id);
-                                        return {
-                                            ...item,
-                                            duration: duration || item.duration
-                                        };
-                                    });
-                                }
-                            } catch (error) {
-                                // Continue without durations - non-critical
-                            }
-                        }
-
-                        return { status: 'fulfilled' as const, value: rssFeed, originalFeed: feed };
+                    } catch (reason) {
+                        return { status: 'rejected' as const, reason, originalFeed: feed };
                     }
-                } catch (reason) {
-                    return { status: 'rejected' as const, reason, originalFeed: feed };
+                });
+
+                processBatchResults(await Promise.all(promises));
+
+                if (i + CHUNK_SIZE < totalFeeds) {
+                    await wait(refreshDelaySeconds * 1000);
                 }
-            });
-
-            processBatchResults(await Promise.all(promises));
-
-            if (i + CHUNK_SIZE < totalFeeds) {
-                await wait(refreshDelaySeconds * 1000);
             }
-        }
 
-        const successCount = totalFeeds - totalFailedCount;
-        if (totalFailedCount > 0) {
-            setToast({ message: `Refresh complete. ${successCount} succeeded, ${totalFailedCount} failed.`, type: 'error' });
+            const successCount = totalFeeds - totalFailedCount;
+            if (totalFailedCount > 0) {
+                setToast({ message: `Refresh complete. ${successCount} succeeded, ${totalFailedCount} failed.`, type: 'error' });
+            } else {
+                setToast({ message: `Refresh complete. All ${successCount} feeds updated.`, type: 'success' });
+            }
+
+            const isBroadRefresh = viewTitle === 'all feeds' || viewTitle === 'favorite feeds';
+            runInBackgroundSummaryGeneration(allNewArticles, isBroadRefresh);
+
+            if (autoUploadAfterRefresh) {
+                setTriggerAutoUpload(true);
+            }
+
+        } catch (e) {
+            const error = e instanceof Error ? e.message : 'An unknown error occurred.';
+            setToast({ message: `An unexpected error occurred during refresh: ${error}`, type: 'error' });
+        } finally {
+            setIsRefreshingAll(false);
+            setRefreshProgress(null);
+        }
+    }, [setToast, updateArticlesCache, handleProxyAttempt, disabledProxies, proxyStats, refreshBatchSize, refreshDelaySeconds, accessToken, autoUploadAfterRefresh, runInBackgroundSummaryGeneration]);
+
+    const handleExecuteRefresh = useCallback(async (options: RefreshOptions) => {
+        setIsRefreshOptionsModalOpen(false);
+
+        let feedsToRefresh: Feed[] = [];
+        let viewTitle = '';
+
+        if (options.favoritesOnly) {
+            feedsToRefresh = favoriteFeeds;
+            viewTitle = 'favorite feeds';
         } else {
-            setToast({ message: `Refresh complete. All ${successCount} feeds updated.`, type: 'success' });
+            const ytFeedsToRefresh = options.yt ? feeds.filter(isYouTubeFeed) : [];
+            const nonYtFeedsToRefresh = options.nonYt ? feeds.filter(f => !isYouTubeFeed(f)) : [];
+            feedsToRefresh = [...ytFeedsToRefresh, ...nonYtFeedsToRefresh];
+
+            if (options.yt && options.nonYt) viewTitle = 'all feeds';
+            else if (options.yt) viewTitle = 'all YouTube feeds';
+            else if (options.nonYt) viewTitle = 'all non-YouTube feeds';
         }
 
-        const isBroadRefresh = viewTitle === 'all feeds' || viewTitle === 'favorite feeds';
-        runInBackgroundSummaryGeneration(allNewArticles, isBroadRefresh);
-
-        if (autoUploadAfterRefresh) {
-            setTriggerAutoUpload(true);
+        if (feedsToRefresh.length > 0) {
+            await batchRefreshHandler(feedsToRefresh, viewTitle, { ytMax: options.ytMax, nonYtMax: options.nonYtMax });
+        } else {
+            setToast({ message: "No feeds selected to refresh.", type: 'error' });
         }
+    }, [feeds, favoriteFeeds, batchRefreshHandler, setToast]);
 
-    } catch (e) {
-        const error = e instanceof Error ? e.message : 'An unknown error occurred.';
-        setToast({ message: `An unexpected error occurred during refresh: ${error}`, type: 'error' });
-    } finally {
-        setIsRefreshingAll(false);
-        setRefreshProgress(null);
-    }
-}, [setToast, updateArticlesCache, handleProxyAttempt, disabledProxies, proxyStats, refreshBatchSize, refreshDelaySeconds, accessToken, autoUploadAfterRefresh, runInBackgroundSummaryGeneration]);
+    const handleRefreshSingleFeed = useCallback(async (feedId: string) => {
+        const feedToRefresh = feeds.find(f => f.id === feedId);
+        if (!feedToRefresh) return;
 
-const handleExecuteRefresh = useCallback(async (options: RefreshOptions) => {
-    setIsRefreshOptionsModalOpen(false);
+        setRefreshingFeedId(feedId);
+        try {
+            let newFeedData: Feed | null = null;
+            const maxArticlesForFeed = feedToRefresh.maxArticles || (isYouTubeFeed(feedToRefresh) ? 5 : 10);
 
-    let feedsToRefresh: Feed[] = [];
-    let viewTitle = '';
-
-    if (options.favoritesOnly) {
-        feedsToRefresh = favoriteFeeds;
-        viewTitle = 'favorite feeds';
-    } else {
-        const ytFeedsToRefresh = options.yt ? feeds.filter(isYouTubeFeed) : [];
-        const nonYtFeedsToRefresh = options.nonYt ? feeds.filter(f => !isYouTubeFeed(f)) : [];
-        feedsToRefresh = [...ytFeedsToRefresh, ...nonYtFeedsToRefresh];
-
-        if (options.yt && options.nonYt) viewTitle = 'all feeds';
-        else if (options.yt) viewTitle = 'all YouTube feeds';
-        else if (options.nonYt) viewTitle = 'all non-YouTube feeds';
-    }
-
-    if (feedsToRefresh.length > 0) {
-        await batchRefreshHandler(feedsToRefresh, viewTitle, { ytMax: options.ytMax, nonYtMax: options.nonYtMax });
-    } else {
-        setToast({ message: "No feeds selected to refresh.", type: 'error' });
-    }
-}, [feeds, favoriteFeeds, batchRefreshHandler, setToast]);
-
-const handleRefreshSingleFeed = useCallback(async (feedId: string) => {
-    const feedToRefresh = feeds.find(f => f.id === feedId);
-    if (!feedToRefresh) return;
-
-    setRefreshingFeedId(feedId);
-    try {
-        let newFeedData: Feed | null = null;
-        const maxArticlesForFeed = feedToRefresh.maxArticles || (isYouTubeFeed(feedToRefresh) ? 5 : 10);
-
-        if (feedToRefresh.isPlaylist) {
-            if (accessToken) {
-                try {
-                    const playlistId = new URL(feedToRefresh.url).searchParams.get('list');
-                    if (!playlistId) throw new Error("Invalid YouTube playlist URL for refresh.");
-                    newFeedData = await fetchPlaylistAsFeed(playlistId, accessToken);
-                } catch (e: any) {
-                    if (e.isAuthError) {
-                        newFeedData = null;
-                    } else {
-                        throw e;
+            if (feedToRefresh.isPlaylist) {
+                if (accessToken) {
+                    try {
+                        const playlistId = new URL(feedToRefresh.url).searchParams.get('list');
+                        if (!playlistId) throw new Error("Invalid YouTube playlist URL for refresh.");
+                        newFeedData = await fetchPlaylistAsFeed(playlistId, accessToken);
+                    } catch (e: any) {
+                        if (e.isAuthError) {
+                            newFeedData = null;
+                        } else {
+                            throw e;
+                        }
                     }
                 }
-            }
-            if (!newFeedData) {
+                if (!newFeedData) {
+                    newFeedData = await fetchAndParseRss(feedToRefresh.url, feedToRefresh.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
+                }
+            } else {
                 newFeedData = await fetchAndParseRss(feedToRefresh.url, feedToRefresh.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
             }
-        } else {
-            newFeedData = await fetchAndParseRss(feedToRefresh.url, feedToRefresh.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
-        }
 
-        // Fetch durations for YouTube videos if we have access token (for single feed refresh)
-        if (accessToken && newFeedData && isYouTubeFeed(feedToRefresh)) {
-            const hasVideoItems = newFeedData.items.some(item => item.isVideo && item.id);
-            if (hasVideoItems) {
-                try {
-                    // Filter out items that already have duration (e.g. from playlist fetch)
-                    const videoIds = newFeedData.items
-                        .filter(item => item.isVideo && item.id && item.duration === undefined)
-                        .map(item => item.id);
+            // Fetch durations for YouTube videos if we have access token (for single feed refresh)
+            if (accessToken && newFeedData && isYouTubeFeed(feedToRefresh)) {
+                const hasVideoItems = newFeedData.items.some(item => item.isVideo && item.id);
+                if (hasVideoItems) {
+                    try {
+                        // Filter out items that already have duration (e.g. from playlist fetch)
+                        const videoIds = newFeedData.items
+                            .filter(item => item.isVideo && item.id && item.duration === undefined)
+                            .map(item => item.id);
 
-                    if (videoIds.length > 0) {
-                        const durations = await fetchVideosDuration(videoIds, accessToken);
+                        if (videoIds.length > 0) {
+                            const durations = await fetchVideosDuration(videoIds, accessToken);
 
-                        newFeedData.items = newFeedData.items.map(item => {
-                            const duration = durations.get(item.id);
-                            return {
-                                ...item,
-                                duration: duration || item.duration
-                            };
-                        });
+                            newFeedData.items = newFeedData.items.map(item => {
+                                const duration = durations.get(item.id);
+                                return {
+                                    ...item,
+                                    duration: duration || item.duration
+                                };
+                            });
+                        }
+                    } catch (error) {
+                        console.warn('Failed to fetch video durations for single refresh:', error);
                     }
-                } catch (error) {
-                    console.warn('Failed to fetch video durations for single refresh:', error);
                 }
             }
+
+            if (newFeedData.items.length === 0 && feedToRefresh.items && feedToRefresh.items.length > 0) {
+                throw new Error("Refresh failed: The source returned an empty feed. Old articles have been kept.");
+            }
+
+            newFeedData.items.forEach(item => {
+                item.feedId = feedToRefresh.id;
+            });
+
+            // Merge logic: Prefer new articles (which have updated data like duration) over existing ones
+            const newItemsMap = new Map(newFeedData.items.map(a => [a.id, a]));
+            const oldItemsToKeep = feedToRefresh.items.filter(a => !newItemsMap.has(a.id));
+            const combinedArticles = [...newFeedData.items, ...oldItemsToKeep];
+            const deduplicatedArticles = Array.from(new Map(combinedArticles.map(a => [a.id, a])).values());
+
+            // Define newArticles for summary generation (items in newFeedData that were not in existing feed)
+            const existingArticlesMap = new Map(feedToRefresh.items.map(a => [a.id, a]));
+            const newArticles = newFeedData.items.filter(a => !existingArticlesMap.has(a.id));
+
+            const sortedAndCleanedArticles = deduplicatedArticles
+                .map(({ order, ...rest }) => rest)
+                .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
+
+            const updatedFeed: Feed = {
+                ...newFeedData,
+                isFavorite: feedToRefresh.isFavorite,
+                tags: feedToRefresh.tags,
+                items: sortedAndCleanedArticles,
+                iconUrl: newFeedData.iconUrl || feedToRefresh.iconUrl,
+                error: null,
+                maxArticles: feedToRefresh.maxArticles,
+            };
+
+            setFeeds(currentFeeds => {
+                return currentFeeds.map(f => f.id === feedId ? updatedFeed : f);
+            });
+
+            updateArticlesCache([updatedFeed]);
+
+            setToast({ message: `Refreshed "${updatedFeed.title}"`, type: 'success' });
+
+            runInBackgroundSummaryGeneration(newArticles, false);
+
+            if (autoUploadAfterRefresh) {
+                setTriggerAutoUpload(true);
+            }
+
+        } catch (e: any) {
+            const error = e instanceof Error ? e.message : 'An unknown error occurred.';
+            setFeeds(currentFeeds => currentFeeds.map(f => f.id === feedId ? { ...f, error } : f));
+            setToast({ message: `Failed to refresh "${feedToRefresh.title}": ${error}`, type: 'error' });
+        } finally {
+            setRefreshingFeedId(null);
         }
+    }, [feeds, accessToken, updateArticlesCache, handleProxyAttempt, disabledProxies, proxyStats, setToast, autoUploadAfterRefresh, runInBackgroundSummaryGeneration]);
 
-        if (newFeedData.items.length === 0 && feedToRefresh.items && feedToRefresh.items.length > 0) {
-            throw new Error("Refresh failed: The source returned an empty feed. Old articles have been kept.");
+    const handleRefreshCurrentView = useCallback(async () => {
+        let feedsToRefresh: Feed[] = [];
+        let viewTitle = '';
+        if (currentView.type === 'favorites') {
+            feedsToRefresh = favoriteFeeds;
+            viewTitle = 'favorite feeds';
+        } else if (currentView.type === 'tag') {
+            const tag = typeof currentView.value === 'object' ? currentView.value.name : currentView.value;
+            feedsToRefresh = feeds.filter(f => f.tags?.includes(tag));
+            viewTitle = `feeds tagged #${tag}`;
+        } else {
+            setToast({ message: `Cannot refresh this view.`, type: 'error' });
+            return;
         }
+        await batchRefreshHandler(feedsToRefresh, viewTitle);
+    }, [currentView, feeds, favoriteFeeds, batchRefreshHandler, setToast]);
 
-        newFeedData.items.forEach(item => {
-            item.feedId = feedToRefresh.id;
-        });
-
-        // Merge logic: Prefer new articles (which have updated data like duration) over existing ones
-        const newItemsMap = new Map(newFeedData.items.map(a => [a.id, a]));
-        const oldItemsToKeep = feedToRefresh.items.filter(a => !newItemsMap.has(a.id));
-        const combinedArticles = [...newFeedData.items, ...oldItemsToKeep];
-        const deduplicatedArticles = Array.from(new Map(combinedArticles.map(a => [a.id, a])).values());
-
-        // Define newArticles for summary generation (items in newFeedData that were not in existing feed)
-        const existingArticlesMap = new Map(feedToRefresh.items.map(a => [a.id, a]));
-        const newArticles = newFeedData.items.filter(a => !existingArticlesMap.has(a.id));
-
-        const sortedAndCleanedArticles = deduplicatedArticles
-            .map(({ order, ...rest }) => rest)
-            .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
-
-        const updatedFeed: Feed = {
-            ...newFeedData,
-            isFavorite: feedToRefresh.isFavorite,
-            tags: feedToRefresh.tags,
-            items: sortedAndCleanedArticles,
-            iconUrl: newFeedData.iconUrl || feedToRefresh.iconUrl,
-            error: null,
-            maxArticles: feedToRefresh.maxArticles,
-        };
-
-        setFeeds(currentFeeds => {
-            return currentFeeds.map(f => f.id === feedId ? updatedFeed : f);
-        });
-
-        updateArticlesCache([updatedFeed]);
-
-        setToast({ message: `Refreshed "${updatedFeed.title}"`, type: 'success' });
-
-        runInBackgroundSummaryGeneration(newArticles, false);
-
-        if (autoUploadAfterRefresh) {
-            setTriggerAutoUpload(true);
+    const handleRefreshMissingIcons = useCallback(async () => {
+        const feedsToRefresh = feeds.filter(f =>
+            f.url.toLowerCase().includes('youtube.com') && !f.iconUrl
+        );
+        if (feedsToRefresh.length === 0) {
+            setToast({ message: "No YouTube feeds with missing icons found.", type: 'success' });
+            return;
         }
-
-    } catch (e: any) {
-        const error = e instanceof Error ? e.message : 'An unknown error occurred.';
-        setFeeds(currentFeeds => currentFeeds.map(f => f.id === feedId ? { ...f, error } : f));
-        setToast({ message: `Failed to refresh "${feedToRefresh.title}": ${error}`, type: 'error' });
-    } finally {
-        setRefreshingFeedId(null);
-    }
-}, [feeds, accessToken, updateArticlesCache, handleProxyAttempt, disabledProxies, proxyStats, setToast, autoUploadAfterRefresh, runInBackgroundSummaryGeneration]);
-
-const handleRefreshCurrentView = useCallback(async () => {
-    let feedsToRefresh: Feed[] = [];
-    let viewTitle = '';
-    if (currentView.type === 'favorites') {
-        feedsToRefresh = favoriteFeeds;
-        viewTitle = 'favorite feeds';
-    } else if (currentView.type === 'tag') {
-        const tag = typeof currentView.value === 'object' ? currentView.value.name : currentView.value;
-        feedsToRefresh = feeds.filter(f => f.tags?.includes(tag));
-        viewTitle = `feeds tagged #${tag}`;
-    } else {
-        setToast({ message: `Cannot refresh this view.`, type: 'error' });
-        return;
-    }
-    await batchRefreshHandler(feedsToRefresh, viewTitle);
-}, [currentView, feeds, favoriteFeeds, batchRefreshHandler, setToast]);
-
-const handleRefreshMissingIcons = useCallback(async () => {
-    const feedsToRefresh = feeds.filter(f =>
-        f.url.toLowerCase().includes('youtube.com') && !f.iconUrl
-    );
-    if (feedsToRefresh.length === 0) {
-        setToast({ message: "No YouTube feeds with missing icons found.", type: 'success' });
-        return;
-    }
-    await batchRefreshHandler(feedsToRefresh, `${feedsToRefresh.length} feeds with missing icons`);
-}, [batchRefreshHandler, feeds, setToast]);
-const handleClearSearch = useCallback(() => {
-    if (currentView.type === 'search') {
-        handleViewChange('all-subscriptions');
-    }
-}, [currentView, handleViewChange]);
-
-const handleDeleteFeed = useCallback((feedId: string) => {
-    const feedToDelete = feeds.find(f => f.id === feedId);
-    if (feedToDelete && window.confirm(`Are you sure you want to delete the feed "${feedToDelete.title}"?`)) {
-        setFeeds(prevFeeds => prevFeeds.filter(f => f.id !== feedId));
-        if (currentView.type === 'feed' && currentView.value === feedId) {
+        await batchRefreshHandler(feedsToRefresh, `${feedsToRefresh.length} feeds with missing icons`);
+    }, [batchRefreshHandler, feeds, setToast]);
+    const handleClearSearch = useCallback(() => {
+        if (currentView.type === 'search') {
             handleViewChange('all-subscriptions');
         }
-        setToast({ message: `Deleted "${feedToDelete.title}"`, type: 'success' });
-    }
-}, [feeds, currentView, handleViewChange, setToast]);
-const handleDeleteTag = useCallback((tagToDelete: string) => {
-    if (window.confirm(`Are you sure you want to delete the tag "#${tagToDelete}" from all feeds and articles? This cannot be undone.`)) {
+    }, [currentView, handleViewChange]);
+
+    const handleDeleteFeed = useCallback((feedId: string) => {
+        const feedToDelete = feeds.find(f => f.id === feedId);
+        if (feedToDelete && window.confirm(`Are you sure you want to delete the feed "${feedToDelete.title}"?`)) {
+            setFeeds(prevFeeds => prevFeeds.filter(f => f.id !== feedId));
+            if (currentView.type === 'feed' && currentView.value === feedId) {
+                handleViewChange('all-subscriptions');
+            }
+            setToast({ message: `Deleted "${feedToDelete.title}"`, type: 'success' });
+        }
+    }, [feeds, currentView, handleViewChange, setToast]);
+    const handleDeleteTag = useCallback((tagToDelete: string) => {
+        if (window.confirm(`Are you sure you want to delete the tag "#${tagToDelete}" from all feeds and articles? This cannot be undone.`)) {
+            setFeeds(prevFeeds => prevFeeds.map(feed => {
+                if (!feed.tags) return feed;
+                const newTags = feed.tags.filter(tag => tag !== tagToDelete);
+                return { ...feed, tags: newTags.length > 0 ? newTags : undefined };
+            }));
+            setArticleTags(prev => {
+                const newMap = new Map(prev);
+                for (const [articleId, tags] of newMap.entries()) {
+                    const newTags = tags.filter(tag => tag !== tagToDelete);
+                    if (newTags.length > 0) {
+                        newMap.set(articleId, newTags);
+                    } else {
+                        newMap.delete(articleId);
+                    }
+                }
+                return newMap;
+            });
+
+            setToast({ message: `Tag "${tagToDelete}" has been deleted.`, type: 'success' });
+
+            if (currentView.type === 'tag' && (
+                (typeof currentView.value === 'string' && currentView.value === tagToDelete) ||
+                (typeof currentView.value === 'object' && currentView.value.name === tagToDelete)
+            )) {
+                handleViewChange('all-subscriptions');
+            }
+        }
+    }, [feeds, articleTags, setToast, currentView, handleViewChange]);
+
+    const handleRenameTag = useCallback((oldName: string, newName: string) => {
+        const newTagName = newName.trim().toUpperCase();
+        if (!newTagName || newTagName === oldName.toUpperCase()) {
+            return;
+        }
+
+        if (allTags.map(t => t.toUpperCase()).includes(newTagName)) {
+            setToast({ message: `Tag "#${newTagName}" already exists.`, type: 'error' });
+            return;
+        }
+
         setFeeds(prevFeeds => prevFeeds.map(feed => {
-            if (!feed.tags) return feed;
-            const newTags = feed.tags.filter(tag => tag !== tagToDelete);
-            return { ...feed, tags: newTags.length > 0 ? newTags : undefined };
+            if (!feed.tags?.includes(oldName)) return feed;
+            const newTags = new Set(feed.tags.filter(t => t !== oldName));
+            newTags.add(newTagName);
+            return { ...feed, tags: Array.from(newTags).sort() };
         }));
-        setArticleTags(prev => {
-            const newMap = new Map(prev);
-            for (const [articleId, tags] of newMap.entries()) {
-                const newTags = tags.filter(tag => tag !== tagToDelete);
-                if (newTags.length > 0) {
-                    newMap.set(articleId, newTags);
+
+        setArticleTags(prevArticleTags => {
+            const newArticleTags = new Map<string, string[]>();
+            for (const [articleId, tags] of prevArticleTags.entries()) {
+                if (tags.includes(oldName)) {
+                    const newTags = new Set(tags.filter(t => t !== oldName));
+                    newTags.add(newTagName);
+                    newArticleTags.set(articleId, Array.from(newTags).sort());
                 } else {
-                    newMap.delete(articleId);
+                    newArticleTags.set(articleId, tags);
                 }
             }
+            return newArticleTags;
+        });
+
+        setTagOrders(prevTagOrders => {
+            const newTagOrders = { ...prevTagOrders };
+            const keysToUpdate = Object.keys(newTagOrders).filter(key => key.endsWith(`-${oldName}`) || key === oldName);
+
+            for (const key of keysToUpdate) {
+                const newKey = key.replace(oldName, newTagName);
+                newTagOrders[newKey] = newTagOrders[key];
+                delete newTagOrders[key];
+            }
+
+            return newTagOrders;
+        });
+
+        setToast({ message: `Tag "#${oldName}" renamed to "#${newTagName}".`, type: 'success' });
+
+        if (currentView.type === 'tag') {
+            let currentTagName: string;
+            let currentTagType: 'youtube' | 'rss' | undefined;
+
+            if (typeof currentView.value === 'object' && currentView.value.name) {
+                currentTagName = currentView.value.name;
+                currentTagType = currentView.value.type;
+            } else {
+                currentTagName = currentView.value;
+            }
+
+            if (currentTagName === oldName) {
+                if (currentTagType) {
+                    handleViewChange('tag', { name: newTagName, type: currentTagType });
+                } else {
+                    handleViewChange('tag', newTagName);
+                }
+            }
+        }
+
+    }, [feeds, articleTags, tagOrders, allTags, currentView, setToast, handleViewChange]);
+
+    const handleBulkDeleteFeeds = useCallback((feedIds: Set<string>) => {
+        if (window.confirm(`Are you sure you want to delete ${feedIds.size} selected feeds?`)) {
+            setFeeds(prevFeeds => prevFeeds.filter(f => !feedIds.has(f.id)));
+            if (currentView.type === 'feed' && currentView.value && feedIds.has(currentView.value)) {
+                handleViewChange('all-subscriptions');
+            }
+            setToast({ message: `Deleted ${feedIds.size} feeds.`, type: 'success' });
+        }
+    }, [feeds, currentView, handleViewChange, setToast]);
+    const handleToggleFavorite = useCallback((feedId: string) => {
+        setFeeds(prevFeeds => prevFeeds.map(f => f.id === feedId ? { ...f, isFavorite: !f.isFavorite } : f));
+    }, []);
+    const handleSaveFeedTitle = useCallback((feedId: string, title: string) => {
+        setFeeds(prevFeeds => prevFeeds.map(f => f.id === feedId ? { ...f, title } : f));
+    }, []);
+    const handleSaveFeedTags = useCallback((feedId: string, tags: string[]) => {
+        setFeeds(prevFeeds => prevFeeds.map(f => f.id === feedId ? { ...f, tags: tags.length > 0 ? tags : undefined } : f));
+    }, []);
+    const handleSaveFeedMaxArticles = useCallback((feedId: string, max: number) => {
+        setFeeds(prevFeeds => prevFeeds.map(f => (f.id === feedId ? { ...f, maxArticles: max } : f)));
+    }, []);
+    const handleToggleReadStatus = useCallback((articleId: string) => {
+        setReadArticleIds(prev => {
+            const newMap = new Map(prev);
+            if (newMap.has(articleId)) newMap.delete(articleId); else newMap.set(articleId, Date.now());
             return newMap;
         });
+    }, []);
+    const handleToggleReadLater = useCallback((articleId: string) => {
+        setReadLaterArticleIds(prev => {
+            const newSet = new Set(prev);
+            const article = articlesById.get(articleId);
+            const isYt = article && feedsById.get(article.feedId)?.url.toLowerCase().includes('youtube.com');
 
-        setToast({ message: `Tag "${tagToDelete}" has been deleted.`, type: 'success' });
-
-        if (currentView.type === 'tag' && (
-            (typeof currentView.value === 'string' && currentView.value === tagToDelete) ||
-            (typeof currentView.value === 'object' && currentView.value.name === tagToDelete)
-        )) {
-            handleViewChange('all-subscriptions');
-        }
-    }
-}, [feeds, articleTags, setToast, currentView, handleViewChange]);
-
-const handleRenameTag = useCallback((oldName: string, newName: string) => {
-    const newTagName = newName.trim().toUpperCase();
-    if (!newTagName || newTagName === oldName.toUpperCase()) {
-        return;
-    }
-
-    if (allTags.map(t => t.toUpperCase()).includes(newTagName)) {
-        setToast({ message: `Tag "#${newTagName}" already exists.`, type: 'error' });
-        return;
-    }
-
-    setFeeds(prevFeeds => prevFeeds.map(feed => {
-        if (!feed.tags?.includes(oldName)) return feed;
-        const newTags = new Set(feed.tags.filter(t => t !== oldName));
-        newTags.add(newTagName);
-        return { ...feed, tags: Array.from(newTags).sort() };
-    }));
-
-    setArticleTags(prevArticleTags => {
-        const newArticleTags = new Map<string, string[]>();
-        for (const [articleId, tags] of prevArticleTags.entries()) {
-            if (tags.includes(oldName)) {
-                const newTags = new Set(tags.filter(t => t !== oldName));
-                newTags.add(newTagName);
-                newArticleTags.set(articleId, Array.from(newTags).sort());
+            if (newSet.has(articleId)) {
+                newSet.delete(articleId);
+                if (isYt) setReadLaterOrderYt(currentOrder => currentOrder.filter(id => id !== articleId));
+                else setReadLaterOrderRss(currentOrder => currentOrder.filter(id => id !== articleId));
             } else {
-                newArticleTags.set(articleId, tags);
+                newSet.add(articleId);
+                if (isYt) setReadLaterOrderYt(currentOrder => [articleId, ...currentOrder]);
+                else setReadLaterOrderRss(currentOrder => [articleId, ...currentOrder]);
             }
-        }
-        return newArticleTags;
-    });
+            return newSet;
+        });
+    }, [articlesById, feedsById]);
 
-    setTagOrders(prevTagOrders => {
-        const newTagOrders = { ...prevTagOrders };
-        const keysToUpdate = Object.keys(newTagOrders).filter(key => key.endsWith(`-${oldName}`) || key === oldName);
-
-        for (const key of keysToUpdate) {
-            const newKey = key.replace(oldName, newTagName);
-            newTagOrders[newKey] = newTagOrders[key];
-            delete newTagOrders[key];
+    const handleGenerateDigest = useCallback(() => {
+        if (selectedArticleIdsForBatch.size === 0) {
+            setToast({ message: 'Please select one or more articles or videos to create a digest from.', type: 'error' });
+            return;
         }
 
-        return newTagOrders;
-    });
+        const selectedArticles = Array.from(selectedArticleIdsForBatch)
+            .map(id => articlesById.get(id))
+            .filter((a): a is Article => !!a);
 
-    setToast({ message: `Tag "#${oldName}" renamed to "#${newTagName}".`, type: 'success' });
+        setArticlesForDigest(selectedArticles);
+        setIsDigestConfigModalOpen(true);
+    }, [selectedArticleIdsForBatch, articlesById, setToast]);
 
-    if (currentView.type === 'tag') {
-        let currentTagName: string;
-        let currentTagType: 'youtube' | 'rss' | undefined;
-
-        if (typeof currentView.value === 'object' && currentView.value.name) {
-            currentTagName = currentView.value.name;
-            currentTagType = currentView.value.type;
-        } else {
-            currentTagName = currentView.value;
+    const handleGenerateEbook = useCallback(async () => {
+        if (selectedArticleIdsForBatch.size === 0) {
+            setToast({ message: 'Please select one or more articles to create an EPUB.', type: 'error' });
+            return;
         }
 
-        if (currentTagName === oldName) {
-            if (currentTagType) {
-                handleViewChange('tag', { name: newTagName, type: currentTagType });
-            } else {
-                handleViewChange('tag', newTagName);
-            }
+        const selectedArticles = Array.from(selectedArticleIdsForBatch)
+            .map(id => articlesById.get(id))
+            .filter((a): a is Article => !!a);
+
+        if (selectedArticles.length === 0) {
+            setToast({ message: 'Could not find selected articles.', type: 'error' });
+            return;
         }
-    }
 
-}, [feeds, articleTags, tagOrders, allTags, currentView, setToast, handleViewChange]);
+        const date = new Date().toISOString().split('T')[0];
+        setEpubDefaults({
+            title: `Media-Feeder Export - ${new Date().toLocaleDateString()}`,
+            filename: `media-feeder-export_${date}`,
+            source: 'selection'
+        });
+        setArticlesForEpub(selectedArticles);
+        setIsEpubSettingsModalOpen(true);
+    }, [selectedArticleIdsForBatch, articlesById, setToast]);
 
-const handleBulkDeleteFeeds = useCallback((feedIds: Set<string>) => {
-    if (window.confirm(`Are you sure you want to delete ${feedIds.size} selected feeds?`)) {
-        setFeeds(prevFeeds => prevFeeds.filter(f => !feedIds.has(f.id)));
-        if (currentView.type === 'feed' && currentView.value && feedIds.has(currentView.value)) {
-            handleViewChange('all-subscriptions');
+    const handleGenerateEbookFromView = useCallback(async () => {
+        if (articlesToShow.length === 0) {
+            setToast({ message: 'There are no articles in the current view to create an EPUB.', type: 'error' });
+            return;
         }
-        setToast({ message: `Deleted ${feedIds.size} feeds.`, type: 'success' });
-    }
-}, [feeds, currentView, handleViewChange, setToast]);
-const handleToggleFavorite = useCallback((feedId: string) => {
-    setFeeds(prevFeeds => prevFeeds.map(f => f.id === feedId ? { ...f, isFavorite: !f.isFavorite } : f));
-}, []);
-const handleSaveFeedTitle = useCallback((feedId: string, title: string) => {
-    setFeeds(prevFeeds => prevFeeds.map(f => f.id === feedId ? { ...f, title } : f));
-}, []);
-const handleSaveFeedTags = useCallback((feedId: string, tags: string[]) => {
-    setFeeds(prevFeeds => prevFeeds.map(f => f.id === feedId ? { ...f, tags: tags.length > 0 ? tags : undefined } : f));
-}, []);
-const handleSaveFeedMaxArticles = useCallback((feedId: string, max: number) => {
-    setFeeds(prevFeeds => prevFeeds.map(f => (f.id === feedId ? { ...f, maxArticles: max } : f)));
-}, []);
-const handleToggleReadStatus = useCallback((articleId: string) => {
-    setReadArticleIds(prev => {
-        const newMap = new Map(prev);
-        if (newMap.has(articleId)) newMap.delete(articleId); else newMap.set(articleId, Date.now());
-        return newMap;
-    });
-}, []);
-const handleToggleReadLater = useCallback((articleId: string) => {
-    setReadLaterArticleIds(prev => {
-        const newSet = new Set(prev);
-        const article = articlesById.get(articleId);
-        const isYt = article && feedsById.get(article.feedId)?.url.toLowerCase().includes('youtube.com');
 
-        if (newSet.has(articleId)) {
-            newSet.delete(articleId);
-            if (isYt) setReadLaterOrderYt(currentOrder => currentOrder.filter(id => id !== articleId));
-            else setReadLaterOrderRss(currentOrder => currentOrder.filter(id => id !== articleId));
-        } else {
-            newSet.add(articleId);
-            if (isYt) setReadLaterOrderYt(currentOrder => [articleId, ...currentOrder]);
-            else setReadLaterOrderRss(currentOrder => [articleId, ...currentOrder]);
+        const date = new Date().toISOString().split('T')[0];
+        const safeHeaderTitle = headerTitle.replace(/[^a-zA-Z0-9 ]/g, '');
+        const safeFileName = safeHeaderTitle.replace(/\s+/g, '_');
+
+        setEpubDefaults({
+            title: `Media-Feeder - ${safeHeaderTitle}`,
+            filename: `media-feeder_${safeFileName}_${date}`,
+            source: 'view'
+        });
+        setArticlesForEpub(articlesToShow);
+        setIsEpubSettingsModalOpen(true);
+    }, [articlesToShow, headerTitle, setToast]);
+
+    const handleGenerateSummariesForSelected = useCallback(async () => {
+        if (selectedArticleIdsForBatch.size === 0) {
+            setToast({ message: 'No articles selected for summary generation.', type: 'error' });
+            return;
         }
-        return newSet;
-    });
-}, [articlesById, feedsById]);
 
-const handleGenerateDigest = useCallback(() => {
-    if (selectedArticleIdsForBatch.size === 0) {
-        setToast({ message: 'Please select one or more articles or videos to create a digest from.', type: 'error' });
-        return;
-    }
+        setIsGeneratingSummaries(true);
+        setSummaryGenerationProgress(0);
+        setToast({ message: `Checking selected articles for summarization eligibility...`, type: 'success' });
 
-    const selectedArticles = Array.from(selectedArticleIdsForBatch)
-        .map(id => articlesById.get(id))
-        .filter((a): a is Article => !!a);
+        const selectedVideos = Array.from(selectedArticleIdsForBatch)
+            .map(id => articlesById.get(id))
+            .filter((a): a is Article => !!a && !a.summary && !a.structuredSummary && !!a.isVideo && !!getYouTubeId(a.link));
 
-    setArticlesForDigest(selectedArticles);
-    setIsDigestConfigModalOpen(true);
-}, [selectedArticleIdsForBatch, articlesById, setToast]);
-
-const handleGenerateEbook = useCallback(async () => {
-    if (selectedArticleIdsForBatch.size === 0) {
-        setToast({ message: 'Please select one or more articles to create an EPUB.', type: 'error' });
-        return;
-    }
-
-    const selectedArticles = Array.from(selectedArticleIdsForBatch)
-        .map(id => articlesById.get(id))
-        .filter((a): a is Article => !!a);
-
-    if (selectedArticles.length === 0) {
-        setToast({ message: 'Could not find selected articles.', type: 'error' });
-        return;
-    }
-
-    const date = new Date().toISOString().split('T')[0];
-    setEpubDefaults({
-        title: `Media-Feeder Export - ${new Date().toLocaleDateString()}`,
-        filename: `media-feeder-export_${date}`,
-        source: 'selection'
-    });
-    setArticlesForEpub(selectedArticles);
-    setIsEpubSettingsModalOpen(true);
-}, [selectedArticleIdsForBatch, articlesById, setToast]);
-
-const handleGenerateEbookFromView = useCallback(async () => {
-    if (articlesToShow.length === 0) {
-        setToast({ message: 'There are no articles in the current view to create an EPUB.', type: 'error' });
-        return;
-    }
-
-    const date = new Date().toISOString().split('T')[0];
-    const safeHeaderTitle = headerTitle.replace(/[^a-zA-Z0-9 ]/g, '');
-    const safeFileName = safeHeaderTitle.replace(/\s+/g, '_');
-
-    setEpubDefaults({
-        title: `Media-Feeder - ${safeHeaderTitle}`,
-        filename: `media-feeder_${safeFileName}_${date}`,
-        source: 'view'
-    });
-    setArticlesForEpub(articlesToShow);
-    setIsEpubSettingsModalOpen(true);
-}, [articlesToShow, headerTitle, setToast]);
-
-const handleGenerateSummariesForSelected = useCallback(async () => {
-    if (selectedArticleIdsForBatch.size === 0) {
-        setToast({ message: 'No articles selected for summary generation.', type: 'error' });
-        return;
-    }
-
-    setIsGeneratingSummaries(true);
-    setSummaryGenerationProgress(0);
-    setToast({ message: `Checking selected articles for summarization eligibility...`, type: 'success' });
-
-    const selectedVideos = Array.from(selectedArticleIdsForBatch)
-        .map(id => articlesById.get(id))
-        .filter((a): a is Article => !!a && !a.summary && !a.structuredSummary && !!a.isVideo && !!getYouTubeId(a.link));
-
-    if (selectedVideos.length === 0) {
-        setToast({ message: 'No eligible videos found. Summaries are generated for YouTube videos that do not already have a summary.', type: 'error' });
-        setIsGeneratingSummaries(false);
-        return;
-    }
-
-    let skippedCount = 0;
-    const articlesToSummarize: { article: Article, captionUrl: string }[] = [];
-    for (const article of selectedVideos) {
-        const videoId = getYouTubeId(article.link);
-        if (videoId) {
-            try {
-                const choices = await fetchAvailableCaptionChoices(videoId);
-                if (choices.length > 0) {
-                    const transcript = await fetchAndParseTranscript(choices[0].url);
-                    if (transcript.length < 3) {
-                        skippedCount++;
-                        continue; // Skip silently
-                    }
-                    articlesToSummarize.push({ article, captionUrl: choices[0].url });
-                }
-            } catch (e) {
-                console.warn(`Could not check transcripts for "${article.title}":`, e);
-            }
+        if (selectedVideos.length === 0) {
+            setToast({ message: 'No eligible videos found. Summaries are generated for YouTube videos that do not already have a summary.', type: 'error' });
+            setIsGeneratingSummaries(false);
+            return;
         }
-    }
 
-    if (articlesToSummarize.length === 0) {
-        setToast({ message: `None of the selected videos have transcripts available for summarization. ${skippedCount > 0 ? `${skippedCount} were skipped for having short transcripts.` : ''}`.trim(), type: 'error' });
-        setIsGeneratingSummaries(false);
-        setSummaryGenerationProgress(null);
-        setSelectedArticleIdsForBatch(new Set());
-        return;
-    }
-
-    setToast({ message: `Found ${articlesToSummarize.length} videos with transcripts. Starting summarization...`, type: 'success' });
-
-    let summarizedCount = 0;
-    const totalToSummarize = articlesToSummarize.length;
-
-    for (const { article, captionUrl } of articlesToSummarize) {
-        try {
-            const transcriptLines = await fetchAndParseTranscript(captionUrl);
-
-            const { summary, sources } = await summarizeYouTubeVideo(
-                article.title,
-                transcriptLines,
-                aiModel,
-                defaultAiLanguage
-            );
-
-            handleSummaryGenerated(article.id, summary, sources);
-            summarizedCount++;
-
-        } catch (error) {
-            console.error(`Failed to generate summary for "${article.title}":`, error);
-            const message = error instanceof Error ? error.message : "An unknown error occurred.";
-            // Don't show toast for short transcript error, just log it.
-            if (!message.includes('too short')) {
-                setToast({ message: `Failed to summarize "${article.title}": ${message}`, type: 'error' });
-            } else {
-                skippedCount++;
-            }
-        } finally {
-            const processedCount = summarizedCount + skippedCount;
-            setSummaryGenerationProgress((processedCount / totalToSummarize) * 100);
-        }
-    }
-
-    let finalMessage = `Generated summaries for ${summarizedCount} of ${totalToSummarize} eligible videos.`;
-    if (skippedCount > 0) {
-        finalMessage += ` ${skippedCount} were skipped.`;
-    }
-    setToast({ message: finalMessage, type: 'success' });
-    setIsGeneratingSummaries(false);
-    setSummaryGenerationProgress(null);
-    setSelectedArticleIdsForBatch(new Set());
-}, [
-    selectedArticleIdsForBatch,
-    articlesById,
-    aiModel,
-    defaultAiLanguage,
-    handleSummaryGenerated,
-    setToast,
-    setSelectedArticleIdsForBatch,
-]);
-
-const handleGenerateSummariesForView = useCallback(async () => {
-    if (articlesToShow.length === 0) {
-        setToast({ message: 'No articles in the current view to summarize.', type: 'error' });
-        return;
-    }
-
-    setIsGeneratingSummaries(true);
-    setSummaryGenerationProgress(0);
-    setToast({ message: `Checking articles in view for summarization eligibility...`, type: 'success' });
-
-    const eligibleVideos = articlesToShow
-        .filter((a): a is Article => !!a && !a.summary && !a.structuredSummary && !!a.isVideo && !!getYouTubeId(a.link));
-
-    if (eligibleVideos.length === 0) {
-        setToast({ message: 'No eligible videos found in this view. Summaries can be generated for YouTube videos that do not already have a summary.', type: 'error' });
-        setIsGeneratingSummaries(false);
-        return;
-    }
-
-    let skippedCount = 0;
-    const articlesToSummarize: { article: Article, captionUrl: string }[] = [];
-    const checkBatchSize = 10;
-    for (let i = 0; i < eligibleVideos.length; i += checkBatchSize) {
-        const batch = eligibleVideos.slice(i, i + checkBatchSize);
-        const choicePromises = batch.map(async (article) => {
+        let skippedCount = 0;
+        const articlesToSummarize: { article: Article, captionUrl: string }[] = [];
+        for (const article of selectedVideos) {
             const videoId = getYouTubeId(article.link);
             if (videoId) {
                 try {
@@ -3675,1103 +3571,1206 @@ const handleGenerateSummariesForView = useCallback(async () => {
                         const transcript = await fetchAndParseTranscript(choices[0].url);
                         if (transcript.length < 3) {
                             skippedCount++;
-                            return null;
+                            continue; // Skip silently
                         }
-                        return { article, captionUrl: choices[0].url };
+                        articlesToSummarize.push({ article, captionUrl: choices[0].url });
                     }
                 } catch (e) {
                     console.warn(`Could not check transcripts for "${article.title}":`, e);
                 }
             }
-            return null;
-        });
+        }
 
-        const results = await Promise.all(choicePromises);
-        articlesToSummarize.push(...results.filter((r): r is { article: Article, captionUrl: string } => r !== null));
-        setSummaryGenerationProgress(((i + batch.length) / eligibleVideos.length) * 20);
-    }
+        if (articlesToSummarize.length === 0) {
+            setToast({ message: `None of the selected videos have transcripts available for summarization. ${skippedCount > 0 ? `${skippedCount} were skipped for having short transcripts.` : ''}`.trim(), type: 'error' });
+            setIsGeneratingSummaries(false);
+            setSummaryGenerationProgress(null);
+            setSelectedArticleIdsForBatch(new Set());
+            return;
+        }
 
-    if (articlesToSummarize.length === 0) {
-        setToast({ message: `None of the eligible videos in this view have transcripts available for summarization. ${skippedCount > 0 ? `${skippedCount} were skipped for having short transcripts.` : ''}`.trim(), type: 'error' });
+        setToast({ message: `Found ${articlesToSummarize.length} videos with transcripts. Starting summarization...`, type: 'success' });
+
+        let summarizedCount = 0;
+        const totalToSummarize = articlesToSummarize.length;
+
+        for (const { article, captionUrl } of articlesToSummarize) {
+            try {
+                const transcriptLines = await fetchAndParseTranscript(captionUrl);
+
+                const { summary, sources } = await summarizeYouTubeVideo(
+                    article.title,
+                    transcriptLines,
+                    aiModel,
+                    defaultAiLanguage
+                );
+
+                handleSummaryGenerated(article.id, summary, sources);
+                summarizedCount++;
+
+            } catch (error) {
+                console.error(`Failed to generate summary for "${article.title}":`, error);
+                const message = error instanceof Error ? error.message : "An unknown error occurred.";
+                // Don't show toast for short transcript error, just log it.
+                if (!message.includes('too short')) {
+                    setToast({ message: `Failed to summarize "${article.title}": ${message}`, type: 'error' });
+                } else {
+                    skippedCount++;
+                }
+            } finally {
+                const processedCount = summarizedCount + skippedCount;
+                setSummaryGenerationProgress((processedCount / totalToSummarize) * 100);
+            }
+        }
+
+        let finalMessage = `Generated summaries for ${summarizedCount} of ${totalToSummarize} eligible videos.`;
+        if (skippedCount > 0) {
+            finalMessage += ` ${skippedCount} were skipped.`;
+        }
+        setToast({ message: finalMessage, type: 'success' });
         setIsGeneratingSummaries(false);
         setSummaryGenerationProgress(null);
-        return;
-    }
+        setSelectedArticleIdsForBatch(new Set());
+    }, [
+        selectedArticleIdsForBatch,
+        articlesById,
+        aiModel,
+        defaultAiLanguage,
+        handleSummaryGenerated,
+        setToast,
+        setSelectedArticleIdsForBatch,
+    ]);
 
-    setToast({ message: `Found ${articlesToSummarize.length} videos with transcripts. Starting summarization...`, type: 'success' });
-
-    let summarizedCount = 0;
-    const totalToSummarize = articlesToSummarize.length;
-
-    for (const { article, captionUrl } of articlesToSummarize) {
-        try {
-            const transcriptLines = await fetchAndParseTranscript(captionUrl);
-
-            const { summary, sources } = await summarizeYouTubeVideo(
-                article.title,
-                transcriptLines,
-                aiModel,
-                defaultAiLanguage
-            );
-
-            handleSummaryGenerated(article.id, summary, sources);
-            summarizedCount++;
-
-        } catch (error) {
-            console.error(`Failed to generate summary for "${article.title}":`, error);
-            const message = error instanceof Error ? error.message : "An unknown error occurred.";
-            if (!message.includes('too short')) {
-                setToast({ message: `Failed to summarize "${article.title}": ${message}`, type: 'error' });
-            } else {
-                skippedCount++;
-            }
-        } finally {
-            const processedCount = summarizedCount + skippedCount;
-            const baseProgress = 20;
-            setSummaryGenerationProgress(baseProgress + ((processedCount / totalToSummarize) * 80));
+    const handleGenerateSummariesForView = useCallback(async () => {
+        if (articlesToShow.length === 0) {
+            setToast({ message: 'No articles in the current view to summarize.', type: 'error' });
+            return;
         }
-    }
 
-    let finalMessage = `Generated summaries for ${summarizedCount} of ${totalToSummarize} eligible videos.`;
-    if (skippedCount > 0) {
-        finalMessage += ` ${skippedCount} were skipped.`;
-    }
-    setToast({ message: finalMessage, type: 'success' });
-    setIsGeneratingSummaries(false);
-    setSummaryGenerationProgress(null);
-}, [
-    articlesToShow,
-    aiModel,
-    defaultAiLanguage,
-    handleSummaryGenerated,
-    setToast,
-]);
+        setIsGeneratingSummaries(true);
+        setSummaryGenerationProgress(0);
+        setToast({ message: `Checking articles in view for summarization eligibility...`, type: 'success' });
 
-const handleExecuteDetailedDigest = useCallback(async (selectedArticles: Article[], targetLanguage: string) => {
-    setIsDigestConfigModalOpen(false);
-    setInitialDigestLanguage(targetLanguage);
+        const eligibleVideos = articlesToShow
+            .filter((a): a is Article => !!a && !a.summary && !a.structuredSummary && !!a.isVideo && !!getYouTubeId(a.link));
 
-    if (selectedArticles.length === 0) {
-        setToast({ message: 'No items were selected to create a digest from.', type: 'error' });
-        return;
-    }
+        if (eligibleVideos.length === 0) {
+            setToast({ message: 'No eligible videos found in this view. Summaries can be generated for YouTube videos that do not already have a summary.', type: 'error' });
+            setIsGeneratingSummaries(false);
+            return;
+        }
 
-    setIsDigestModalOpen(true);
-    setDigestState({ digest: null, type: 'detailed', error: null, isLoading: true, loadingMessage: `Summarizing ${selectedArticles.length} selected items...` });
-
-    try {
-        const topItems = selectedArticles.slice(0, 10);
-
-        const summaryPromises = topItems.map(async (article): Promise<DetailedDigestItem | null> => {
-            if (article.structuredSummary) {
-                return { title: article.title, link: article.link, summary: article.structuredSummary, sources: article.sources || [] };
-            }
-            if (article.summary) {
-                return { title: article.title, link: article.link, summary: article.summary, sources: article.sources || [] };
-            }
-
-            if (article.isVideo && article.link) {
+        let skippedCount = 0;
+        const articlesToSummarize: { article: Article, captionUrl: string }[] = [];
+        const checkBatchSize = 10;
+        for (let i = 0; i < eligibleVideos.length; i += checkBatchSize) {
+            const batch = eligibleVideos.slice(i, i + checkBatchSize);
+            const choicePromises = batch.map(async (article) => {
                 const videoId = getYouTubeId(article.link);
                 if (videoId) {
                     try {
                         const choices = await fetchAvailableCaptionChoices(videoId);
                         if (choices.length > 0) {
-                            const transcriptLines = await fetchAndParseTranscript(choices[0].url);
-                            if (transcriptLines.length > 3) {
-                                const { summary, sources } = await summarizeYouTubeVideo(article.title, transcriptLines, aiModel, defaultAiLanguage);
-                                return { title: article.title, link: article.link, summary, sources };
+                            const transcript = await fetchAndParseTranscript(choices[0].url);
+                            if (transcript.length < 3) {
+                                skippedCount++;
+                                return null;
                             }
+                            return { article, captionUrl: choices[0].url };
                         }
-                        const textForSummary = `Title: ${article.title}\nDescription: ${(article.content || article.description).replace(/<[^>]*>?/gm, '').trim()}`;
-                        const { summary, sources } = await summarizeText(textForSummary, article.link, aiModel, defaultAiLanguage, 'video');
-                        return { title: article.title, link: article.link, summary, sources };
                     } catch (e) {
-                        console.warn(`Could not get transcript for ${article.title}, falling back to text summary.`, e);
+                        console.warn(`Could not check transcripts for "${article.title}":`, e);
+                    }
+                }
+                return null;
+            });
+
+            const results = await Promise.all(choicePromises);
+            articlesToSummarize.push(...results.filter((r): r is { article: Article, captionUrl: string } => r !== null));
+            setSummaryGenerationProgress(((i + batch.length) / eligibleVideos.length) * 20);
+        }
+
+        if (articlesToSummarize.length === 0) {
+            setToast({ message: `None of the eligible videos in this view have transcripts available for summarization. ${skippedCount > 0 ? `${skippedCount} were skipped for having short transcripts.` : ''}`.trim(), type: 'error' });
+            setIsGeneratingSummaries(false);
+            setSummaryGenerationProgress(null);
+            return;
+        }
+
+        setToast({ message: `Found ${articlesToSummarize.length} videos with transcripts. Starting summarization...`, type: 'success' });
+
+        let summarizedCount = 0;
+        const totalToSummarize = articlesToSummarize.length;
+
+        for (const { article, captionUrl } of articlesToSummarize) {
+            try {
+                const transcriptLines = await fetchAndParseTranscript(captionUrl);
+
+                const { summary, sources } = await summarizeYouTubeVideo(
+                    article.title,
+                    transcriptLines,
+                    aiModel,
+                    defaultAiLanguage
+                );
+
+                handleSummaryGenerated(article.id, summary, sources);
+                summarizedCount++;
+
+            } catch (error) {
+                console.error(`Failed to generate summary for "${article.title}":`, error);
+                const message = error instanceof Error ? error.message : "An unknown error occurred.";
+                if (!message.includes('too short')) {
+                    setToast({ message: `Failed to summarize "${article.title}": ${message}`, type: 'error' });
+                } else {
+                    skippedCount++;
+                }
+            } finally {
+                const processedCount = summarizedCount + skippedCount;
+                const baseProgress = 20;
+                setSummaryGenerationProgress(baseProgress + ((processedCount / totalToSummarize) * 80));
+            }
+        }
+
+        let finalMessage = `Generated summaries for ${summarizedCount} of ${totalToSummarize} eligible videos.`;
+        if (skippedCount > 0) {
+            finalMessage += ` ${skippedCount} were skipped.`;
+        }
+        setToast({ message: finalMessage, type: 'success' });
+        setIsGeneratingSummaries(false);
+        setSummaryGenerationProgress(null);
+    }, [
+        articlesToShow,
+        aiModel,
+        defaultAiLanguage,
+        handleSummaryGenerated,
+        setToast,
+    ]);
+
+    const handleExecuteDetailedDigest = useCallback(async (selectedArticles: Article[], targetLanguage: string) => {
+        setIsDigestConfigModalOpen(false);
+        setInitialDigestLanguage(targetLanguage);
+
+        if (selectedArticles.length === 0) {
+            setToast({ message: 'No items were selected to create a digest from.', type: 'error' });
+            return;
+        }
+
+        setIsDigestModalOpen(true);
+        setDigestState({ digest: null, type: 'detailed', error: null, isLoading: true, loadingMessage: `Summarizing ${selectedArticles.length} selected items...` });
+
+        try {
+            const topItems = selectedArticles.slice(0, 10);
+
+            const summaryPromises = topItems.map(async (article): Promise<DetailedDigestItem | null> => {
+                if (article.structuredSummary) {
+                    return { title: article.title, link: article.link, summary: article.structuredSummary, sources: article.sources || [] };
+                }
+                if (article.summary) {
+                    return { title: article.title, link: article.link, summary: article.summary, sources: article.sources || [] };
+                }
+
+                if (article.isVideo && article.link) {
+                    const videoId = getYouTubeId(article.link);
+                    if (videoId) {
                         try {
+                            const choices = await fetchAvailableCaptionChoices(videoId);
+                            if (choices.length > 0) {
+                                const transcriptLines = await fetchAndParseTranscript(choices[0].url);
+                                if (transcriptLines.length > 3) {
+                                    const { summary, sources } = await summarizeYouTubeVideo(article.title, transcriptLines, aiModel, defaultAiLanguage);
+                                    return { title: article.title, link: article.link, summary, sources };
+                                }
+                            }
                             const textForSummary = `Title: ${article.title}\nDescription: ${(article.content || article.description).replace(/<[^>]*>?/gm, '').trim()}`;
                             const { summary, sources } = await summarizeText(textForSummary, article.link, aiModel, defaultAiLanguage, 'video');
                             return { title: article.title, link: article.link, summary, sources };
-                        } catch (fallbackError) {
-                            console.error(`Fallback summary also failed for ${article.title}:`, fallbackError);
-                            return { title: article.title, link: article.link, summary: `*Summary could not be generated for this item.*`, sources: [] };
+                        } catch (e) {
+                            console.warn(`Could not get transcript for ${article.title}, falling back to text summary.`, e);
+                            try {
+                                const textForSummary = `Title: ${article.title}\nDescription: ${(article.content || article.description).replace(/<[^>]*>?/gm, '').trim()}`;
+                                const { summary, sources } = await summarizeText(textForSummary, article.link, aiModel, defaultAiLanguage, 'video');
+                                return { title: article.title, link: article.link, summary, sources };
+                            } catch (fallbackError) {
+                                console.error(`Fallback summary also failed for ${article.title}:`, fallbackError);
+                                return { title: article.title, link: article.link, summary: `*Summary could not be generated for this item.*`, sources: [] };
+                            }
                         }
                     }
                 }
+                return { title: article.title, link: article.link, summary: `*Summary could not be generated for this item.*`, sources: [] };
+            });
+
+            const settledSummaries = await Promise.all(summaryPromises);
+            const successfulSummaries = settledSummaries.filter((s): s is DetailedDigestItem => s !== null);
+
+            if (successfulSummaries.length === 0) {
+                throw new Error("Failed to generate a summary for any of the selected items.");
             }
-            return { title: article.title, link: article.link, summary: `*Summary could not be generated for this item.*`, sources: [] };
-        });
 
-        const settledSummaries = await Promise.all(summaryPromises);
-        const successfulSummaries = settledSummaries.filter((s): s is DetailedDigestItem => s !== null);
+            const digest: DetailedDigest = successfulSummaries;
 
-        if (successfulSummaries.length === 0) {
-            throw new Error("Failed to generate a summary for any of the selected items.");
+            setDigestState({ digest, type: 'detailed', error: null, isLoading: false, loadingMessage: null });
+        } catch (e) {
+            setDigestState({ digest: null, type: 'detailed', error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false, loadingMessage: null });
+        }
+    }, [aiModel, setToast, setIsDigestConfigModalOpen, setIsDigestModalOpen, defaultAiLanguage]);
+
+    const handleExecuteThematicDigest = useCallback(async (selectedArticles: Article[], targetLanguage: string) => {
+        setIsDigestConfigModalOpen(false);
+        setInitialDigestLanguage(targetLanguage);
+
+        if (selectedArticles.length === 0) {
+            setToast({ message: 'No items were selected to create a digest from.', type: 'error' });
+            return;
         }
 
-        const digest: DetailedDigest = successfulSummaries;
+        setIsDigestModalOpen(true);
+        setDigestState({ digest: null, type: 'thematic', error: null, isLoading: true, loadingMessage: `Creating thematic digest for ${selectedArticles.length} items...` });
 
-        setDigestState({ digest, type: 'detailed', error: null, isLoading: false, loadingMessage: null });
-    } catch (e) {
-        setDigestState({ digest: null, type: 'detailed', error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false, loadingMessage: null });
-    }
-}, [aiModel, setToast, setIsDigestConfigModalOpen, setIsDigestModalOpen, defaultAiLanguage]);
+        try {
+            const digest = await generateThematicDigest(selectedArticles, aiModel as AiModel);
+            setDigestState({ digest, type: 'thematic', error: null, isLoading: false, loadingMessage: null });
+        } catch (e) {
+            setDigestState({ digest: null, type: 'thematic', error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false, loadingMessage: null });
+        }
+    }, [aiModel, setToast, setIsDigestConfigModalOpen, setIsDigestModalOpen]);
 
-const handleExecuteThematicDigest = useCallback(async (selectedArticles: Article[], targetLanguage: string) => {
-    setIsDigestConfigModalOpen(false);
-    setInitialDigestLanguage(targetLanguage);
-
-    if (selectedArticles.length === 0) {
-        setToast({ message: 'No items were selected to create a digest from.', type: 'error' });
-        return;
-    }
-
-    setIsDigestModalOpen(true);
-    setDigestState({ digest: null, type: 'thematic', error: null, isLoading: true, loadingMessage: `Creating thematic digest for ${selectedArticles.length} items...` });
-
-    try {
-        const digest = await generateThematicDigest(selectedArticles, aiModel as AiModel);
-        setDigestState({ digest, type: 'thematic', error: null, isLoading: false, loadingMessage: null });
-    } catch (e) {
-        setDigestState({ digest: null, type: 'thematic', error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false, loadingMessage: null });
-    }
-}, [aiModel, setToast, setIsDigestConfigModalOpen, setIsDigestModalOpen]);
-
-const translateDigest = useCallback(async (
-    digest: DetailedDigest | ThematicDigest,
-    type: 'detailed' | 'thematic',
-    targetLanguage: string
-): Promise<DetailedDigest | ThematicDigest> => {
-    if (type === 'detailed') {
-        return await translateDetailedDigest(digest as DetailedDigest, targetLanguage, aiModel);
-    } else {
-        return await translateThematicDigest(digest as ThematicDigest, targetLanguage, aiModel);
-    }
-}, [aiModel]);
-
-const handleResetRecommendations = useCallback(() => {
-    setRecommendationsState({ recommendations: null, error: null, isLoading: false });
-}, []);
-
-const handleGenerateRecommendations = useCallback(async (customQuery?: string) => {
-    setRecommendationsState({ recommendations: null, error: null, isLoading: true });
-    setIsRecommendationsModalOpen(true);
-    try {
-        const historyArticles = Array.from(readArticleIds.keys()).map(id => articlesById.get(id)).filter((a): a is Article => !!a);
-        const { recommendations } = await generateRecommendations(feeds, historyArticles, aiModel, customQuery);
-        setRecommendationsState({ recommendations, error: null, isLoading: false });
-    } catch (e) {
-        setRecommendationsState({ recommendations: null, error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false });
-    }
-}, [feeds, readArticleIds, articlesById, aiModel, setIsRecommendationsModalOpen]);
-
-const handleGenerateMoreRecommendations = useCallback(async (customQuery?: string) => {
-    setRecommendationsState(prev => ({ ...prev, isLoading: true }));
-    try {
-        const historyArticles = Array.from(readArticleIds.keys()).map(id => articlesById.get(id)).filter((a): a is Article => !!a);
-        const existingRecUrls = recommendationsState.recommendations?.map(rec => rec.url) || [];
-        const { recommendations: newRecommendations } = await generateRecommendations(feeds, historyArticles, aiModel, customQuery, existingRecUrls);
-
-        setRecommendationsState(prev => {
-            const existingRecs = prev.recommendations || [];
-            const combined = [...existingRecs, ...newRecommendations];
-            const uniqueRecs = Array.from(new Map(combined.map(item => [item.url, item])).values());
-            return { recommendations: uniqueRecs, error: null, isLoading: false };
-        });
-
-    } catch (e) {
-        setRecommendationsState(prev => ({ ...prev, error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false }));
-    }
-}, [feeds, readArticleIds, articlesById, aiModel, recommendationsState.recommendations]);
-
-const handleExportFeeds = useCallback((options: { favoritesOnly?: boolean; tag?: string; }) => {
-    let feedsToExport: Feed[];
-    let fileName = 'media-feeder-backup';
-
-    if (options.favoritesOnly) {
-        feedsToExport = favoriteFeeds;
-        fileName = 'media-feeder-favorites-backup';
-    } else if (options.tag) {
-        feedsToExport = feedsByTag.get(options.tag) || [];
-        fileName = `media-feeder-tag-${options.tag}-backup`;
-    } else {
-        feedsToExport = feeds;
-    }
-
-    const articlesByFeedUrl: Record<string, Article[]> = {};
-    const feedsForJson = feedsToExport.map(feed => {
-        const { id, items, error, ...rest } = feed;
-        articlesByFeedUrl[feed.url] = items.map(item => {
-            const { sources, ...restItem } = item;
-            return restItem as Article;
-        });
-        return rest;
-    });
-
-    const data: SyncData = {
-        feeds: feedsForJson,
-        articlesByFeedUrl,
-        readLaterArticleIds: Array.from(readLaterArticleIds),
-        gridZoomLevel, articleZoomLevel, autoplayMode,
-        articleTags: Array.from(articleTags.entries()),
-        readLaterOrderYt, readLaterOrderRss, tagOrders,
-        favoritesOrderYt, favoritesOrderRss,
-        notes, noteFolders,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const date = new Date().toISOString().split('T')[0];
-    a.download = `${fileName}_${date}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setToast({ message: 'Backup file has been created.', type: 'success' });
-    setIsExportModalOpen(false);
-}, [
-    feeds, favoriteFeeds, readLaterArticleIds, gridZoomLevel, articleZoomLevel,
-    autoplayMode, articleTags, feedsByTag, readLaterOrderYt, readLaterOrderRss,
-    tagOrders, favoritesOrderYt, favoritesOrderRss, setToast, setIsExportModalOpen,
-    notes, noteFolders
-]);
-
-const handleExportChannelsAsText = useCallback(() => {
-    const textData = feeds.map(({ id, items, error, ...rest }) => rest);
-    const jsonString = JSON.stringify(textData, null, 2);
-    setExportTextContent(jsonString);
-    setIsExportTextModalOpen(true);
-}, [feeds, setExportTextContent, setIsExportTextModalOpen]);
-
-const handleOpenClearDataModal = useCallback(() => setIsClearDataModalOpen(true), []);
-
-const handleClearArticles = useCallback((options: { clearYT: boolean; clearNonYT: boolean; keepReadLater: boolean; }) => {
-    const { clearYT, clearNonYT, keepReadLater } = options;
-
-    let target = '';
-    if (clearYT && !clearNonYT) target = 'YouTube';
-    else if (!clearYT && clearNonYT) target = 'Non-YouTube';
-    else return;
-
-    const confirmMessage = `Are you sure you want to delete all ${target} articles and their reading history? ${keepReadLater ? "Articles saved to 'Read Later' will be kept." : "This includes articles saved to 'Read Later'."} This cannot be undone.`;
-
-    if (window.confirm(confirmMessage)) {
-        const articleIdsToDelete = new Set<string>();
-        feeds.forEach(feed => {
-            const shouldClearThisFeed = (clearYT && isYouTubeFeed(feed)) || (clearNonYT && !isYouTubeFeed(feed));
-            if (shouldClearThisFeed) {
-                feed.items.forEach(item => {
-                    if (!keepReadLater || !readLaterArticleIds.has(item.id)) {
-                        articleIdsToDelete.add(item.id);
-                    }
-                });
-            }
-        });
-
-        setFeeds(prevFeeds =>
-            prevFeeds.map(feed => {
-                const shouldClearThisFeed = (clearYT && isYouTubeFeed(feed)) || (clearNonYT && !isYouTubeFeed(feed));
-                if (shouldClearThisFeed) {
-                    return { ...feed, items: feed.items.filter(item => !articleIdsToDelete.has(item.id)) };
-                }
-                return feed;
-            })
-        );
-
-        setReadArticleIds(prev => {
-            const newMap = new Map(prev);
-            articleIdsToDelete.forEach(id => newMap.delete(id));
-            return newMap;
-        });
-
-        setArticleTags(prev => {
-            const newMap = new Map(prev);
-            articleIdsToDelete.forEach(id => newMap.delete(id));
-            return newMap;
-        });
-
-        setToast({ message: `${target} articles and history have been cleared.`, type: 'success' });
-    }
-}, [feeds, readLaterArticleIds, setToast]);
-
-const handleFactoryReset = useCallback(() => {
-    if (window.confirm("Are you sure you want to factory reset the app? This will delete ALL your subscriptions, articles, tags, and settings. This is irreversible.")) {
-        localStorage.clear();
-        window.location.reload();
-    }
-}, []);
-
-const handleClearHistory = useCallback(() => {
-    if (window.confirm("Are you sure you want to clear your entire reading history?")) {
-        setReadArticleIds(new Map());
-        setToast({ message: "Reading history cleared.", type: 'success' });
-    }
-}, [setToast]);
-
-const handleClearReadLater = useCallback(() => {
-    if (window.confirm("Are you sure you want to clear all articles from your Read Later list?")) {
-        setReadLaterArticleIds(new Set());
-        setToast({ message: "Read Later list cleared.", type: 'success' });
-    }
-}, [setToast]);
-
-const handleMarkAllInAllFeedsAsRead = useCallback(() => {
-    if (window.confirm("Are you sure you want to mark ALL articles in ALL feeds as read?")) {
-        setReadArticleIds(prev => {
-            const newMap = new Map(prev);
-            allArticles.forEach(article => {
-                if (!newMap.has(article.id)) newMap.set(article.id, Date.now());
-            });
-            return newMap;
-        });
-        setToast({ message: "All articles marked as read.", type: 'success' });
-    }
-}, [allArticles, setToast]);
-
-const handleMarkAllRead = useCallback(() => {
-    if (articlesToShow.length === 0) return;
-    if (window.confirm(`Are you sure you want to mark all ${articlesToShow.length} articles in this view as read?`)) {
-        setReadArticleIds(prev => {
-            const newMap = new Map(prev);
-            articlesToShow.forEach(article => {
-                if (!newMap.has(article.id)) newMap.set(article.id, Date.now());
-            });
-            return newMap;
-        });
-        setToast({ message: "All visible articles marked as read.", type: 'success' });
-    }
-}, [articlesToShow, setToast]);
-
-const handleMarkSelectedAsRead = useCallback(() => {
-    if (selectedArticleIdsForBatch.size === 0) return;
-    setReadArticleIds(prev => {
-        const newMap = new Map(prev);
-        selectedArticleIdsForBatch.forEach(id => newMap.set(id, Date.now()));
-        return newMap;
-    });
-    setToast({ message: `Marked ${selectedArticleIdsForBatch.size} articles as read.`, type: 'success' });
-    setSelectedArticleIdsForBatch(new Set());
-}, [selectedArticleIdsForBatch, setToast]);
-
-const handleRemoveArticle = useCallback((articleId: string, feedId: string) => {
-    if (!window.confirm("Are you sure you want to remove this article? This cannot be undone.")) return;
-
-    setFeeds(prevFeeds => {
-        return prevFeeds.map(feed => {
-            if (feed.id === feedId) {
-                return {
-                    ...feed,
-                    items: feed.items.filter(item => item.id !== articleId)
-                };
-            }
-            return feed;
-        });
-    });
-
-    setReadArticleIds(prev => { const newMap = new Map(prev); newMap.delete(articleId); return newMap; });
-    setReadLaterArticleIds(prev => { const newSet = new Set(prev); newSet.delete(articleId); return newSet; });
-    setArticleTags(prev => { const newMap = new Map(prev); newMap.delete(articleId); return newMap; });
-
-    if (selectedArticle?.id === articleId) {
-        handleCloseArticleModal();
-    }
-
-    setToast({ message: "Article removed.", type: 'success' });
-}, [selectedArticle, handleCloseArticleModal, setToast]);
-
-const handleBulkDeleteArticles = useCallback(() => {
-    if (selectedArticleIdsForBatch.size === 0) return;
-    if (!window.confirm(`Are you sure you want to delete ${selectedArticleIdsForBatch.size} selected articles? This cannot be undone.`)) return;
-
-    const idsToDelete = selectedArticleIdsForBatch;
-
-    setFeeds(prevFeeds =>
-        prevFeeds.map(feed => ({
-            ...feed,
-            items: feed.items.filter(item => !idsToDelete.has(item.id))
-        }))
-    );
-
-    setReadArticleIds(prev => { const newMap = new Map(prev); idsToDelete.forEach(id => newMap.delete(id)); return newMap; });
-    setReadLaterArticleIds(prev => { const newSet = new Set(prev); idsToDelete.forEach(id => newSet.delete(id)); return newSet; });
-    setArticleTags(prev => { const newMap = new Map(prev); idsToDelete.forEach(id => newMap.delete(id)); return newMap; });
-
-    setSelectedArticleIdsForBatch(new Set());
-    setToast({ message: `Deleted ${idsToDelete.size} articles.`, type: 'success' });
-}, [selectedArticleIdsForBatch, setToast]);
-
-const handleReorderArticles = useCallback((view: { type: string, value?: any }, sourceId: string, targetId: string | null) => {
-    const updateOrder = (currentOrder: string[], setOrder: (order: string[]) => void) => {
-        const newOrder = [...currentOrder];
-        const sourceIndex = newOrder.indexOf(sourceId);
-        if (sourceIndex > -1) newOrder.splice(sourceIndex, 1);
-
-        if (targetId === null) {
-            newOrder.push(sourceId);
+    const translateDigest = useCallback(async (
+        digest: DetailedDigest | ThematicDigest,
+        type: 'detailed' | 'thematic',
+        targetLanguage: string
+    ): Promise<DetailedDigest | ThematicDigest> => {
+        if (type === 'detailed') {
+            return await translateDetailedDigest(digest as DetailedDigest, targetLanguage, aiModel);
         } else {
-            const targetIndex = newOrder.indexOf(targetId);
-            if (targetIndex > -1) newOrder.splice(targetIndex, 0, sourceId);
-            else newOrder.unshift(sourceId); // Fallback if target not found
+            return await translateThematicDigest(digest as ThematicDigest, targetLanguage, aiModel);
         }
-        setOrder(newOrder);
-    };
+    }, [aiModel]);
 
-    if (view.type === 'readLater') {
-        const source = view.value || 'yt';
-        if (source === 'yt') updateOrder(readLaterOrderYt, setReadLaterOrderYt);
-        else updateOrder(readLaterOrderRss, setReadLaterOrderRss);
-    } else if (view.type === 'favorites') {
-        const source = view.value || 'yt';
-        if (source === 'yt') updateOrder(favoritesOrderYt, setFavoritesOrderYt);
-        else updateOrder(favoritesOrderRss, setFavoritesOrderRss);
-    } else if (view.type === 'tag') {
-        const tagValue = view.value;
-        let tagKey: string | undefined;
-        if (typeof tagValue === 'object' && tagValue.name && tagValue.type) {
-            tagKey = `${tagValue.type}-${tagValue.name}`;
-        } else if (typeof tagValue === 'string') {
-            tagKey = tagValue;
+    const handleResetRecommendations = useCallback(() => {
+        setRecommendationsState({ recommendations: null, error: null, isLoading: false });
+    }, []);
+
+    const handleGenerateRecommendations = useCallback(async (customQuery?: string) => {
+        setRecommendationsState({ recommendations: null, error: null, isLoading: true });
+        setIsRecommendationsModalOpen(true);
+        try {
+            const historyArticles = Array.from(readArticleIds.keys()).map(id => articlesById.get(id)).filter((a): a is Article => !!a);
+            const { recommendations } = await generateRecommendations(feeds, historyArticles, aiModel, customQuery);
+            setRecommendationsState({ recommendations, error: null, isLoading: false });
+        } catch (e) {
+            setRecommendationsState({ recommendations: null, error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false });
         }
-        if (tagKey) {
-            setTagOrders(prev => ({
-                ...prev, [tagKey!]: (currentOrder => {
-                    const newOrder = [...(currentOrder || [])];
-                    const sourceIndex = newOrder.indexOf(sourceId);
-                    if (sourceIndex > -1) newOrder.splice(sourceIndex, 1);
-                    if (targetId === null) newOrder.push(sourceId);
-                    else {
-                        const targetIndex = newOrder.indexOf(targetId);
-                        if (targetIndex > -1) newOrder.splice(targetIndex, 0, sourceId);
-                        else newOrder.unshift(sourceId);
-                    }
-                    return newOrder;
-                })(prev[tagKey!])
-            }));
-        }
-    }
-}, [readLaterOrderYt, readLaterOrderRss, favoritesOrderYt, favoritesOrderRss, tagOrders]);
+    }, [feeds, readArticleIds, articlesById, aiModel, setIsRecommendationsModalOpen]);
 
-const handleOpenRelatedModal = useCallback((feedId: string) => {
-    setRelatedSourceFeedId(feedId);
-    setIsRelatedModalOpen(true);
-}, []);
+    const handleGenerateMoreRecommendations = useCallback(async (customQuery?: string) => {
+        setRecommendationsState(prev => ({ ...prev, isLoading: true }));
+        try {
+            const historyArticles = Array.from(readArticleIds.keys()).map(id => articlesById.get(id)).filter((a): a is Article => !!a);
+            const existingRecUrls = recommendationsState.recommendations?.map(rec => rec.url) || [];
+            const { recommendations: newRecommendations } = await generateRecommendations(feeds, historyArticles, aiModel, customQuery, existingRecUrls);
 
-const handleCloseRelatedModal = useCallback(() => {
-    setIsRelatedModalOpen(false);
-    setRelatedSourceFeedId(null);
-    setRelatedChannelsState({ recommendations: null, error: null, isLoading: false });
-}, []);
-
-const handleGenerateRelated = useCallback(async () => {
-    if (!relatedSourceFeedId) return;
-    const sourceFeed = feeds.find(f => f.id === relatedSourceFeedId);
-    if (!sourceFeed) return;
-    setRelatedChannelsState({ recommendations: null, error: null, isLoading: true });
-    try {
-        const existingUrls = feeds.map(f => f.url);
-        const { recommendations } = await generateRelatedChannels(sourceFeed, existingUrls, aiModel);
-        setRelatedChannelsState({ recommendations, error: null, isLoading: false });
-    } catch (e) {
-        setRelatedChannelsState({ recommendations: null, error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false });
-    }
-}, [relatedSourceFeedId, feeds, aiModel]);
-
-const handleBulkUpdateTags = useCallback((feedIds: Set<string>, tags: string[], mode: 'add' | 'set' | 'favorite') => {
-    setFeeds(prevFeeds => prevFeeds.map(feed => {
-        if (!feedIds.has(feed.id)) return feed;
-        if (mode === 'favorite') {
-            return { ...feed, isFavorite: true };
-        }
-        const currentTags = new Set(feed.tags || []);
-        const tagsToApply = new Set(tags);
-        let newTags: Set<string>;
-        if (mode === 'add') {
-            newTags = new Set([...currentTags, ...tagsToApply]);
-        } else { // 'set'
-            newTags = tagsToApply;
-        }
-        const sortedTags = Array.from(newTags).sort();
-        return { ...feed, tags: sortedTags.length > 0 ? sortedTags : undefined };
-    }));
-    setToast({ message: `${feedIds.size} feeds updated successfully.`, type: 'success' });
-}, [setToast]);
-
-const handleOpenBulkEdit = useCallback(() => {
-    setBulkEditModalConfig({ isOpen: true, mode: 'add' });
-}, []);
-
-const handleOpenBulkEditForTag = useCallback((tag: string) => {
-    setBulkEditModalConfig({ isOpen: true, mode: 'add', tag });
-}, []);
-
-const handleOpenBulkEditForFavorites = useCallback(() => {
-    setBulkEditModalConfig({ isOpen: true, mode: 'favorite' });
-}, []);
-
-const onToggleSidebar = useCallback(() => {
-    setIsSidebarCollapsed(prev => !prev);
-}, []);
-const onToggleViewsCollapse = useCallback(() => setIsViewsCollapsed(prev => !prev), []);
-const onToggleYoutubeFeedsCollapse = useCallback(() => setIsYoutubeFeedsCollapsed(prev => !prev), []);
-const onToggleRssFeedsCollapse = useCallback(() => setIsRssFeedsCollapse(prev => !prev), []);
-const onToggleRedditFeedsCollapse = useCallback(() => setIsRedditFeedsCollapse(prev => !prev), []);
-const onToggleTagsCollapse = useCallback(() => setIsTagsCollapsed(prev => !prev), []);
-const onToggleYoutubeTagsCollapse = useCallback(() => setIsYoutubeTagsCollapsed(prev => !prev), []);
-const onToggleRssTagsCollapse = useCallback(() => setIsRssTagsCollapsed(prev => !prev), []);
-const onToggleNotesCollapse = useCallback(() => setIsNotesCollapsed(prev => !prev), []);
-
-const onToggleTagExpansion = useCallback((tag: string, tagType: 'youtube' | 'rss') => {
-    const compositeKey = `${tagType}-${tag}`;
-    setExpandedTags(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(compositeKey)) newSet.delete(compositeKey);
-        else newSet.add(compositeKey);
-        return newSet;
-    });
-}, []);
-
-const onToggleViewExpansion = useCallback((viewType: 'published-today' | 'readLater' | 'history') => {
-    setExpandedViews(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(viewType)) newSet.delete(viewType);
-        else newSet.add(viewType);
-        return newSet;
-    });
-}, []);
-
-const onToggleYoutubePlaylistsCollapse = useCallback(() => setIsYoutubePlaylistsCollapsed(prev => !prev), []);
-
-const handleZoomIn = useCallback(() => {
-    setGridZoomLevel(prev => {
-        const currentIndex = ZOOM_LEVELS.indexOf(prev);
-        return currentIndex > 0 ? ZOOM_LEVELS[currentIndex - 1] : prev;
-    });
-}, []);
-
-const handleZoomOut = useCallback(() => {
-    setGridZoomLevel(prev => {
-        const currentIndex = ZOOM_LEVELS.indexOf(prev);
-        return currentIndex < ZOOM_LEVELS.length - 1 ? ZOOM_LEVELS[currentIndex + 1] : prev;
-    });
-}, []);
-
-const handleArticleZoomIn = useCallback(() => {
-    setArticleZoomLevel(prev => {
-        const currentIndex = ZOOM_LEVELS.indexOf(prev);
-        return currentIndex > 0 ? ZOOM_LEVELS[currentIndex - 1] : prev;
-    });
-}, []);
-
-const handleArticleZoomOut = useCallback(() => {
-    setArticleZoomLevel(prev => {
-        const currentIndex = ZOOM_LEVELS.indexOf(prev);
-        return currentIndex < ZOOM_LEVELS.length - 1 ? ZOOM_LEVELS[currentIndex + 1] : prev;
-    });
-}, []);
-
-const handleClearArticlesCache = useCallback(() => {
-    localStorage.removeItem(ARTICLES_CACHE_KEY);
-    setToast({ message: "Articles cache cleared.", type: 'success' });
-}, [setToast]);
-
-const handleClearAllTags = useCallback(() => {
-    if (window.confirm("Are you sure you want to remove all tags from all feeds? This cannot be undone.")) {
-        setFeeds(prevFeeds => prevFeeds.map(feed => ({ ...feed, tags: undefined })));
-        setArticleTags(new Map());
-        setToast({ message: "All tags have been cleared from all feeds.", type: 'success' });
-    }
-}, [setToast]);
-
-const handleToggleAutoplayNext = useCallback(() => setAutoplayMode(prev => prev === 'on' ? 'off' : 'on'), []);
-const handleToggleAutoplayRandom = useCallback(() => setAutoplayMode(prev => prev === 'random' ? 'off' : 'random'), []);
-const handleToggleAutoplayRepeat = useCallback(() => setAutoplayMode(prev => prev === 'repeat' ? 'off' : 'repeat'), []);
-const handleToggleAutoLikeYouTubeVideos = useCallback(() => setAutoLikeYouTubeVideos(prev => !prev), []);
-const handleToggleAutoUploadAfterRefresh = useCallback(() => setAutoUploadAfterRefresh(prev => !prev), []);
-const handleToggleAutoSummarizeOnRefresh = useCallback(() => setAutoSummarizeOnRefresh(prev => !prev), []);
-const handleToggleRssAndReddit = useCallback(() => setEnableRssAndReddit(prev => !prev), []);
-const handleImportBundledChannels = useCallback((feedsToImport: Omit<Feed, 'id' | 'items' | 'error'>[]) => {
-    const existingUrls = new Set(feeds.map(f => f.url));
-    const newFeeds: Feed[] = feedsToImport
-        .filter(feedData => !existingUrls.has(feedData.url))
-        .map(feedData => ({
-            ...feedData,
-            id: feedData.url,
-            items: [],
-            error: null,
-        }));
-
-    if (newFeeds.length > 0) {
-        setFeeds(prev => [...prev, ...newFeeds]);
-        setToast({ message: `Successfully added ${newFeeds.length} new feeds. Refreshing them now...`, type: 'success' });
-        batchRefreshHandler(newFeeds, `${newFeeds.length} new feeds`);
-    } else {
-        setToast({ message: "All channels from the bundle are already in your subscriptions.", type: 'success' });
-    }
-}, [feeds, setToast, batchRefreshHandler]);
-
-const handleFetchYouTubeSubscriptions = useCallback(async () => {
-    if (!accessToken) {
-        setToast({ message: "Please sign in to Google to import subscriptions.", type: 'error' });
-        handleGoogleSignIn({ showConsentPrompt: true });
-        return;
-    }
-    setYouTubeImportState({ status: 'loading', subscriptions: [], error: null });
-    try {
-        const subs = await fetchYouTubeSubscriptions(accessToken);
-        setYouTubeImportState({ status: 'loaded', subscriptions: subs, error: null });
-    } catch (e: any) {
-        setYouTubeImportState({ status: 'error', subscriptions: [], error: e.message });
-        if (e.isAuthError) handleGoogleSignIn({ showConsentPrompt: true });
-    }
-}, [accessToken, setToast, handleGoogleSignIn]);
-
-const handleClearYouTubeImportState = useCallback(() => {
-    setYouTubeImportState({ status: 'idle', subscriptions: [], error: null });
-}, []);
-
-const handleAddYouTubeChannels = useCallback(async (subscriptions: YouTubeSubscription[]) => {
-    if (subscriptions.length === 0) return;
-
-    const newFeedsData = subscriptions.map((sub): Omit<Feed, 'id' | 'items' | 'error'> => ({
-        url: `https://www.youtube.com/channel/${sub.channelId}/home`,
-        title: sub.title,
-        description: sub.description,
-        iconUrl: sub.thumbnailUrl,
-        maxArticles: 5,
-    }));
-
-    handleImportBundledChannels(newFeedsData);
-    setIsImportYouTubeModalOpen(false);
-}, [handleImportBundledChannels, setIsImportYouTubeModalOpen]);
-
-const handleToggleArticleSelection = useCallback((articleId: string) => {
-    setSelectedArticleIdsForBatch(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(articleId)) newSet.delete(articleId);
-        else newSet.add(articleId);
-        return newSet;
-    });
-}, []);
-
-const handleSelectAllArticles = useCallback(() => {
-    const allVisibleIds = new Set(articlesToShow.map(a => a.id));
-    const areAllSelected = allVisibleIds.size > 0 && Array.from(allVisibleIds).every(id => selectedArticleIdsForBatch.has(id));
-
-    if (areAllSelected) {
-        // If all are selected, deselect them
-        setSelectedArticleIdsForBatch(prev => {
-            const newSet = new Set(prev);
-            allVisibleIds.forEach(id => newSet.delete(id));
-            return newSet;
-        });
-    } else {
-        // If not all are selected (or none are), select all of them
-        setSelectedArticleIdsForBatch(prev => new Set([...prev, ...allVisibleIds]));
-    }
-}, [articlesToShow, selectedArticleIdsForBatch]);
-
-const handleClearArticleSelection = useCallback(() => {
-    setSelectedArticleIdsForBatch(new Set());
-}, []);
-
-const handleSaveArticleTags = useCallback((articleId: string, tags: string[]) => {
-    setArticleTags(prev => {
-        const newMap = new Map(prev);
-        if (tags.length > 0) newMap.set(articleId, tags);
-        else newMap.delete(articleId);
-        return newMap;
-    });
-}, []);
-
-const handleBulkSaveArticleTags = useCallback((articleIds: Set<string>, tags: string[], mode: 'add' | 'set') => {
-    setArticleTags(prev => {
-        const newMap = new Map(prev);
-        articleIds.forEach(id => {
-            const currentTags = new Set(newMap.get(id) || []);
-            const tagsToApply = new Set(tags);
-            let newTags: Set<string>;
-            if (mode === 'add') newTags = new Set([...currentTags, ...tagsToApply]);
-            else newTags = tagsToApply;
-
-            const sortedTags = Array.from(newTags).sort();
-            if (sortedTags.length > 0) newMap.set(id, sortedTags);
-            else newMap.delete(id);
-        });
-        return newMap;
-    });
-    setToast({ message: `${articleIds.size} articles updated.`, type: 'success' });
-}, [setToast]);
-
-const handleBulkClearArticleTags = useCallback(() => {
-    if (window.confirm(`Are you sure you want to remove all tags from the ${selectedArticleIdsForBatch.size} selected articles?`)) {
-        setArticleTags(prev => {
-            const newMap = new Map(prev);
-            selectedArticleIdsForBatch.forEach(id => newMap.delete(id));
-            return newMap;
-        });
-        setToast({ message: "Tags cleared from selected articles.", type: 'success' });
-    }
-}, [selectedArticleIdsForBatch, setToast]);
-
-const startDemo = useCallback(() => {
-    setIsDemoMode(true);
-    setDemoStep(0);
-}, []);
-
-const endDemo = useCallback(() => {
-    setIsDemoMode(false);
-}, []);
-
-const handleDemoNext = useCallback(() => {
-    setDemoStep(prev => prev + 1);
-    if (demoStep === 0) {
-        handleViewChange('all-subscriptions');
-    } else if (demoStep === 1) {
-        handleSelectFeed(feeds[0]?.id || '');
-    } else if (demoStep === 6) {
-        endDemo();
-    }
-}, [demoStep, handleViewChange, handleSelectFeed, endDemo, feeds]);
-
-const handleOpenNoteEditor = useCallback((note?: Note, initialContent?: { title: string, content: string, sourceArticleIds: { feedId: string, articleId: string }[] }) => {
-    setNoteToEdit(note || null);
-    setInitialNoteContent(initialContent || null);
-    setIsNoteEditorModalOpen(true);
-}, []);
-
-const handleCloseNoteEditor = useCallback(() => {
-    setIsNoteEditorModalOpen(false);
-    setNoteToEdit(null);
-    setInitialNoteContent(null);
-}, []);
-
-const handleSaveNote = useCallback(async (noteData: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>, id?: string): Promise<Note> => {
-    let savedNote: Note;
-    if (id) {
-        savedNote = {} as Note; // Placeholder, will be replaced in setNotes
-        setNotes(prev => prev.map(n => {
-            if (n.id === id) {
-                savedNote = { ...n, ...noteData, updatedAt: Date.now() };
-                return savedNote;
-            }
-            return n;
-        }));
-    } else {
-        const now = Date.now();
-        savedNote = { ...noteData, id: `note-${now}`, createdAt: now, updatedAt: now };
-        setNotes(prev => [...prev, savedNote]);
-    }
-    if (!savedNote.id) {
-        // This case handles when an existing note is saved but not found in state, though unlikely.
-        // Or if the `setNotes` update hasn't completed. We return a promise that resolves
-        // with a best-effort `savedNote`. The primary purpose of the return value is for new notes.
-        return new Promise(resolve => setTimeout(() => resolve(savedNote), 0));
-    }
-    return savedNote;
-}, []);
-
-const handleDeleteNote = useCallback((noteId: string) => {
-    if (window.confirm("Are you sure you want to delete this note?")) {
-        setNotes(prev => prev.filter(n => n.id !== noteId));
-        setToast({ message: "Note deleted.", type: 'success' });
-    }
-}, [setToast]);
-
-const handleAddNoteFolder = useCallback(async (name: string): Promise<NoteFolder> => {
-    const now = Date.now();
-    const newFolder: NoteFolder = { id: `folder-${now}`, name, createdAt: now };
-    setNoteFolders(prev => [...prev, newFolder].sort((a, b) => a.name.localeCompare(b.name)));
-    return newFolder;
-}, []);
-
-const handleDeleteNoteFolder = useCallback((folderId: string) => {
-    if (window.confirm("Are you sure you want to delete this folder? Notes inside won't be deleted but will become uncategorized.")) {
-        setNoteFolders(prev => prev.filter(f => f.id !== folderId));
-        setNotes(prev => prev.map(n => n.folderId === folderId ? { ...n, folderId: '' } : n));
-        setToast({ message: "Folder deleted.", type: 'success' });
-    }
-}, [setToast]);
-
-const handleSaveSummaryAsNote = useCallback(async (article: Article) => {
-    if (!article.summary && !article.structuredSummary) {
-        setToast({ message: 'No AI summary available to save.', type: 'error' });
-        return;
-    }
-
-    let summaryContent = '';
-    if (article.structuredSummary) {
-        summaryContent += `## AI Summary\n${article.structuredSummary.overallSummary}\n\n`;
-        if (article.structuredSummary.sections.length > 0) {
-            summaryContent += `### Key Moments\n`;
-            article.structuredSummary.sections.forEach(section => {
-                const timestamp = article.link ? `[${formatTranscriptTime(section.timestamp)}](${article.link}&t=${Math.floor(section.timestamp)}s)` : `*${formatTranscriptTime(section.timestamp)}*`;
-                summaryContent += `- **${timestamp} - ${section.title}**: ${section.summary}\n`;
+            setRecommendationsState(prev => {
+                const existingRecs = prev.recommendations || [];
+                const combined = [...existingRecs, ...newRecommendations];
+                const uniqueRecs = Array.from(new Map(combined.map(item => [item.url, item])).values());
+                return { recommendations: uniqueRecs, error: null, isLoading: false };
             });
+
+        } catch (e) {
+            setRecommendationsState(prev => ({ ...prev, error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false }));
         }
-    } else if (article.summary) {
-        summaryContent += `## AI Summary\n${article.summary}`;
-    }
+    }, [feeds, readArticleIds, articlesById, aiModel, recommendationsState.recommendations]);
 
-    if (article.link) {
-        summaryContent += `\n\n---\n\n**Original Source:** [${article.title}](${article.link})`;
-    }
+    const handleExportFeeds = useCallback((options: { favoritesOnly?: boolean; tag?: string; }) => {
+        let feedsToExport: Feed[];
+        let fileName = 'media-feeder-backup';
 
-    handleOpenNoteEditor(undefined, {
-        title: `Note for: ${article.title}`,
-        content: summaryContent,
-        sourceArticleIds: [{ feedId: article.feedId, articleId: article.id }]
-    });
+        if (options.favoritesOnly) {
+            feedsToExport = favoriteFeeds;
+            fileName = 'media-feeder-favorites-backup';
+        } else if (options.tag) {
+            feedsToExport = feedsByTag.get(options.tag) || [];
+            fileName = `media-feeder-tag-${options.tag}-backup`;
+        } else {
+            feedsToExport = feeds;
+        }
 
-}, [handleOpenNoteEditor, setToast]);
-
-const handleSaveDigestAsNote = useCallback((digest: DetailedDigest | ThematicDigest, articles: Article[]) => {
-    let noteTitle = '';
-    let noteContent = '';
-    const sourceIds = articles.map(a => ({ feedId: a.feedId, articleId: a.id }));
-
-    if (Array.isArray(digest)) { // DetailedDigest
-        noteTitle = `Detailed Digest of ${articles.length} items`;
-        digest.forEach(item => {
-            noteContent += `## [${item.title}](${item.link})\n\n`;
-            if (typeof item.summary === 'string') {
-                noteContent += `${item.summary}\n\n`;
-            } else {
-                noteContent += `### Overall Summary\n${item.summary.overallSummary}\n\n`;
-                if (item.summary.sections && item.summary.sections.length > 0) {
-                    noteContent += `### Key Moments\n`;
-                    noteContent += item.summary.sections.map(section =>
-                        `- **[${formatTranscriptTime(section.timestamp)}](${item.link}&t=${Math.floor(section.timestamp)}s) - ${section.title}**: ${section.summary}`
-                    ).join('\n') + '\n\n';
-                }
-            }
-            if (item.sources && item.sources.length > 0) {
-                noteContent += `**Sources:**\n`;
-                noteContent += item.sources.map(source => `- [${source.title || source.uri}](${source.uri})`).join('\n') + '\n\n';
-            }
-            noteContent += '---\n\n';
+        const articlesByFeedUrl: Record<string, Article[]> = {};
+        const feedsForJson = feedsToExport.map(feed => {
+            const { id, items, error, ...rest } = feed;
+            articlesByFeedUrl[feed.url] = items.map(item => {
+                const { sources, ...restItem } = item;
+                return restItem as Article;
+            });
+            return rest;
         });
-    } else { // ThematicDigest
-        noteTitle = digest.digestTitle;
-        digest.themedGroups.forEach(group => {
-            noteContent += `## ${group.themeTitle}\n\n${group.themeSummary}\n\n`;
-            if (group.keywords && group.keywords.length > 0) {
-                noteContent += `**Keywords:** ${group.keywords.join(', ')}\n\n`;
-            }
-            noteContent += `**Related Articles:**\n`;
-            noteContent += group.articles.map(article => `- [${article.title}](${article.link})`).join('\n') + '\n\n';
-            noteContent += '---\n\n';
-        });
-    }
 
-    handleOpenNoteEditor(undefined, {
-        title: noteTitle,
-        content: noteContent,
-        sourceArticleIds: sourceIds
-    });
-}, [handleOpenNoteEditor]);
-
-const generateMarkdownForMultipleArticles = useCallback(async (articlesToProcess: Article[]): Promise<string> => {
-    const markdownPromises = articlesToProcess.map(generateArticleMarkdown);
-    const markdowns = await Promise.all(markdownPromises);
-    return markdowns.join('\n---\n\n');
-}, []);
-
-const handleSaveViewAsNote = useCallback(async () => {
-    if (articlesToShow.length === 0) {
-        setToast({ message: "No articles in the current view to save.", type: 'error' });
-        return;
-    }
-    setIsSavingViewAsNote(true);
-    try {
-        const content = await generateMarkdownForMultipleArticles(articlesToShow);
-        handleOpenNoteEditor(undefined, {
-            title: `Note for view: ${headerTitle}`,
-            content: content,
-            sourceArticleIds: articlesToShow.map(a => ({ feedId: a.feedId, articleId: a.id }))
-        });
-    } catch (e) {
-        setToast({ message: `Failed to save view as note: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' });
-    } finally {
-        setIsSavingViewAsNote(false);
-    }
-}, [articlesToShow, headerTitle, generateMarkdownForMultipleArticles, handleOpenNoteEditor, setToast]);
-
-const handleSaveSelectionAsNote = useCallback(async () => {
-    if (selectedArticleIdsForBatch.size === 0) {
-        setToast({ message: "No articles selected to save.", type: 'error' });
-        return;
-    }
-    setIsSavingSelectionAsNote(true);
-    try {
-        const selectedArticles = Array.from(selectedArticleIdsForBatch)
-            .map(id => articlesById.get(id))
-            .filter((a): a is Article => !!a);
-
-        const content = await generateMarkdownForMultipleArticles(selectedArticles);
-        handleOpenNoteEditor(undefined, {
-            title: `Note for selection of ${selectedArticles.length} articles`,
-            content: content,
-            sourceArticleIds: selectedArticles.map(a => ({ feedId: a.feedId, articleId: a.id }))
-        });
-    } catch (e) {
-        setToast({ message: `Failed to save selection as note: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' });
-    } finally {
-        setIsSavingSelectionAsNote(false);
-    }
-}, [selectedArticleIdsForBatch, articlesById, generateMarkdownForMultipleArticles, handleOpenNoteEditor, setToast]);
-
-const handleConfirmGenerateEbook = useCallback(async (title: string, filename: string) => {
-    const source = epubDefaults?.source;
-    if (source === 'selection') setIsGeneratingEbook(true);
-    else if (source === 'view') setIsGeneratingEbookFromView(true);
-    else return;
-
-    setIsEpubSettingsModalOpen(false);
-    setToast({ message: `Generating EPUB "${filename}.epub"... This may take a while.`, type: 'success' });
-    try {
-        const blob = await createEpub(articlesForEpub, title);
+        const data: SyncData = {
+            feeds: feedsForJson,
+            articlesByFeedUrl,
+            readLaterArticleIds: Array.from(readLaterArticleIds),
+            gridZoomLevel, articleZoomLevel, autoplayMode,
+            articleTags: Array.from(articleTags.entries()),
+            readLaterOrderYt, readLaterOrderRss, tagOrders,
+            favoritesOrderYt, favoritesOrderRss,
+            notes, noteFolders,
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${filename}.epub`;
-        document.body.appendChild(a);
+        const date = new Date().toISOString().split('T')[0];
+        a.download = `${fileName}_${date}.json`;
         a.click();
-        document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        setToast({ message: `EPUB "${filename}.epub" has been created.`, type: 'success' });
-    } catch (err) {
-        const message = err instanceof Error ? err.message : 'An unknown error occurred.';
-        setToast({ message: `Failed to create EPUB: ${message}`, type: 'error' });
-    } finally {
-        setIsGeneratingEbook(false);
-        setIsGeneratingEbookFromView(false);
-        setArticlesForEpub([]);
-        setEpubDefaults(null);
-    }
-}, [articlesForEpub, epubDefaults, setToast, setIsEpubSettingsModalOpen]);
+        setToast({ message: 'Backup file has been created.', type: 'success' });
+        setIsExportModalOpen(false);
+    }, [
+        feeds, favoriteFeeds, readLaterArticleIds, gridZoomLevel, articleZoomLevel,
+        autoplayMode, articleTags, feedsByTag, readLaterOrderYt, readLaterOrderRss,
+        tagOrders, favoritesOrderYt, favoritesOrderRss, setToast, setIsExportModalOpen,
+        notes, noteFolders
+    ]);
 
-const handleOpenRefreshOptionsModal = useCallback((initialState?: { favoritesOnly?: boolean }) => {
-    setRefreshModalInitialState(initialState || null);
-    setIsRefreshOptionsModalOpen(true);
-}, []);
+    const handleExportChannelsAsText = useCallback(() => {
+        const textData = feeds.map(({ id, items, error, ...rest }) => rest);
+        const jsonString = JSON.stringify(textData, null, 2);
+        setExportTextContent(jsonString);
+        setIsExportTextModalOpen(true);
+    }, [feeds, setExportTextContent, setIsExportTextModalOpen]);
 
-const handleSuccessfulApiCall = useCallback(() => {
-    if (isAiDisabled) {
-        setIsAiDisabled(false);
-    }
-}, [isAiDisabled, setIsAiDisabled]);
+    const handleOpenClearDataModal = useCallback(() => setIsClearDataModalOpen(true), []);
 
-// --- Persistence Effects ---
-useEffect(() => { safeSetLocalStorage(FEEDS_STORAGE_KEY, feeds); }, [feeds, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(READ_ARTICLES_KEY, readArticleIds); }, [readArticleIds, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(READ_LATER_KEY, readLaterArticleIds); }, [readLaterArticleIds, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(LIKED_YOUTUBE_VIDEOS_KEY, likedVideoIds); }, [likedVideoIds, safeSetLocalStorage]);
-useEffect(() => { if (!isMobileView) safeSetLocalStorage(SIDEBAR_COLLAPSED_KEY, isSidebarCollapsed); }, [isSidebarCollapsed, isMobileView, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(SIDEBAR_TAB_KEY, sidebarTab); }, [sidebarTab, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(SIDEBAR_FEEDS_VIEW_KEY, sidebarFeedsView); }, [sidebarFeedsView, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(VIEWS_COLLAPSED_KEY, isViewsCollapsed); }, [isViewsCollapsed, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(YOUTUBE_FEEDS_COLLAPSED_KEY, isYoutubeFeedsCollapsed); }, [isYoutubeFeedsCollapsed, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(YOUTUBE_PLAYLISTS_COLLAPSED_KEY, isYoutubePlaylistsCollapsed); }, [isYoutubePlaylistsCollapsed, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(REDDIT_FEEDS_COLLAPSED_KEY, isRedditFeedsCollapsed); }, [isRedditFeedsCollapsed, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(RSS_FEEDS_COLLAPSED_KEY, isRssFeedsCollapsed); }, [isRssFeedsCollapsed, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(TAGS_COLLAPSED_KEY, isTagsCollapsed); }, [isTagsCollapsed, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(YOUTUBE_TAGS_COLLAPSED_KEY, isYoutubeTagsCollapsed); }, [isYoutubeTagsCollapsed, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(RSS_TAGS_COLLAPSED_KEY, isRssTagsCollapsed); }, [isRssTagsCollapsed, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(EXPANDED_TAGS_KEY, expandedTags); }, [expandedTags, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(EXPANDED_VIEWS_KEY, expandedViews); }, [expandedViews, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(GRID_ZOOM_LEVEL_KEY, gridZoomLevel); }, [gridZoomLevel, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(ARTICLE_ZOOM_LEVEL_KEY, articleZoomLevel); }, [articleZoomLevel, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(ARTICLE_VIEW_MODE_KEY, articleViewMode); }, [articleViewMode, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(PROXY_STATS_KEY, proxyStats); }, [proxyStats, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(DISABLED_PROXIES_KEY, disabledProxies); }, [disabledProxies, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(AUTOPLAY_MODE_KEY, autoplayMode); }, [autoplayMode, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(AUTO_LIKE_YOUTUBE_VIDEOS_KEY, autoLikeYouTubeVideos); }, [autoLikeYouTubeVideos, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(AUTO_LIKE_DELAY_SECONDS_KEY, autoLikeDelaySeconds); }, [autoLikeDelaySeconds, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(REFRESH_BATCH_SIZE_KEY, refreshBatchSize); }, [refreshBatchSize, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(REFRESH_DELAY_SECONDS_KEY, refreshDelaySeconds); }, [refreshDelaySeconds, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(ENABLE_RSS_REDDIT_KEY, enableRssAndReddit); }, [enableRssAndReddit, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(DEFAULT_AI_LANGUAGE_KEY, defaultAiLanguage); }, [defaultAiLanguage, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(RECENT_SHARE_CODES_KEY, recentShareCodes); }, [recentShareCodes, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(HAS_ENTERED_KEY, hasEnteredApp); }, [hasEnteredApp, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(ARTICLE_TAGS_KEY, articleTags); }, [articleTags, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(READ_LATER_ORDER_YT_KEY, readLaterOrderYt); }, [readLaterOrderYt, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(READ_LATER_ORDER_RSS_KEY, readLaterOrderRss); }, [readLaterOrderRss, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(TAG_ORDERS_KEY, tagOrders); }, [tagOrders, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(FAVORITES_ORDER_YT_KEY, favoritesOrderYt); }, [favoritesOrderYt, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(FAVORITES_ORDER_RSS_KEY, favoritesOrderRss); }, [favoritesOrderRss, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(AUTO_UPLOAD_AFTER_REFRESH_KEY, autoUploadAfterRefresh); }, [autoUploadAfterRefresh, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(AUTO_SUMMARIZE_ON_REFRESH_KEY, autoSummarizeOnRefresh); }, [autoSummarizeOnRefresh, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(NOTES_KEY, notes); }, [notes, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(NOTE_FOLDERS_KEY, noteFolders); }, [noteFolders, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(NOTES_COLLAPSED_KEY, isNotesCollapsed); }, [isNotesCollapsed, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(TRENDING_KEYWORDS_KEY, trendingKeywords); }, [trendingKeywords, safeSetLocalStorage]);
-useEffect(() => { safeSetLocalStorage(AI_DISABLED_KEY, isAiDisabled); }, [isAiDisabled, safeSetLocalStorage]);
+    const handleClearArticles = useCallback((options: { clearYT: boolean; clearNonYT: boolean; keepReadLater: boolean; }) => {
+        const { clearYT, clearNonYT, keepReadLater } = options;
 
-const contextValue: AppContextType = {
-    feeds, isInitialLoad, isViewLoading, selectedFeedId, selectedArticle, setSelectedArticle,
-    currentView, contentView, readArticleIds, readLaterArticleIds, likedVideoIds,
-    isSidebarCollapsed, sidebarTab, handleSetSidebarTab, isViewsCollapsed, isYoutubeFeedsCollapsed, isRssFeedsCollapsed, isRedditFeedsCollapsed, isTagsCollapsed,
-    sidebarFeedsView, handleSetSidebarFeedsView, isYoutubePlaylistsCollapsed, expandedTags, expandedViews, onToggleViewExpansion,
-    isAddFeedModalOpen, setAddFeedModalOpen, isExportModalOpen, setIsExportModalOpen, isAdvancedInfoModalOpen, setIsAdvancedInfoModalOpen,
-    isAiSettingsModalOpen, setIsAiSettingsModalOpen, isImportTextModalOpen, setIsImportTextModalOpen,
-    isProxyStatsModalOpen, setIsProxyStatsModalOpen, isCacheInfoModalOpen, setIsCacheInfoModalOpen,
-    isExportTextModalOpen, setIsExportTextModalOpen, exportTextContent, proxyStats, disabledProxies, handleProxyAttempt, handleClearProxyStats, handleToggleProxy,
-    feedToEdit, setFeedToEdit, feedToEditTags, setFeedToEditTags, isDigestModalOpen, setIsDigestModalOpen, digestState,
-    isDigestConfigModalOpen, setIsDigestConfigModalOpen, articlesForDigest, initialDigestLanguage, translateDigest, isRecommendationsModalOpen, setIsRecommendationsModalOpen,
-    recommendationsState, setRecommendationsState, isRelatedModalOpen, setIsRelatedModalOpen, relatedChannelsState, setRelatedChannelsState,
-    relatedSourceFeedId, setRelatedSourceFeedId, bulkEditModalConfig, setBulkEditModalConfig, toast, setToast,
-    isRefreshingAll, refreshingFeedId, refreshProgress, allArticles, inactiveFeeds,
-    inactivePeriod, setInactivePeriod, allTags, youtubeTags, rssTags, sortedFeeds, favoriteFeeds, unreadCounts,
-    commentsState, handleFetchComments, handleFetchArticleDetails,
-    youtubeUnreadTagCounts, rssUnreadTagCounts, unreadPublishedTodayYtCount, unreadPublishedTodayRssCount,
-    unreadPublishedTodayCount, unreadReadLaterYtCount, unreadReadLaterRssCount, unreadReadLaterCount,
-    historyYtCount, historyRssCount, historyCount, unreadFavoritesYtCount, unreadFavoritesRssCount, unreadFavoritesCount, unreadAiSummaryYtCount,
-    feedsForPublishedToday, feedsForReadLater, feedsForHistory, unreadCountsForPublishedToday, unreadCountsForReadLater,
-    feedsByTag, articlesToShow, articlesForNavigation, availableTagsForFilter, unreadVisibleCount, headerTitle, emptyMessage, articleNavigation,
-    gridZoomLevel, canZoomIn, canZoomOut, articleZoomLevel, canArticleZoomIn, canArticleZoomOut, articleViewMode, setArticleViewMode,
-    aiModel, defaultAiLanguage, setDefaultAiLanguage, autoplayMode, autoLikeYouTubeVideos, autoLikeDelaySeconds, setAutoLikeDelaySeconds,
-    accessToken, enableRssAndReddit, refreshBatchSize, setRefreshBatchSize, refreshDelaySeconds, setRefreshDelaySeconds,
-    activeTagFilter, recentShareCodes, importCodeFromUrl, setImportCodeFromUrl, isResolvingArticleUrl,
-    handleSetTagFilter, handleToggleAutoplayNext, handleToggleAutoplayRandom, handleToggleAutoplayRepeat, handleToggleAutoLikeYouTubeVideos,
-    autoUploadAfterRefresh, handleToggleAutoUploadAfterRefresh, autoSummarizeOnRefresh, handleToggleAutoSummarizeOnRefresh,
-    handleToggleRssAndReddit, urlFromExtension, setUrlFromExtension, isProcessingUrl, isDemoMode, demoStep, startDemo, endDemo, handleDemoNext,
-    handleViewChange, handleSelectFeed, handleAddFeed, handleAddFromRecommendation, handleDeleteFeed, handleDeleteTag, handleRenameTag, handleBulkDeleteFeeds,
-    handleToggleFavorite, handleSaveFeedTitle, handleSaveFeedTags, handleSaveFeedMaxArticles, handleToggleReadStatus, handleToggleReadLater,
-    handleSummaryGenerated, handleRefreshSingleFeed, handleRefreshCurrentView, handleRefreshMissingIcons, handleGenerateDigest,
-    handleExecuteDetailedDigest, handleExecuteThematicDigest, handleGenerateRecommendations, handleGenerateMoreRecommendations, handleResetRecommendations,
-    handleExportFeeds, handleExportChannelsAsText, handleShareToCloudLink, handleImportData, handleOpenClearDataModal, handleClearArticles,
-    handleFactoryReset, handleSearch, handleClearSearch, handleClearHistory, handleClearReadLater, handleMarkAllInAllFeedsAsRead,
-    handleMarkAllRead, handleMarkSelectedAsRead, handleOpenArticle, handleCloseArticleModal, handleRemoveArticle, handleBulkDeleteArticles,
-    handleReorderArticles, handleOpenRelatedModal, handleCloseRelatedModal, handleGenerateRelated, handleBulkUpdateTags, handleOpenBulkEdit,
-    handleOpenBulkEditForTag, handleOpenBulkEditForFavorites, onToggleSidebar, onToggleViewsCollapse, onToggleYoutubeFeedsCollapse,
-    onToggleRssFeedsCollapse, onToggleRedditFeedsCollapse, onToggleTagsCollapse, onToggleTagExpansion, onToggleYoutubePlaylistsCollapse,
-    isYoutubeTagsCollapsed, onToggleYoutubeTagsCollapse, isRssTagsCollapsed, onToggleRssTagsCollapse,
-    handleZoomIn, handleZoomOut, handleArticleZoomIn, handleArticleZoomOut, calculateStorageSize, handleClearArticlesCache, handleClearAllTags,
-    userProfile, handleGoogleSignIn, handleGoogleSignOut, handleImportBundledChannels,
-    isBundledChannelsModalOpen, setIsBundledChannelsModalOpen, isImportYouTubeModalOpen, setIsImportYouTubeModalOpen,
-    youTubeImportState, handleFetchYouTubeSubscriptions, handleClearYouTubeImportState, handleAddYouTubeChannels, handleLikeVideo,
-    articleToEditTags, setArticleToEditTags, isBulkEditArticleTagsModalOpen, setIsBulkEditArticleTagsModalOpen,
-    selectedArticleIdsForBatch, handleToggleArticleSelection, handleSelectAllArticles, handleClearArticleSelection,
-    handleSaveArticleTags, handleBulkSaveArticleTags, handleBulkClearArticleTags,
-    videoToAdd, handleConfirmAddChannel, handleConfirmAddSingleVideo, handleCancelAddVideoOrChannel,
-    hasEnteredApp, handleEnterApp, youtubeFeeds, rssAndOtherFeeds, feedsForGrid,
-    isMobileView,
-    driveSyncStatus, handleUploadToDrive, handleDownloadFromDrive,
-    isTrendingKeywordsModalOpen, setIsTrendingKeywordsModalOpen, trendingKeywords,
-    isGeneratingKeywords, keywordGenerationError, handleGenerateTrendingKeywords,
-    isGeneratingEbook, handleGenerateEbook, isGeneratingEbookFromView, handleGenerateEbookFromView,
-    isGeneratingSummaries, handleGenerateSummariesForSelected, handleGenerateSummariesForView, summaryGenerationProgress,
-    notes, noteFolders, isNoteEditorModalOpen, noteToEdit, initialNoteContent,
-    handleOpenNoteEditor, handleCloseNoteEditor, handleSaveNote, handleDeleteNote, handleAddNoteFolder,
-    handleDeleteNoteFolder, handleSaveSummaryAsNote, handleSaveDigestAsNote, notesForView,
-    isSavingViewAsNote, handleSaveViewAsNote, isSavingSelectionAsNote, handleSaveSelectionAsNote,
-    isEpubSettingsModalOpen, setIsEpubSettingsModalOpen, epubDefaults, handleConfirmGenerateEbook,
-    isClearDataModalOpen, setIsClearDataModalOpen, isSyncDataModalOpen, setIsSyncDataModalOpen,
-    isActionsMenuOpen, setIsActionsMenuOpen, isNotesCollapsed, onToggleNotesCollapse,
-    isRefreshOptionsModalOpen, setIsRefreshOptionsModalOpen, refreshModalInitialState,
-    handleOpenRefreshOptionsModal, handleExecuteRefresh,
-    handleQuotaError,
-    handleSuccessfulApiCall,
-    isAiDisabled,
-};
+        let target = '';
+        if (clearYT && !clearNonYT) target = 'YouTube';
+        else if (!clearYT && clearNonYT) target = 'Non-YouTube';
+        else return;
 
-return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>;
+        const confirmMessage = `Are you sure you want to delete all ${target} articles and their reading history? ${keepReadLater ? "Articles saved to 'Read Later' will be kept." : "This includes articles saved to 'Read Later'."} This cannot be undone.`;
+
+        if (window.confirm(confirmMessage)) {
+            const articleIdsToDelete = new Set<string>();
+            feeds.forEach(feed => {
+                const shouldClearThisFeed = (clearYT && isYouTubeFeed(feed)) || (clearNonYT && !isYouTubeFeed(feed));
+                if (shouldClearThisFeed) {
+                    feed.items.forEach(item => {
+                        if (!keepReadLater || !readLaterArticleIds.has(item.id)) {
+                            articleIdsToDelete.add(item.id);
+                        }
+                    });
+                }
+            });
+
+            setFeeds(prevFeeds =>
+                prevFeeds.map(feed => {
+                    const shouldClearThisFeed = (clearYT && isYouTubeFeed(feed)) || (clearNonYT && !isYouTubeFeed(feed));
+                    if (shouldClearThisFeed) {
+                        return { ...feed, items: feed.items.filter(item => !articleIdsToDelete.has(item.id)) };
+                    }
+                    return feed;
+                })
+            );
+
+            setReadArticleIds(prev => {
+                const newMap = new Map(prev);
+                articleIdsToDelete.forEach(id => newMap.delete(id));
+                return newMap;
+            });
+
+            setArticleTags(prev => {
+                const newMap = new Map(prev);
+                articleIdsToDelete.forEach(id => newMap.delete(id));
+                return newMap;
+            });
+
+            setToast({ message: `${target} articles and history have been cleared.`, type: 'success' });
+        }
+    }, [feeds, readLaterArticleIds, setToast]);
+
+    const handleFactoryReset = useCallback(() => {
+        if (window.confirm("Are you sure you want to factory reset the app? This will delete ALL your subscriptions, articles, tags, and settings. This is irreversible.")) {
+            localStorage.clear();
+            window.location.reload();
+        }
+    }, []);
+
+    const handleClearHistory = useCallback(() => {
+        if (window.confirm("Are you sure you want to clear your entire reading history?")) {
+            setReadArticleIds(new Map());
+            setToast({ message: "Reading history cleared.", type: 'success' });
+        }
+    }, [setToast]);
+
+    const handleClearReadLater = useCallback(() => {
+        if (window.confirm("Are you sure you want to clear all articles from your Read Later list?")) {
+            setReadLaterArticleIds(new Set());
+            setToast({ message: "Read Later list cleared.", type: 'success' });
+        }
+    }, [setToast]);
+
+    const handleMarkAllInAllFeedsAsRead = useCallback(() => {
+        if (window.confirm("Are you sure you want to mark ALL articles in ALL feeds as read?")) {
+            setReadArticleIds(prev => {
+                const newMap = new Map(prev);
+                allArticles.forEach(article => {
+                    if (!newMap.has(article.id)) newMap.set(article.id, Date.now());
+                });
+                return newMap;
+            });
+            setToast({ message: "All articles marked as read.", type: 'success' });
+        }
+    }, [allArticles, setToast]);
+
+    const handleMarkAllRead = useCallback(() => {
+        if (articlesToShow.length === 0) return;
+        if (window.confirm(`Are you sure you want to mark all ${articlesToShow.length} articles in this view as read?`)) {
+            setReadArticleIds(prev => {
+                const newMap = new Map(prev);
+                articlesToShow.forEach(article => {
+                    if (!newMap.has(article.id)) newMap.set(article.id, Date.now());
+                });
+                return newMap;
+            });
+            setToast({ message: "All visible articles marked as read.", type: 'success' });
+        }
+    }, [articlesToShow, setToast]);
+
+    const handleMarkSelectedAsRead = useCallback(() => {
+        if (selectedArticleIdsForBatch.size === 0) return;
+        setReadArticleIds(prev => {
+            const newMap = new Map(prev);
+            selectedArticleIdsForBatch.forEach(id => newMap.set(id, Date.now()));
+            return newMap;
+        });
+        setToast({ message: `Marked ${selectedArticleIdsForBatch.size} articles as read.`, type: 'success' });
+        setSelectedArticleIdsForBatch(new Set());
+    }, [selectedArticleIdsForBatch, setToast]);
+
+    const handleRemoveArticle = useCallback((articleId: string, feedId: string) => {
+        if (!window.confirm("Are you sure you want to remove this article? This cannot be undone.")) return;
+
+        setFeeds(prevFeeds => {
+            return prevFeeds.map(feed => {
+                if (feed.id === feedId) {
+                    return {
+                        ...feed,
+                        items: feed.items.filter(item => item.id !== articleId)
+                    };
+                }
+                return feed;
+            });
+        });
+
+        setReadArticleIds(prev => { const newMap = new Map(prev); newMap.delete(articleId); return newMap; });
+        setReadLaterArticleIds(prev => { const newSet = new Set(prev); newSet.delete(articleId); return newSet; });
+        setArticleTags(prev => { const newMap = new Map(prev); newMap.delete(articleId); return newMap; });
+
+        if (selectedArticle?.id === articleId) {
+            handleCloseArticleModal();
+        }
+
+        setToast({ message: "Article removed.", type: 'success' });
+    }, [selectedArticle, handleCloseArticleModal, setToast]);
+
+    const handleBulkDeleteArticles = useCallback(() => {
+        if (selectedArticleIdsForBatch.size === 0) return;
+        if (!window.confirm(`Are you sure you want to delete ${selectedArticleIdsForBatch.size} selected articles? This cannot be undone.`)) return;
+
+        const idsToDelete = selectedArticleIdsForBatch;
+
+        setFeeds(prevFeeds =>
+            prevFeeds.map(feed => ({
+                ...feed,
+                items: feed.items.filter(item => !idsToDelete.has(item.id))
+            }))
+        );
+
+        setReadArticleIds(prev => { const newMap = new Map(prev); idsToDelete.forEach(id => newMap.delete(id)); return newMap; });
+        setReadLaterArticleIds(prev => { const newSet = new Set(prev); idsToDelete.forEach(id => newSet.delete(id)); return newSet; });
+        setArticleTags(prev => { const newMap = new Map(prev); idsToDelete.forEach(id => newMap.delete(id)); return newMap; });
+
+        setSelectedArticleIdsForBatch(new Set());
+        setToast({ message: `Deleted ${idsToDelete.size} articles.`, type: 'success' });
+    }, [selectedArticleIdsForBatch, setToast]);
+
+    const handleReorderArticles = useCallback((view: { type: string, value?: any }, sourceId: string, targetId: string | null) => {
+        const updateOrder = (currentOrder: string[], setOrder: (order: string[]) => void) => {
+            const newOrder = [...currentOrder];
+            const sourceIndex = newOrder.indexOf(sourceId);
+            if (sourceIndex > -1) newOrder.splice(sourceIndex, 1);
+
+            if (targetId === null) {
+                newOrder.push(sourceId);
+            } else {
+                const targetIndex = newOrder.indexOf(targetId);
+                if (targetIndex > -1) newOrder.splice(targetIndex, 0, sourceId);
+                else newOrder.unshift(sourceId); // Fallback if target not found
+            }
+            setOrder(newOrder);
+        };
+
+        if (view.type === 'readLater') {
+            const source = view.value || 'yt';
+            if (source === 'yt') updateOrder(readLaterOrderYt, setReadLaterOrderYt);
+            else updateOrder(readLaterOrderRss, setReadLaterOrderRss);
+        } else if (view.type === 'favorites') {
+            const source = view.value || 'yt';
+            if (source === 'yt') updateOrder(favoritesOrderYt, setFavoritesOrderYt);
+            else updateOrder(favoritesOrderRss, setFavoritesOrderRss);
+        } else if (view.type === 'tag') {
+            const tagValue = view.value;
+            let tagKey: string | undefined;
+            if (typeof tagValue === 'object' && tagValue.name && tagValue.type) {
+                tagKey = `${tagValue.type}-${tagValue.name}`;
+            } else if (typeof tagValue === 'string') {
+                tagKey = tagValue;
+            }
+            if (tagKey) {
+                setTagOrders(prev => ({
+                    ...prev, [tagKey!]: (currentOrder => {
+                        const newOrder = [...(currentOrder || [])];
+                        const sourceIndex = newOrder.indexOf(sourceId);
+                        if (sourceIndex > -1) newOrder.splice(sourceIndex, 1);
+                        if (targetId === null) newOrder.push(sourceId);
+                        else {
+                            const targetIndex = newOrder.indexOf(targetId);
+                            if (targetIndex > -1) newOrder.splice(targetIndex, 0, sourceId);
+                            else newOrder.unshift(sourceId);
+                        }
+                        return newOrder;
+                    })(prev[tagKey!])
+                }));
+            }
+        }
+    }, [readLaterOrderYt, readLaterOrderRss, favoritesOrderYt, favoritesOrderRss, tagOrders]);
+
+    const handleOpenRelatedModal = useCallback((feedId: string) => {
+        setRelatedSourceFeedId(feedId);
+        setIsRelatedModalOpen(true);
+    }, []);
+
+    const handleCloseRelatedModal = useCallback(() => {
+        setIsRelatedModalOpen(false);
+        setRelatedSourceFeedId(null);
+        setRelatedChannelsState({ recommendations: null, error: null, isLoading: false });
+    }, []);
+
+    const handleGenerateRelated = useCallback(async () => {
+        if (!relatedSourceFeedId) return;
+        const sourceFeed = feeds.find(f => f.id === relatedSourceFeedId);
+        if (!sourceFeed) return;
+        setRelatedChannelsState({ recommendations: null, error: null, isLoading: true });
+        try {
+            const existingUrls = feeds.map(f => f.url);
+            const { recommendations } = await generateRelatedChannels(sourceFeed, existingUrls, aiModel);
+            setRelatedChannelsState({ recommendations, error: null, isLoading: false });
+        } catch (e) {
+            setRelatedChannelsState({ recommendations: null, error: e instanceof Error ? e.message : 'An unknown error occurred.', isLoading: false });
+        }
+    }, [relatedSourceFeedId, feeds, aiModel]);
+
+    const handleBulkUpdateTags = useCallback((feedIds: Set<string>, tags: string[], mode: 'add' | 'set' | 'favorite') => {
+        setFeeds(prevFeeds => prevFeeds.map(feed => {
+            if (!feedIds.has(feed.id)) return feed;
+            if (mode === 'favorite') {
+                return { ...feed, isFavorite: true };
+            }
+            const currentTags = new Set(feed.tags || []);
+            const tagsToApply = new Set(tags);
+            let newTags: Set<string>;
+            if (mode === 'add') {
+                newTags = new Set([...currentTags, ...tagsToApply]);
+            } else { // 'set'
+                newTags = tagsToApply;
+            }
+            const sortedTags = Array.from(newTags).sort();
+            return { ...feed, tags: sortedTags.length > 0 ? sortedTags : undefined };
+        }));
+        setToast({ message: `${feedIds.size} feeds updated successfully.`, type: 'success' });
+    }, [setToast]);
+
+    const handleOpenBulkEdit = useCallback(() => {
+        setBulkEditModalConfig({ isOpen: true, mode: 'add' });
+    }, []);
+
+    const handleOpenBulkEditForTag = useCallback((tag: string) => {
+        setBulkEditModalConfig({ isOpen: true, mode: 'add', tag });
+    }, []);
+
+    const handleOpenBulkEditForFavorites = useCallback(() => {
+        setBulkEditModalConfig({ isOpen: true, mode: 'favorite' });
+    }, []);
+
+    const onToggleSidebar = useCallback(() => {
+        setIsSidebarCollapsed(prev => !prev);
+    }, []);
+    const onToggleViewsCollapse = useCallback(() => setIsViewsCollapsed(prev => !prev), []);
+    const onToggleYoutubeFeedsCollapse = useCallback(() => setIsYoutubeFeedsCollapsed(prev => !prev), []);
+    const onToggleRssFeedsCollapse = useCallback(() => setIsRssFeedsCollapse(prev => !prev), []);
+    const onToggleRedditFeedsCollapse = useCallback(() => setIsRedditFeedsCollapse(prev => !prev), []);
+    const onToggleTagsCollapse = useCallback(() => setIsTagsCollapsed(prev => !prev), []);
+    const onToggleYoutubeTagsCollapse = useCallback(() => setIsYoutubeTagsCollapsed(prev => !prev), []);
+    const onToggleRssTagsCollapse = useCallback(() => setIsRssTagsCollapsed(prev => !prev), []);
+    const onToggleNotesCollapse = useCallback(() => setIsNotesCollapsed(prev => !prev), []);
+
+    const onToggleTagExpansion = useCallback((tag: string, tagType: 'youtube' | 'rss') => {
+        const compositeKey = `${tagType}-${tag}`;
+        setExpandedTags(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(compositeKey)) newSet.delete(compositeKey);
+            else newSet.add(compositeKey);
+            return newSet;
+        });
+    }, []);
+
+    const onToggleViewExpansion = useCallback((viewType: 'published-today' | 'readLater' | 'history') => {
+        setExpandedViews(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(viewType)) newSet.delete(viewType);
+            else newSet.add(viewType);
+            return newSet;
+        });
+    }, []);
+
+    const onToggleYoutubePlaylistsCollapse = useCallback(() => setIsYoutubePlaylistsCollapsed(prev => !prev), []);
+
+    const handleZoomIn = useCallback(() => {
+        setGridZoomLevel(prev => {
+            const currentIndex = ZOOM_LEVELS.indexOf(prev);
+            return currentIndex > 0 ? ZOOM_LEVELS[currentIndex - 1] : prev;
+        });
+    }, []);
+
+    const handleZoomOut = useCallback(() => {
+        setGridZoomLevel(prev => {
+            const currentIndex = ZOOM_LEVELS.indexOf(prev);
+            return currentIndex < ZOOM_LEVELS.length - 1 ? ZOOM_LEVELS[currentIndex + 1] : prev;
+        });
+    }, []);
+
+    const handleArticleZoomIn = useCallback(() => {
+        setArticleZoomLevel(prev => {
+            const currentIndex = ZOOM_LEVELS.indexOf(prev);
+            return currentIndex > 0 ? ZOOM_LEVELS[currentIndex - 1] : prev;
+        });
+    }, []);
+
+    const handleArticleZoomOut = useCallback(() => {
+        setArticleZoomLevel(prev => {
+            const currentIndex = ZOOM_LEVELS.indexOf(prev);
+            return currentIndex < ZOOM_LEVELS.length - 1 ? ZOOM_LEVELS[currentIndex + 1] : prev;
+        });
+    }, []);
+
+    const handleClearArticlesCache = useCallback(() => {
+        localStorage.removeItem(ARTICLES_CACHE_KEY);
+        setToast({ message: "Articles cache cleared.", type: 'success' });
+    }, [setToast]);
+
+    const handleClearAllTags = useCallback(() => {
+        if (window.confirm("Are you sure you want to remove all tags from all feeds? This cannot be undone.")) {
+            setFeeds(prevFeeds => prevFeeds.map(feed => ({ ...feed, tags: undefined })));
+            setArticleTags(new Map());
+            setToast({ message: "All tags have been cleared from all feeds.", type: 'success' });
+        }
+    }, [setToast]);
+
+    const handleToggleAutoplayNext = useCallback(() => setAutoplayMode(prev => prev === 'on' ? 'off' : 'on'), []);
+    const handleToggleAutoplayRandom = useCallback(() => setAutoplayMode(prev => prev === 'random' ? 'off' : 'random'), []);
+    const handleToggleAutoplayRepeat = useCallback(() => setAutoplayMode(prev => prev === 'repeat' ? 'off' : 'repeat'), []);
+    const handleToggleAutoLikeYouTubeVideos = useCallback(() => setAutoLikeYouTubeVideos(prev => !prev), []);
+    const handleToggleAutoUploadAfterRefresh = useCallback(() => setAutoUploadAfterRefresh(prev => !prev), []);
+    const handleToggleAutoSummarizeOnRefresh = useCallback(() => setAutoSummarizeOnRefresh(prev => !prev), []);
+    const handleToggleRssAndReddit = useCallback(() => setEnableRssAndReddit(prev => !prev), []);
+    const handleImportBundledChannels = useCallback((feedsToImport: Omit<Feed, 'id' | 'items' | 'error'>[]) => {
+        const existingUrls = new Set(feeds.map(f => f.url));
+        const newFeeds: Feed[] = feedsToImport
+            .filter(feedData => !existingUrls.has(feedData.url))
+            .map(feedData => ({
+                ...feedData,
+                id: feedData.url,
+                items: [],
+                error: null,
+            }));
+
+        if (newFeeds.length > 0) {
+            setFeeds(prev => [...prev, ...newFeeds]);
+            setToast({ message: `Successfully added ${newFeeds.length} new feeds. Refreshing them now...`, type: 'success' });
+            batchRefreshHandler(newFeeds, `${newFeeds.length} new feeds`);
+        } else {
+            setToast({ message: "All channels from the bundle are already in your subscriptions.", type: 'success' });
+        }
+    }, [feeds, setToast, batchRefreshHandler]);
+
+    const handleFetchYouTubeSubscriptions = useCallback(async () => {
+        if (!accessToken) {
+            setToast({ message: "Please sign in to Google to import subscriptions.", type: 'error' });
+            handleGoogleSignIn({ showConsentPrompt: true });
+            return;
+        }
+        setYouTubeImportState({ status: 'loading', subscriptions: [], error: null });
+        try {
+            const subs = await fetchYouTubeSubscriptions(accessToken);
+            setYouTubeImportState({ status: 'loaded', subscriptions: subs, error: null });
+        } catch (e: any) {
+            setYouTubeImportState({ status: 'error', subscriptions: [], error: e.message });
+            if (e.isAuthError) handleGoogleSignIn({ showConsentPrompt: true });
+        }
+    }, [accessToken, setToast, handleGoogleSignIn]);
+
+    const handleClearYouTubeImportState = useCallback(() => {
+        setYouTubeImportState({ status: 'idle', subscriptions: [], error: null });
+    }, []);
+
+    const handleAddYouTubeChannels = useCallback(async (subscriptions: YouTubeSubscription[]) => {
+        if (subscriptions.length === 0) return;
+
+        const newFeedsData = subscriptions.map((sub): Omit<Feed, 'id' | 'items' | 'error'> => ({
+            url: `https://www.youtube.com/channel/${sub.channelId}/home`,
+            title: sub.title,
+            description: sub.description,
+            iconUrl: sub.thumbnailUrl,
+            maxArticles: 5,
+        }));
+
+        handleImportBundledChannels(newFeedsData);
+        setIsImportYouTubeModalOpen(false);
+    }, [handleImportBundledChannels, setIsImportYouTubeModalOpen]);
+
+    const handleToggleArticleSelection = useCallback((articleId: string) => {
+        setSelectedArticleIdsForBatch(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(articleId)) newSet.delete(articleId);
+            else newSet.add(articleId);
+            return newSet;
+        });
+    }, []);
+
+    const handleSelectAllArticles = useCallback(() => {
+        const allVisibleIds = new Set(articlesToShow.map(a => a.id));
+        const areAllSelected = allVisibleIds.size > 0 && Array.from(allVisibleIds).every(id => selectedArticleIdsForBatch.has(id));
+
+        if (areAllSelected) {
+            // If all are selected, deselect them
+            setSelectedArticleIdsForBatch(prev => {
+                const newSet = new Set(prev);
+                allVisibleIds.forEach(id => newSet.delete(id));
+                return newSet;
+            });
+        } else {
+            // If not all are selected (or none are), select all of them
+            setSelectedArticleIdsForBatch(prev => new Set([...prev, ...allVisibleIds]));
+        }
+    }, [articlesToShow, selectedArticleIdsForBatch]);
+
+    const handleClearArticleSelection = useCallback(() => {
+        setSelectedArticleIdsForBatch(new Set());
+    }, []);
+
+    const handleSaveArticleTags = useCallback((articleId: string, tags: string[]) => {
+        setArticleTags(prev => {
+            const newMap = new Map(prev);
+            if (tags.length > 0) newMap.set(articleId, tags);
+            else newMap.delete(articleId);
+            return newMap;
+        });
+    }, []);
+
+    const handleBulkSaveArticleTags = useCallback((articleIds: Set<string>, tags: string[], mode: 'add' | 'set') => {
+        setArticleTags(prev => {
+            const newMap = new Map(prev);
+            articleIds.forEach(id => {
+                const currentTags = new Set(newMap.get(id) || []);
+                const tagsToApply = new Set(tags);
+                let newTags: Set<string>;
+                if (mode === 'add') newTags = new Set([...currentTags, ...tagsToApply]);
+                else newTags = tagsToApply;
+
+                const sortedTags = Array.from(newTags).sort();
+                if (sortedTags.length > 0) newMap.set(id, sortedTags);
+                else newMap.delete(id);
+            });
+            return newMap;
+        });
+        setToast({ message: `${articleIds.size} articles updated.`, type: 'success' });
+    }, [setToast]);
+
+    const handleBulkClearArticleTags = useCallback(() => {
+        if (window.confirm(`Are you sure you want to remove all tags from the ${selectedArticleIdsForBatch.size} selected articles?`)) {
+            setArticleTags(prev => {
+                const newMap = new Map(prev);
+                selectedArticleIdsForBatch.forEach(id => newMap.delete(id));
+                return newMap;
+            });
+            setToast({ message: "Tags cleared from selected articles.", type: 'success' });
+        }
+    }, [selectedArticleIdsForBatch, setToast]);
+
+    const startDemo = useCallback(() => {
+        setIsDemoMode(true);
+        setDemoStep(0);
+    }, []);
+
+    const endDemo = useCallback(() => {
+        setIsDemoMode(false);
+    }, []);
+
+    const handleDemoNext = useCallback(() => {
+        setDemoStep(prev => prev + 1);
+        if (demoStep === 0) {
+            handleViewChange('all-subscriptions');
+        } else if (demoStep === 1) {
+            handleSelectFeed(feeds[0]?.id || '');
+        } else if (demoStep === 6) {
+            endDemo();
+        }
+    }, [demoStep, handleViewChange, handleSelectFeed, endDemo, feeds]);
+
+    const handleOpenNoteEditor = useCallback((note?: Note, initialContent?: { title: string, content: string, sourceArticleIds: { feedId: string, articleId: string }[] }) => {
+        setNoteToEdit(note || null);
+        setInitialNoteContent(initialContent || null);
+        setIsNoteEditorModalOpen(true);
+    }, []);
+
+    const handleCloseNoteEditor = useCallback(() => {
+        setIsNoteEditorModalOpen(false);
+        setNoteToEdit(null);
+        setInitialNoteContent(null);
+    }, []);
+
+    const handleSaveNote = useCallback(async (noteData: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>, id?: string): Promise<Note> => {
+        let savedNote: Note;
+        if (id) {
+            savedNote = {} as Note; // Placeholder, will be replaced in setNotes
+            setNotes(prev => prev.map(n => {
+                if (n.id === id) {
+                    savedNote = { ...n, ...noteData, updatedAt: Date.now() };
+                    return savedNote;
+                }
+                return n;
+            }));
+        } else {
+            const now = Date.now();
+            savedNote = { ...noteData, id: `note-${now}`, createdAt: now, updatedAt: now };
+            setNotes(prev => [...prev, savedNote]);
+        }
+        if (!savedNote.id) {
+            // This case handles when an existing note is saved but not found in state, though unlikely.
+            // Or if the `setNotes` update hasn't completed. We return a promise that resolves
+            // with a best-effort `savedNote`. The primary purpose of the return value is for new notes.
+            return new Promise(resolve => setTimeout(() => resolve(savedNote), 0));
+        }
+        return savedNote;
+    }, []);
+
+    const handleDeleteNote = useCallback((noteId: string) => {
+        if (window.confirm("Are you sure you want to delete this note?")) {
+            setNotes(prev => prev.filter(n => n.id !== noteId));
+            setToast({ message: "Note deleted.", type: 'success' });
+        }
+    }, [setToast]);
+
+    const handleAddNoteFolder = useCallback(async (name: string): Promise<NoteFolder> => {
+        const now = Date.now();
+        const newFolder: NoteFolder = { id: `folder-${now}`, name, createdAt: now };
+        setNoteFolders(prev => [...prev, newFolder].sort((a, b) => a.name.localeCompare(b.name)));
+        return newFolder;
+    }, []);
+
+    const handleDeleteNoteFolder = useCallback((folderId: string) => {
+        if (window.confirm("Are you sure you want to delete this folder? Notes inside won't be deleted but will become uncategorized.")) {
+            setNoteFolders(prev => prev.filter(f => f.id !== folderId));
+            setNotes(prev => prev.map(n => n.folderId === folderId ? { ...n, folderId: '' } : n));
+            setToast({ message: "Folder deleted.", type: 'success' });
+        }
+    }, [setToast]);
+
+    const handleSaveSummaryAsNote = useCallback(async (article: Article) => {
+        if (!article.summary && !article.structuredSummary) {
+            setToast({ message: 'No AI summary available to save.', type: 'error' });
+            return;
+        }
+
+        let summaryContent = '';
+        if (article.structuredSummary) {
+            summaryContent += `## AI Summary\n${article.structuredSummary.overallSummary}\n\n`;
+            if (article.structuredSummary.sections.length > 0) {
+                summaryContent += `### Key Moments\n`;
+                article.structuredSummary.sections.forEach(section => {
+                    const timestamp = article.link ? `[${formatTranscriptTime(section.timestamp)}](${article.link}&t=${Math.floor(section.timestamp)}s)` : `*${formatTranscriptTime(section.timestamp)}*`;
+                    summaryContent += `- **${timestamp} - ${section.title}**: ${section.summary}\n`;
+                });
+            }
+        } else if (article.summary) {
+            summaryContent += `## AI Summary\n${article.summary}`;
+        }
+
+        if (article.link) {
+            summaryContent += `\n\n---\n\n**Original Source:** [${article.title}](${article.link})`;
+        }
+
+        handleOpenNoteEditor(undefined, {
+            title: `Note for: ${article.title}`,
+            content: summaryContent,
+            sourceArticleIds: [{ feedId: article.feedId, articleId: article.id }]
+        });
+
+    }, [handleOpenNoteEditor, setToast]);
+
+    const handleSaveDigestAsNote = useCallback((digest: DetailedDigest | ThematicDigest, articles: Article[]) => {
+        let noteTitle = '';
+        let noteContent = '';
+        const sourceIds = articles.map(a => ({ feedId: a.feedId, articleId: a.id }));
+
+        if (Array.isArray(digest)) { // DetailedDigest
+            noteTitle = `Detailed Digest of ${articles.length} items`;
+            digest.forEach(item => {
+                noteContent += `## [${item.title}](${item.link})\n\n`;
+                if (typeof item.summary === 'string') {
+                    noteContent += `${item.summary}\n\n`;
+                } else {
+                    noteContent += `### Overall Summary\n${item.summary.overallSummary}\n\n`;
+                    if (item.summary.sections && item.summary.sections.length > 0) {
+                        noteContent += `### Key Moments\n`;
+                        noteContent += item.summary.sections.map(section =>
+                            `- **[${formatTranscriptTime(section.timestamp)}](${item.link}&t=${Math.floor(section.timestamp)}s) - ${section.title}**: ${section.summary}`
+                        ).join('\n') + '\n\n';
+                    }
+                }
+                if (item.sources && item.sources.length > 0) {
+                    noteContent += `**Sources:**\n`;
+                    noteContent += item.sources.map(source => `- [${source.title || source.uri}](${source.uri})`).join('\n') + '\n\n';
+                }
+                noteContent += '---\n\n';
+            });
+        } else { // ThematicDigest
+            noteTitle = digest.digestTitle;
+            digest.themedGroups.forEach(group => {
+                noteContent += `## ${group.themeTitle}\n\n${group.themeSummary}\n\n`;
+                if (group.keywords && group.keywords.length > 0) {
+                    noteContent += `**Keywords:** ${group.keywords.join(', ')}\n\n`;
+                }
+                noteContent += `**Related Articles:**\n`;
+                noteContent += group.articles.map(article => `- [${article.title}](${article.link})`).join('\n') + '\n\n';
+                noteContent += '---\n\n';
+            });
+        }
+
+        handleOpenNoteEditor(undefined, {
+            title: noteTitle,
+            content: noteContent,
+            sourceArticleIds: sourceIds
+        });
+    }, [handleOpenNoteEditor]);
+
+    const generateMarkdownForMultipleArticles = useCallback(async (articlesToProcess: Article[]): Promise<string> => {
+        const markdownPromises = articlesToProcess.map(generateArticleMarkdown);
+        const markdowns = await Promise.all(markdownPromises);
+        return markdowns.join('\n---\n\n');
+    }, []);
+
+    const handleSaveViewAsNote = useCallback(async () => {
+        if (articlesToShow.length === 0) {
+            setToast({ message: "No articles in the current view to save.", type: 'error' });
+            return;
+        }
+        setIsSavingViewAsNote(true);
+        try {
+            const content = await generateMarkdownForMultipleArticles(articlesToShow);
+            handleOpenNoteEditor(undefined, {
+                title: `Note for view: ${headerTitle}`,
+                content: content,
+                sourceArticleIds: articlesToShow.map(a => ({ feedId: a.feedId, articleId: a.id }))
+            });
+        } catch (e) {
+            setToast({ message: `Failed to save view as note: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' });
+        } finally {
+            setIsSavingViewAsNote(false);
+        }
+    }, [articlesToShow, headerTitle, generateMarkdownForMultipleArticles, handleOpenNoteEditor, setToast]);
+
+    const handleSaveSelectionAsNote = useCallback(async () => {
+        if (selectedArticleIdsForBatch.size === 0) {
+            setToast({ message: "No articles selected to save.", type: 'error' });
+            return;
+        }
+        setIsSavingSelectionAsNote(true);
+        try {
+            const selectedArticles = Array.from(selectedArticleIdsForBatch)
+                .map(id => articlesById.get(id))
+                .filter((a): a is Article => !!a);
+
+            const content = await generateMarkdownForMultipleArticles(selectedArticles);
+            handleOpenNoteEditor(undefined, {
+                title: `Note for selection of ${selectedArticles.length} articles`,
+                content: content,
+                sourceArticleIds: selectedArticles.map(a => ({ feedId: a.feedId, articleId: a.id }))
+            });
+        } catch (e) {
+            setToast({ message: `Failed to save selection as note: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' });
+        } finally {
+            setIsSavingSelectionAsNote(false);
+        }
+    }, [selectedArticleIdsForBatch, articlesById, generateMarkdownForMultipleArticles, handleOpenNoteEditor, setToast]);
+
+    const handleConfirmGenerateEbook = useCallback(async (title: string, filename: string) => {
+        const source = epubDefaults?.source;
+        if (source === 'selection') setIsGeneratingEbook(true);
+        else if (source === 'view') setIsGeneratingEbookFromView(true);
+        else return;
+
+        setIsEpubSettingsModalOpen(false);
+        setToast({ message: `Generating EPUB "${filename}.epub"... This may take a while.`, type: 'success' });
+        try {
+            const blob = await createEpub(articlesForEpub, title);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${filename}.epub`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setToast({ message: `EPUB "${filename}.epub" has been created.`, type: 'success' });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'An unknown error occurred.';
+            setToast({ message: `Failed to create EPUB: ${message}`, type: 'error' });
+        } finally {
+            setIsGeneratingEbook(false);
+            setIsGeneratingEbookFromView(false);
+            setArticlesForEpub([]);
+            setEpubDefaults(null);
+        }
+    }, [articlesForEpub, epubDefaults, setToast, setIsEpubSettingsModalOpen]);
+
+    const handleOpenRefreshOptionsModal = useCallback((initialState?: { favoritesOnly?: boolean }) => {
+        setRefreshModalInitialState(initialState || null);
+        setIsRefreshOptionsModalOpen(true);
+    }, []);
+
+    const handleSuccessfulApiCall = useCallback(() => {
+        if (isAiDisabled) {
+            setIsAiDisabled(false);
+        }
+    }, [isAiDisabled, setIsAiDisabled]);
+
+    // --- Persistence Effects ---
+    useEffect(() => { safeSetLocalStorage(FEEDS_STORAGE_KEY, feeds); }, [feeds, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(READ_ARTICLES_KEY, readArticleIds); }, [readArticleIds, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(READ_LATER_KEY, readLaterArticleIds); }, [readLaterArticleIds, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(LIKED_YOUTUBE_VIDEOS_KEY, likedVideoIds); }, [likedVideoIds, safeSetLocalStorage]);
+    useEffect(() => { if (!isMobileView) safeSetLocalStorage(SIDEBAR_COLLAPSED_KEY, isSidebarCollapsed); }, [isSidebarCollapsed, isMobileView, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(SIDEBAR_TAB_KEY, sidebarTab); }, [sidebarTab, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(SIDEBAR_FEEDS_VIEW_KEY, sidebarFeedsView); }, [sidebarFeedsView, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(VIEWS_COLLAPSED_KEY, isViewsCollapsed); }, [isViewsCollapsed, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(YOUTUBE_FEEDS_COLLAPSED_KEY, isYoutubeFeedsCollapsed); }, [isYoutubeFeedsCollapsed, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(YOUTUBE_PLAYLISTS_COLLAPSED_KEY, isYoutubePlaylistsCollapsed); }, [isYoutubePlaylistsCollapsed, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(REDDIT_FEEDS_COLLAPSED_KEY, isRedditFeedsCollapsed); }, [isRedditFeedsCollapsed, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(RSS_FEEDS_COLLAPSED_KEY, isRssFeedsCollapsed); }, [isRssFeedsCollapsed, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(TAGS_COLLAPSED_KEY, isTagsCollapsed); }, [isTagsCollapsed, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(YOUTUBE_TAGS_COLLAPSED_KEY, isYoutubeTagsCollapsed); }, [isYoutubeTagsCollapsed, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(RSS_TAGS_COLLAPSED_KEY, isRssTagsCollapsed); }, [isRssTagsCollapsed, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(EXPANDED_TAGS_KEY, expandedTags); }, [expandedTags, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(EXPANDED_VIEWS_KEY, expandedViews); }, [expandedViews, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(GRID_ZOOM_LEVEL_KEY, gridZoomLevel); }, [gridZoomLevel, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(ARTICLE_ZOOM_LEVEL_KEY, articleZoomLevel); }, [articleZoomLevel, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(ARTICLE_VIEW_MODE_KEY, articleViewMode); }, [articleViewMode, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(PROXY_STATS_KEY, proxyStats); }, [proxyStats, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(DISABLED_PROXIES_KEY, disabledProxies); }, [disabledProxies, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(AUTOPLAY_MODE_KEY, autoplayMode); }, [autoplayMode, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(AUTO_LIKE_YOUTUBE_VIDEOS_KEY, autoLikeYouTubeVideos); }, [autoLikeYouTubeVideos, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(AUTO_LIKE_DELAY_SECONDS_KEY, autoLikeDelaySeconds); }, [autoLikeDelaySeconds, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(REFRESH_BATCH_SIZE_KEY, refreshBatchSize); }, [refreshBatchSize, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(REFRESH_DELAY_SECONDS_KEY, refreshDelaySeconds); }, [refreshDelaySeconds, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(ENABLE_RSS_REDDIT_KEY, enableRssAndReddit); }, [enableRssAndReddit, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(DEFAULT_AI_LANGUAGE_KEY, defaultAiLanguage); }, [defaultAiLanguage, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(RECENT_SHARE_CODES_KEY, recentShareCodes); }, [recentShareCodes, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(HAS_ENTERED_KEY, hasEnteredApp); }, [hasEnteredApp, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(ARTICLE_TAGS_KEY, articleTags); }, [articleTags, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(READ_LATER_ORDER_YT_KEY, readLaterOrderYt); }, [readLaterOrderYt, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(READ_LATER_ORDER_RSS_KEY, readLaterOrderRss); }, [readLaterOrderRss, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(TAG_ORDERS_KEY, tagOrders); }, [tagOrders, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(FAVORITES_ORDER_YT_KEY, favoritesOrderYt); }, [favoritesOrderYt, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(FAVORITES_ORDER_RSS_KEY, favoritesOrderRss); }, [favoritesOrderRss, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(AUTO_UPLOAD_AFTER_REFRESH_KEY, autoUploadAfterRefresh); }, [autoUploadAfterRefresh, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(AUTO_SUMMARIZE_ON_REFRESH_KEY, autoSummarizeOnRefresh); }, [autoSummarizeOnRefresh, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(NOTES_KEY, notes); }, [notes, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(NOTE_FOLDERS_KEY, noteFolders); }, [noteFolders, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(NOTES_COLLAPSED_KEY, isNotesCollapsed); }, [isNotesCollapsed, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(TRENDING_KEYWORDS_KEY, trendingKeywords); }, [trendingKeywords, safeSetLocalStorage]);
+    useEffect(() => { safeSetLocalStorage(AI_DISABLED_KEY, isAiDisabled); }, [isAiDisabled, safeSetLocalStorage]);
+
+    const contextValue: AppContextType = {
+        feeds, isInitialLoad, isViewLoading, selectedFeedId, selectedArticle, setSelectedArticle,
+        currentView, contentView, readArticleIds, readLaterArticleIds, likedVideoIds,
+        isSidebarCollapsed, sidebarTab, handleSetSidebarTab, isViewsCollapsed, isYoutubeFeedsCollapsed, isRssFeedsCollapsed, isRedditFeedsCollapsed, isTagsCollapsed,
+        sidebarFeedsView, handleSetSidebarFeedsView, isYoutubePlaylistsCollapsed, expandedTags, expandedViews, onToggleViewExpansion,
+        isAddFeedModalOpen, setAddFeedModalOpen, isExportModalOpen, setIsExportModalOpen, isAdvancedInfoModalOpen, setIsAdvancedInfoModalOpen,
+        isAiSettingsModalOpen, setIsAiSettingsModalOpen, isImportTextModalOpen, setIsImportTextModalOpen,
+        isProxyStatsModalOpen, setIsProxyStatsModalOpen, isCacheInfoModalOpen, setIsCacheInfoModalOpen,
+        isExportTextModalOpen, setIsExportTextModalOpen, exportTextContent, proxyStats, disabledProxies, handleProxyAttempt, handleClearProxyStats, handleToggleProxy,
+        feedToEdit, setFeedToEdit, feedToEditTags, setFeedToEditTags, isDigestModalOpen, setIsDigestModalOpen, digestState,
+        isDigestConfigModalOpen, setIsDigestConfigModalOpen, articlesForDigest, initialDigestLanguage, translateDigest, isRecommendationsModalOpen, setIsRecommendationsModalOpen,
+        recommendationsState, setRecommendationsState, isRelatedModalOpen, setIsRelatedModalOpen, relatedChannelsState, setRelatedChannelsState,
+        relatedSourceFeedId, setRelatedSourceFeedId, bulkEditModalConfig, setBulkEditModalConfig, toast, setToast,
+        isRefreshingAll, refreshingFeedId, refreshProgress, allArticles, inactiveFeeds,
+        inactivePeriod, setInactivePeriod, allTags, youtubeTags, rssTags, sortedFeeds, favoriteFeeds, unreadCounts,
+        commentsState, handleFetchComments, handleFetchArticleDetails,
+        youtubeUnreadTagCounts, rssUnreadTagCounts, unreadPublishedTodayYtCount, unreadPublishedTodayRssCount,
+        unreadPublishedTodayCount, unreadReadLaterYtCount, unreadReadLaterRssCount, unreadReadLaterCount,
+        historyYtCount, historyRssCount, historyCount, unreadFavoritesYtCount, unreadFavoritesRssCount, unreadFavoritesCount, unreadAiSummaryYtCount,
+        feedsForPublishedToday, feedsForReadLater, feedsForHistory, unreadCountsForPublishedToday, unreadCountsForReadLater,
+        feedsByTag, articlesToShow, articlesForNavigation, availableTagsForFilter, unreadVisibleCount, headerTitle, emptyMessage, articleNavigation,
+        gridZoomLevel, canZoomIn, canZoomOut, articleZoomLevel, canArticleZoomIn, canArticleZoomOut, articleViewMode, setArticleViewMode,
+        aiModel, defaultAiLanguage, setDefaultAiLanguage, autoplayMode, autoLikeYouTubeVideos, autoLikeDelaySeconds, setAutoLikeDelaySeconds,
+        accessToken, enableRssAndReddit, refreshBatchSize, setRefreshBatchSize, refreshDelaySeconds, setRefreshDelaySeconds,
+        activeTagFilter, recentShareCodes, importCodeFromUrl, setImportCodeFromUrl, isResolvingArticleUrl,
+        handleSetTagFilter, handleToggleAutoplayNext, handleToggleAutoplayRandom, handleToggleAutoplayRepeat, handleToggleAutoLikeYouTubeVideos,
+        autoUploadAfterRefresh, handleToggleAutoUploadAfterRefresh, autoSummarizeOnRefresh, handleToggleAutoSummarizeOnRefresh,
+        handleToggleRssAndReddit, urlFromExtension, setUrlFromExtension, isProcessingUrl, isDemoMode, demoStep, startDemo, endDemo, handleDemoNext,
+        handleViewChange, handleSelectFeed, handleAddFeed, handleAddFromRecommendation, handleDeleteFeed, handleDeleteTag, handleRenameTag, handleBulkDeleteFeeds,
+        handleToggleFavorite, handleSaveFeedTitle, handleSaveFeedTags, handleSaveFeedMaxArticles, handleToggleReadStatus, handleToggleReadLater,
+        handleSummaryGenerated, handleRefreshSingleFeed, handleRefreshCurrentView, handleRefreshMissingIcons, handleGenerateDigest,
+        handleExecuteDetailedDigest, handleExecuteThematicDigest, handleGenerateRecommendations, handleGenerateMoreRecommendations, handleResetRecommendations,
+        handleExportFeeds, handleExportChannelsAsText, handleShareToCloudLink, handleImportData, handleOpenClearDataModal, handleClearArticles,
+        handleFactoryReset, handleSearch, handleClearSearch, handleClearHistory, handleClearReadLater, handleMarkAllInAllFeedsAsRead,
+        handleMarkAllRead, handleMarkSelectedAsRead, handleOpenArticle, handleCloseArticleModal, handleRemoveArticle, handleBulkDeleteArticles,
+        handleReorderArticles, handleOpenRelatedModal, handleCloseRelatedModal, handleGenerateRelated, handleBulkUpdateTags, handleOpenBulkEdit,
+        handleOpenBulkEditForTag, handleOpenBulkEditForFavorites, onToggleSidebar, onToggleViewsCollapse, onToggleYoutubeFeedsCollapse,
+        onToggleRssFeedsCollapse, onToggleRedditFeedsCollapse, onToggleTagsCollapse, onToggleTagExpansion, onToggleYoutubePlaylistsCollapse,
+        isYoutubeTagsCollapsed, onToggleYoutubeTagsCollapse, isRssTagsCollapsed, onToggleRssTagsCollapse,
+        handleZoomIn, handleZoomOut, handleArticleZoomIn, handleArticleZoomOut, calculateStorageSize, handleClearArticlesCache, handleClearAllTags,
+        userProfile, handleGoogleSignIn, handleGoogleSignOut, handleImportBundledChannels,
+        isBundledChannelsModalOpen, setIsBundledChannelsModalOpen, isImportYouTubeModalOpen, setIsImportYouTubeModalOpen,
+        youTubeImportState, handleFetchYouTubeSubscriptions, handleClearYouTubeImportState, handleAddYouTubeChannels, handleLikeVideo,
+        articleToEditTags, setArticleToEditTags, isBulkEditArticleTagsModalOpen, setIsBulkEditArticleTagsModalOpen,
+        selectedArticleIdsForBatch, handleToggleArticleSelection, handleSelectAllArticles, handleClearArticleSelection,
+        handleSaveArticleTags, handleBulkSaveArticleTags, handleBulkClearArticleTags,
+        videoToAdd, handleConfirmAddChannel, handleConfirmAddSingleVideo, handleCancelAddVideoOrChannel,
+        hasEnteredApp, handleEnterApp, youtubeFeeds, rssAndOtherFeeds, feedsForGrid,
+        isMobileView,
+        driveSyncStatus, handleUploadToDrive, handleDownloadFromDrive,
+        isTrendingKeywordsModalOpen, setIsTrendingKeywordsModalOpen, trendingKeywords,
+        isGeneratingKeywords, keywordGenerationError, handleGenerateTrendingKeywords,
+        isGeneratingEbook, handleGenerateEbook, isGeneratingEbookFromView, handleGenerateEbookFromView,
+        isGeneratingSummaries, handleGenerateSummariesForSelected, handleGenerateSummariesForView, summaryGenerationProgress,
+        notes, noteFolders, isNoteEditorModalOpen, noteToEdit, initialNoteContent,
+        handleOpenNoteEditor, handleCloseNoteEditor, handleSaveNote, handleDeleteNote, handleAddNoteFolder,
+        handleDeleteNoteFolder, handleSaveSummaryAsNote, handleSaveDigestAsNote, notesForView,
+        isSavingViewAsNote, handleSaveViewAsNote, isSavingSelectionAsNote, handleSaveSelectionAsNote,
+        isEpubSettingsModalOpen, setIsEpubSettingsModalOpen, epubDefaults, handleConfirmGenerateEbook,
+        isClearDataModalOpen, setIsClearDataModalOpen, isSyncDataModalOpen, setIsSyncDataModalOpen,
+        isActionsMenuOpen, setIsActionsMenuOpen, isNotesCollapsed, onToggleNotesCollapse,
+        isRefreshOptionsModalOpen, setIsRefreshOptionsModalOpen, refreshModalInitialState,
+        handleOpenRefreshOptionsModal, handleExecuteRefresh,
+        handleQuotaError,
+        handleSuccessfulApiCall,
+        isAiDisabled,
+    };
+
+    return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>;
 };
