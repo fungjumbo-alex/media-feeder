@@ -194,11 +194,9 @@ export const fetchVideosDuration = async (
     videoIds: string[],
     accessToken: string
 ): Promise<Map<string, number>> => {
-    console.log(`[Duration Debug] fetchVideosDuration called with ${videoIds.length} IDs`);
     const durationMap = new Map<string, number>();
 
     if (videoIds.length === 0) {
-        console.log('[Duration Debug] No video IDs to fetch');
         return durationMap;
     }
 
@@ -208,16 +206,11 @@ export const fetchVideosDuration = async (
         chunks.push(videoIds.slice(i, i + 50));
     }
 
-    console.log(`[Duration Debug] Processing ${chunks.length} chunks`);
-
     for (const chunk of chunks) {
         try {
             if (!accessToken) {
-                console.warn('[Duration Debug] No access token provided');
                 continue;
             }
-
-            console.log(`[Duration Debug] Fetching duration for chunk of ${chunk.length} videos`);
             const response = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${chunk.join(',')}&key=${(window as any).process?.env?.YOUTUBE_API_KEY}`, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -226,13 +219,10 @@ export const fetchVideosDuration = async (
             });
 
             if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`[Duration Debug] YouTube API error: ${response.status} ${response.statusText}`, errorText);
                 continue;
             }
 
             const data: YouTubeApiVideosResponse = await response.json();
-            console.log(`[Duration Debug] Received response with ${data.items?.length || 0} items`);
 
             if (data.items) {
                 for (const item of data.items) {
@@ -240,19 +230,14 @@ export const fetchVideosDuration = async (
                         const durationSeconds = parseISO8601Duration(item.contentDetails.duration);
                         if (durationSeconds !== null) {
                             durationMap.set(item.id, durationSeconds);
-                            // console.log(`[Duration Debug] Mapped ${item.id} to ${durationSeconds}s`);
                         }
-                    } else {
-                        console.warn(`[Duration Debug] No duration found for video ${item.id}`);
                     }
                 }
             }
         } catch (error) {
-            console.error('[Duration Debug] Error fetching video durations:', error);
         }
     }
 
-    console.log(`[Duration Debug] Finished fetching. Total durations found: ${durationMap.size}`);
     return durationMap;
 };
 
