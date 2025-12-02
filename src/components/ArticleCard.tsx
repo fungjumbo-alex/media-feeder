@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Article, GridZoomLevel } from '../types';
-import { BookmarkIcon, EyeIcon } from './icons';
+import { BookmarkIcon, EyeIcon, ClockIcon, CalendarIcon } from './icons';
 import { formatRelativeDate } from '../utils/dateUtils';
 
 interface ArticleCardProps {
@@ -38,8 +38,8 @@ const formatViews = (views: number | null | undefined): string => {
     return `${views}`;
 };
 
-export const ArticleCard: React.FC<ArticleCardProps> = ({ 
-    article, onOpenArticle, isRead, isReadLater, onToggleReadLater, 
+export const ArticleCard: React.FC<ArticleCardProps> = ({
+    article, onOpenArticle, isRead, isReadLater, onToggleReadLater,
     zoomLevel, isSelected, onToggleSelection, isReorderable, isBeingDragged,
     isDragInProgress, onDragStart, onDragEnd, onDrop
 }) => {
@@ -77,7 +77,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
         lg: 'h-32',
         xl: 'h-24',
     };
-    
+
     const articleUrl = `#/article/${encodeURIComponent(article.feedId)}/${encodeURIComponent(article.id)}`;
 
     return (
@@ -96,7 +96,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                     className="absolute inset-0 z-10 bg-indigo-500/10 border-2 border-dashed border-indigo-500 rounded-lg"
                 />
             )}
-            <div 
+            <div
                 className={`relative w-full overflow-hidden ${imageSizeClasses[zoomLevel]} ${article.isReddit && article.imageUrl ? 'bg-black' : ''}`}
             >
                 {article.imageUrl ? (
@@ -106,14 +106,10 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                         No Image
                     </div>
                 )}
-                {article.isVideo && article.duration != null && (
-                    <span className="absolute bottom-2 right-2 bg-black/75 text-white text-xs font-semibold px-1.5 py-0.5 rounded">
-                        {formatDuration(article.duration)}
-                    </span>
-                )}
+
             </div>
             {zoomLevel !== 'xl' && (
-                <div 
+                <div
                     className="p-4 flex flex-col flex-grow"
                 >
                     <h3 className={`font-bold text-gray-100 mb-2 leading-tight flex-grow ${titleSizeClasses[zoomLevel]}`}>{article.title}</h3>
@@ -127,8 +123,17 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                     <div className="mt-auto pt-2 border-t border-gray-700/50 flex justify-between items-center">
                         <div className="min-w-0">
                             <p className="text-xs text-gray-500 truncate">{article.feedTitle}</p>
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 flex-wrap">
-                                <span>{formatRelativeDate(article.pubDateTimestamp)}</span>
+                            <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap mt-1">
+                                {article.isVideo && article.duration != null && (
+                                    <div className="flex items-center gap-1 text-indigo-400 font-medium" title="Duration">
+                                        <ClockIcon className="w-3 h-3" />
+                                        <span>{formatDuration(article.duration)}</span>
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-1" title="Published Date">
+                                    <CalendarIcon className="w-3 h-3" />
+                                    <span>{formatRelativeDate(article.pubDateTimestamp)}</span>
+                                </div>
                                 {article.isVideo && article.views != null && (
                                     <>
                                         <span>&middot;</span>
@@ -138,7 +143,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                             </div>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0 ml-2">
-                            {isRead && <span title="Read"><EyeIcon className="w-5 h-5 text-indigo-400"/></span>}
+                            {isRead && <span title="Read"><EyeIcon className="w-5 h-5 text-indigo-400" /></span>}
                             <button
                                 onClick={handleToggleReadLater}
                                 className={`p-1.5 rounded-full transition-colors ${isReadLater ? 'text-indigo-400' : 'text-gray-400 hover:text-white'}`}
@@ -165,7 +170,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                                     />
                                     {isSelected && (
                                         <svg className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-4 text-white pointer-events-none" viewBox="0 0 16 16" fill="currentColor">
-                                            <path d="M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z"/>
+                                            <path d="M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z" />
                                         </svg>
                                     )}
                                 </div>

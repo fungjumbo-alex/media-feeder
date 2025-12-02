@@ -5,7 +5,7 @@
 import React, { createContext, useState, useEffect, useCallback, useMemo, useRef, useContext, ReactNode, FC } from 'react';
 import { fetchAndParseRss } from '../services/rssService';
 import { generateRecommendations, generateRelatedChannels, fetchAvailableCaptionChoices, fetchAndParseTranscript, summarizeYouTubeVideo, summarizeText, generateThematicDigest, translateThematicDigest, translateDetailedDigest, QuotaExceededError } from '../services/geminiService';
-import { fetchYouTubeComments, getYouTubeId, fetchYouTubeVideoDetails, likeYouTubeVideo, fetchYouTubeSubscriptions, fetchPlaylistAsFeed, fetchSingleYouTubeVideoAsArticle } from '../services/youtubeService';
+import { fetchYouTubeComments, getYouTubeId, fetchYouTubeVideoDetails, likeYouTubeVideo, fetchYouTubeSubscriptions, fetchPlaylistAsFeed, fetchSingleYouTubeVideoAsArticle, fetchVideosDuration } from '../services/youtubeService';
 import { fetchContentFromPastebinUrl } from '../services/pastebinService';
 import { verifyDrivePermissions, getDriveFileMetadata, saveDataToDrive, loadDataFromDrive } from '../services/googleDriveService';
 import type { Feed, Article, DetailedDigest, DetailedDigestItem, RecommendedFeed, SyncData, GridZoomLevel, WebSource, ProxyStats, FeedType, AiModel, AutoplayMode, StructuredVideoSummary, YouTubeComment, UserProfile, YouTubeSubscription, SidebarFeedsView, ThematicDigest, Note, NoteFolder, ArticleViewMode } from '../types';
@@ -3079,10 +3079,85 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                             }
                             if (!playlistFeed) {
                                 playlistFeed = await fetchAndParseRss(feed.url, feed.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
+
+                                // Fetch durations for YouTube playlist videos if we have access token
+                                const hasVideoItems = playlistFeed.items.some(item => item.isVideo && item.id);
+                                console.log('[Duration Debug] (YT Block) Checking requirements:', {
+                                    hasAccessToken: !!accessToken,
+                                    hasVideoItems,
+                                    feedUrl: feed.url
+                                });
+
+                                if (accessToken && hasVideoItems) {
+                                    try {
+                                        const videoIds = playlistFeed.items
+                                            .filter(item => item.isVideo && item.id)
+                                            .map(item => item.id);
+
+                                        console.log(`[Duration Debug] (YT Block) Found ${videoIds.length} video IDs to fetch for feed: ${feed.title}`);
+
+                                        if (videoIds.length > 0) {
+                                            const durations = await fetchVideosDuration(videoIds, accessToken);
+                                            console.log(`[Duration Debug] (YT Block) Successfully fetched ${durations.size} durations`);
+
+                                            playlistFeed.items = playlistFeed.items.map(item => {
+                                                const duration = durations.get(item.id);
+                                                if (duration) {
+                                                    console.log(`[Duration Debug] (YT Block) Video: "${item.title}" (ID: ${item.id}) -> Duration: ${duration}s`);
+                                                }
+                                                return {
+                                                    ...item,
+                                                    duration: duration || item.duration
+                                                };
+                                            });
+                                        }
+                                    } catch (error) {
+                                        console.warn('[Duration Debug] (YT Block) Failed to fetch video durations for playlist:', error);
+                                        // Continue without durations - non-critical
+                                    }
+                                }
                             }
                             return { status: 'fulfilled' as const, value: playlistFeed, originalFeed: feed };
                         } else {
                             const rssFeed = await fetchAndParseRss(feed.url, feed.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
+
+                            // Fetch durations for YouTube channel videos if we have access token
+                            const hasVideoItems = rssFeed.items.some(item => item.isVideo && item.id);
+                            console.log('[Duration Debug] Checking requirements:', {
+                                hasAccessToken: !!accessToken,
+                                hasVideoItems,
+                                feedUrl: feed.url
+                            });
+
+                            if (accessToken && hasVideoItems) {
+                                try {
+                                    const videoIds = rssFeed.items
+                                        .filter(item => item.isVideo && item.id)
+                                        .map(item => item.id);
+
+                                    console.log(`[Duration Debug] Found ${videoIds.length} video IDs to fetch for feed: ${feed.title}`);
+
+                                    if (videoIds.length > 0) {
+                                        const durations = await fetchVideosDuration(videoIds, accessToken);
+                                        console.log(`[Duration Debug] Successfully fetched ${durations.size} durations`);
+
+                                        rssFeed.items = rssFeed.items.map(item => {
+                                            const duration = durations.get(item.id);
+                                            if (duration) {
+                                                console.log(`[Duration Debug] Video: "${item.title}" (ID: ${item.id}) -> Duration: ${duration}s`);
+                                            }
+                                            return {
+                                                ...item,
+                                                duration: duration || item.duration
+                                            };
+                                        });
+                                    }
+                                } catch (error) {
+                                    console.warn('[Duration Debug] Failed to fetch video durations for channel:', error);
+                                    // Continue without durations - non-critical
+                                }
+                            }
+
                             return { status: 'fulfilled' as const, value: rssFeed, originalFeed: feed };
                         }
                     } catch (reason) {
@@ -3176,6 +3251,33 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 newFeedData = await fetchAndParseRss(feedToRefresh.url, feedToRefresh.title, handleProxyAttempt, disabledProxies, proxyStats, maxArticlesForFeed);
             }
 
+            // Fetch durations for YouTube videos if we have access token (for single feed refresh)
+            if (accessToken && newFeedData && isYouTubeFeed(feedToRefresh)) {
+                const hasVideoItems = newFeedData.items.some(item => item.isVideo && item.id);
+                if (hasVideoItems) {
+                    try {
+                        // Filter out items that already have duration (e.g. from playlist fetch)
+                        const videoIds = newFeedData.items
+                            .filter(item => item.isVideo && item.id && item.duration === undefined)
+                            .map(item => item.id);
+
+                        if (videoIds.length > 0) {
+                            const durations = await fetchVideosDuration(videoIds, accessToken);
+
+                            newFeedData.items = newFeedData.items.map(item => {
+                                const duration = durations.get(item.id);
+                                return {
+                                    ...item,
+                                    duration: duration || item.duration
+                                };
+                            });
+                        }
+                    } catch (error) {
+                        console.warn('Failed to fetch video durations for single refresh:', error);
+                    }
+                }
+            }
+
             if (newFeedData.items.length === 0 && feedToRefresh.items && feedToRefresh.items.length > 0) {
                 throw new Error("Refresh failed: The source returned an empty feed. Old articles have been kept.");
             }
@@ -3184,10 +3286,15 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 item.feedId = feedToRefresh.id;
             });
 
-            const existingArticles = new Map(feedToRefresh.items.map(a => [a.id, a]));
-            const newArticles = newFeedData.items.filter(a => !existingArticles.has(a.id));
-            const combinedArticles = [...newArticles, ...feedToRefresh.items];
+            // Merge logic: Prefer new articles (which have updated data like duration) over existing ones
+            const newItemsMap = new Map(newFeedData.items.map(a => [a.id, a]));
+            const oldItemsToKeep = feedToRefresh.items.filter(a => !newItemsMap.has(a.id));
+            const combinedArticles = [...newFeedData.items, ...oldItemsToKeep];
             const deduplicatedArticles = Array.from(new Map(combinedArticles.map(a => [a.id, a])).values());
+
+            // Define newArticles for summary generation (items in newFeedData that were not in existing feed)
+            const existingArticlesMap = new Map(feedToRefresh.items.map(a => [a.id, a]));
+            const newArticles = newFeedData.items.filter(a => !existingArticlesMap.has(a.id));
 
             const sortedAndCleanedArticles = deduplicatedArticles
                 .map(({ order, ...rest }) => rest)

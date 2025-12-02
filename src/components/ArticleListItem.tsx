@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Article } from '../types';
-import { BookmarkIcon, EyeIcon, RssIcon, YouTubeIcon } from './icons';
+import { BookmarkIcon, EyeIcon, RssIcon, YouTubeIcon, ClockIcon, CalendarIcon } from './icons';
 import { formatRelativeDate } from '../utils/dateUtils';
 
 interface ArticleListItemProps {
@@ -89,19 +89,25 @@ export const ArticleListItem: React.FC<ArticleListItemProps> = ({
                 {/* Metadata (desktop only) */}
                 <div className="hidden sm:flex flex-shrink-0 flex-col items-end text-xs text-gray-400 w-32 ml-auto">
                     <p className="truncate w-full text-right" title={article.feedTitle}>{article.feedTitle}</p>
-                    <div className="flex items-center gap-2 justify-end w-full">
+                    <div className="flex flex-col items-end gap-1 w-full">
                         {article.isVideo && article.duration != null && (
-                            <span className="text-indigo-400 font-medium">
-                                {(() => {
-                                    const hours = Math.floor(article.duration / 3600);
-                                    const minutes = Math.floor((article.duration % 3600) / 60);
-                                    const seconds = article.duration % 60;
-                                    if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                                    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                                })()}
-                            </span>
+                            <div className="flex items-center gap-1 text-indigo-400 font-medium" title="Duration">
+                                <ClockIcon className="w-3 h-3" />
+                                <span>
+                                    {(() => {
+                                        const hours = Math.floor(article.duration / 3600);
+                                        const minutes = Math.floor((article.duration % 3600) / 60);
+                                        const seconds = article.duration % 60;
+                                        if (hours > 0) return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                                        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                                    })()}
+                                </span>
+                            </div>
                         )}
-                        <p>{formatRelativeDate(article.pubDateTimestamp)}</p>
+                        <div className="flex items-center gap-1 text-gray-500" title="Published Date">
+                            <CalendarIcon className="w-3 h-3" />
+                            <span>{formatRelativeDate(article.pubDateTimestamp)}</span>
+                        </div>
                     </div>
                 </div>
 

@@ -3,7 +3,7 @@ import type { Article, GridZoomLevel } from '../types';
 import { ArticleCard } from './ArticleCard.tsx';
 import { ArticleListItem } from './ArticleListItem.tsx';
 import { formatRelativeDate, formatTranscriptTime } from '../utils/dateUtils';
-import { RssIcon, YouTubeIcon, ExternalLinkIcon, SparklesIcon, BookmarkIcon, ChevronUpIcon, ChevronDownIcon } from './icons';
+import { RssIcon, YouTubeIcon, ExternalLinkIcon, SparklesIcon, BookmarkIcon, ChevronUpIcon, ChevronDownIcon, ClockIcon, CalendarIcon } from './icons';
 import { setLinksToOpenInNewTab } from '../utils/textUtils';
 
 export const ArticleReaderView: React.FC<{
@@ -32,7 +32,7 @@ export const ArticleReaderView: React.FC<{
                         const indexB = parseInt(b.target.getAttribute('data-index') || '0', 10);
                         return indexA - indexB;
                     });
-                
+
                 if (visibleEntries.length > 0) {
                     const topVisibleIndex = parseInt(visibleEntries[0].target.getAttribute('data-index') || '0', 10);
                     setCurrentlyVisibleArticleIndex(topVisibleIndex);
@@ -88,8 +88,8 @@ export const ArticleReaderView: React.FC<{
                     const isSelected = selectedArticleIds.has(article.id);
                     const isReadLater = readLaterArticleIds.has(article.id);
                     return (
-                        <article 
-                            key={article.id} 
+                        <article
+                            key={article.id}
                             // FIX: Ref callback functions should not return a value.
                             // The original `el => articleRefs.current[index] = el` was implicitly returning `el`.
                             // Adding curly braces `{}` creates a function body and prevents the implicit return.
@@ -118,7 +118,7 @@ export const ArticleReaderView: React.FC<{
                                                 />
                                                 {isSelected && (
                                                     <svg className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-5 w-5 text-white pointer-events-none" viewBox="0 0 16 16" fill="currentColor">
-                                                        <path d="M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z"/>
+                                                        <path d="M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z" />
                                                     </svg>
                                                 )}
                                             </div>
@@ -128,11 +128,23 @@ export const ArticleReaderView: React.FC<{
                                         <h1 className="text-3xl font-bold text-white mb-2">{article.title}</h1>
                                         <div className="flex items-center gap-4 text-sm text-gray-400 flex-wrap">
                                             <div className="flex items-center gap-2">
-                                                {article.isVideo ? <YouTubeIcon className="w-5 h-5 text-red-500"/> : <RssIcon className="w-5 h-5" />}
+                                                {article.isVideo ? <YouTubeIcon className="w-5 h-5 text-red-500" /> : <RssIcon className="w-5 h-5" />}
                                                 <span>{article.feedTitle}</span>
                                             </div>
                                             <span>&middot;</span>
-                                            <span>{formatRelativeDate(article.pubDateTimestamp)}</span>
+                                            <div className="flex items-center gap-1" title="Published Date">
+                                                <CalendarIcon className="w-4 h-4" />
+                                                <span>{formatRelativeDate(article.pubDateTimestamp)}</span>
+                                            </div>
+                                            {article.isVideo && article.duration != null && (
+                                                <>
+                                                    <span>&middot;</span>
+                                                    <div className="flex items-center gap-1 text-indigo-400 font-medium" title="Duration">
+                                                        <ClockIcon className="w-4 h-4" />
+                                                        <span>{formatTranscriptTime(article.duration)}</span>
+                                                    </div>
+                                                </>
+                                            )}
                                             {article.link && (
                                                 <>
                                                     <span>&middot;</span>
@@ -215,7 +227,7 @@ export const ArticleReaderView: React.FC<{
                     )
                 })}
             </div>
-             {articles.length > 1 && (
+            {articles.length > 1 && (
                 <div className="fixed bottom-20 sm:bottom-8 right-4 sm:right-8 z-50 flex flex-col gap-2">
                     <button
                         onClick={handlePrev}
@@ -266,7 +278,7 @@ export const FeedContent: React.FC<FeedContentProps> = ({
     readLaterArticleIds, onToggleReadLater, articleZoomLevel, articleViewMode, selectedArticleIds,
     onToggleArticleSelection, isReorderable, onReorder
 }) => {
-    
+
     const [draggedId, setDraggedId] = useState<string | null>(null);
 
     const gridClasses: Record<GridZoomLevel, string> = {
@@ -294,7 +306,7 @@ export const FeedContent: React.FC<FeedContentProps> = ({
         }
         setDraggedId(null);
     };
-    
+
     const renderContent = () => {
         if (isLoading) {
             return <LoadingSpinner />;
@@ -330,11 +342,11 @@ export const FeedContent: React.FC<FeedContentProps> = ({
         }
 
         return (
-             <div className={`grid gap-6 p-6 ${gridClasses[articleZoomLevel]}`}>
+            <div className={`grid gap-6 p-6 ${gridClasses[articleZoomLevel]}`}>
                 {articles.map(article => (
-                    <ArticleCard 
-                        key={article.id} 
-                        article={article} 
+                    <ArticleCard
+                        key={article.id}
+                        article={article}
                         onOpenArticle={onOpenArticle}
                         isRead={readArticleIds.has(article.id)}
                         isReadLater={readLaterArticleIds.has(article.id)}
@@ -353,10 +365,10 @@ export const FeedContent: React.FC<FeedContentProps> = ({
             </div>
         );
     }
-    
+
     return (
         <div className="flex-1 overflow-y-auto bg-gray-900">
-           {renderContent()}
+            {renderContent()}
         </div>
     );
 };

@@ -31,11 +31,11 @@ export const XIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 export const SparklesIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <path d="m12 3-1.5 3L7 7.5l3 1.5L12 12l1.5-3L17 7.5l-3-1.5z"/>
-    <path d="M5 13l1.5 3L10 17.5l-3 1.5L5 22l-1.5-3L0 17.5l3-1.5z"/>
-    <path d="m19 13l1.5 3L24 17.5l-3 1.5L19 22l-1.5-3L14 17.5l3-1.5z"/>
-  </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="m12 3-1.5 3L7 7.5l3 1.5L12 12l1.5-3L17 7.5l-3-1.5z" />
+        <path d="M5 13l1.5 3L10 17.5l-3 1.5L5 22l-1.5-3L0 17.5l3-1.5z" />
+        <path d="m19 13l1.5 3L24 17.5l-3 1.5L19 22l-1.5-3L14 17.5l3-1.5z" />
+    </svg>
 );
 
 export const ExternalLinkIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -343,9 +343,9 @@ export const HelpIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 export const SyncIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <path d="M21.5 2v6h-6M2.5 22v-6h6"/>
-        <path d="M22 11.5A10 10 0 0 0 3.5 12.5"/>
-        <path d="M2 12.5a10 10 0 0 0 18.5-1"/>
+        <path d="M21.5 2v6h-6M2.5 22v-6h6" />
+        <path d="M22 11.5A10 10 0 0 0 3.5 12.5" />
+        <path d="M2 12.5a10 10 0 0 0 18.5-1" />
     </svg>
 );
 
@@ -482,29 +482,38 @@ export const TrendingUpIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 export const BookOpenIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
     </svg>
 );
 
 export const BookViewIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-        <line x1="6" y1="8" x2="8" y2="8"/>
-        <line x1="6" y1="12" x2="8" y2="12"/>
-        <line x1="16" y1="8" x2="18" y2="8"/>
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        <line x1="6" y1="8" x2="8" y2="8" />
+        <line x1="6" y1="12" x2="8" y2="12" />
+        <line x1="16" y1="8" x2="18" y2="8" />
     </svg>
 );
 
 export const AiSummaryIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/>
-        <polyline points="14 2 14 8 20 8"/>
-        <path d="M2.2 13.2h3.6"/>
-        <path d="M2.2 16.2h3.6"/>
-        <path d="M2.2 19.2h3.6"/>
-        <path d="m9 14.5 1.5 3 1.5-3"/>
-        <path d="m12 14.5 1.5 3 1.5-3"/>
+        <path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4" />
+        <polyline points="14 2 14 8 20 8" />
+        <path d="M2.2 13.2h3.6" />
+        <path d="M2.2 16.2h3.6" />
+        <path d="M2.2 19.2h3.6" />
+        <path d="m9 14.5 1.5 3 1.5-3" />
+        <path d="m12 14.5 1.5 3 1.5-3" />
+    </svg>
+);
+
+export const CalendarIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
     </svg>
 );

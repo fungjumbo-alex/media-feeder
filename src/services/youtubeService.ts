@@ -63,7 +63,30 @@ interface YouTubeApiPlaylistItemResponse {
     nextPageToken?: string;
 }
 
+interface YouTubeApiVideosResponse {
+    items: Array<{
+        id: string;
+        contentDetails: {
+            duration: string; // ISO 8601 format, e.g., "PT15M33S"
+        };
+    }>;
+}
+
 const YOUTUBE_API_BASE = 'https://youtube.googleapis.com/youtube/v3';
+
+/**
+ * Parse ISO 8601 duration format (e.g., "PT15M33S") to seconds
+ */
+const parseISO8601Duration = (duration: string): number | null => {
+    const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!match) return null;
+
+    const hours = parseInt(match[1] || '0', 10);
+    const minutes = parseInt(match[2] || '0', 10);
+    const seconds = parseInt(match[3] || '0', 10);
+
+    return hours * 3600 + minutes * 60 + seconds;
+};
 
 /**
  * A wrapper for fetch that adds authentication and the API key, plus centralized error handling.
@@ -159,6 +182,80 @@ export const fetchYouTubeComments = async (videoId: string): Promise<YouTubeComm
     // If no instances worked and there was no specific error, throw a generic one.
     throw new Error('Could not fetch YouTube comments from any available source.');
 };
+
+/**
+ * Fetch video durations for multiple videos in batches using YouTube Data API.
+ * The YouTube API supports up to 50 video IDs per request.
+ * @param videoIds Array of YouTube video IDs
+ * @param accessToken Google OAuth access token
+ * @returns Map of video ID to duration in seconds
+ */
+export const fetchVideosDuration = async (
+    videoIds: string[],
+    accessToken: string
+): Promise<Map<string, number>> => {
+    console.log(`[Duration Debug] fetchVideosDuration called with ${videoIds.length} IDs`);
+    const durationMap = new Map<string, number>();
+
+    if (videoIds.length === 0) {
+        console.log('[Duration Debug] No video IDs to fetch');
+        return durationMap;
+    }
+
+    // Process in chunks of 50 (YouTube API limit)
+    const chunks = [];
+    for (let i = 0; i < videoIds.length; i += 50) {
+        chunks.push(videoIds.slice(i, i + 50));
+    }
+
+    console.log(`[Duration Debug] Processing ${chunks.length} chunks`);
+
+    for (const chunk of chunks) {
+        try {
+            if (!accessToken) {
+                console.warn('[Duration Debug] No access token provided');
+                continue;
+            }
+
+            console.log(`[Duration Debug] Fetching duration for chunk of ${chunk.length} videos`);
+            const response = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${chunk.join(',')}&key=${(window as any).process?.env?.YOUTUBE_API_KEY}`, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[Duration Debug] YouTube API error: ${response.status} ${response.statusText}`, errorText);
+                continue;
+            }
+
+            const data: YouTubeApiVideosResponse = await response.json();
+            console.log(`[Duration Debug] Received response with ${data.items?.length || 0} items`);
+
+            if (data.items) {
+                for (const item of data.items) {
+                    if (item.contentDetails?.duration) {
+                        const durationSeconds = parseISO8601Duration(item.contentDetails.duration);
+                        if (durationSeconds !== null) {
+                            durationMap.set(item.id, durationSeconds);
+                            // console.log(`[Duration Debug] Mapped ${item.id} to ${durationSeconds}s`);
+                        }
+                    } else {
+                        console.warn(`[Duration Debug] No duration found for video ${item.id}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[Duration Debug] Error fetching video durations:', error);
+        }
+    }
+
+    console.log(`[Duration Debug] Finished fetching. Total durations found: ${durationMap.size}`);
+    return durationMap;
+};
+
 
 export const fetchYouTubeVideoDetails = async (videoId: string): Promise<{ description: string; views: number | null }> => {
     if (!videoId) throw new Error("Video ID is required.");
@@ -284,13 +381,23 @@ export const fetchPlaylistAsFeed = async (playlistId: string, accessToken: strin
     // Sort by position
     allItems.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
+    // 3. Fetch video durations for all items
+    const videoIds = allItems.map(item => item.id);
+    const durations = await fetchVideosDuration(videoIds, accessToken);
+
+    // Update items with duration
+    const itemsWithDuration = allItems.map(item => ({
+        ...item,
+        duration: durations.get(item.id) || null
+    }));
+
     return {
         id: `https://www.youtube.com/playlist?list=${playlistId}`,
         url: `https://www.youtube.com/playlist?list=${playlistId}`,
         title: playlistSnippet.title,
         description: playlistSnippet.description,
-        items: allItems,
-        iconUrl: playlistSnippet.thumbnails?.medium?.url || playlistSnippet.thumbnails?.default?.url, maxArticles: allItems.length, isPlaylist: true,
+        items: itemsWithDuration,
+        iconUrl: playlistSnippet.thumbnails?.medium?.url || playlistSnippet.thumbnails?.default?.url, maxArticles: itemsWithDuration.length, isPlaylist: true,
         channelUrl: `https://www.youtube.com/channel/${playlistSnippet.channelId}`
     };
 };
