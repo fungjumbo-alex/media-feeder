@@ -32,23 +32,6 @@ export const PROXIES = [
         }
     },
     {
-        name: 'AllOrigins',
-        buildUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-        parseResponse: async (response: Response): Promise<string> => {
-            if (!response.ok) {
-                throw new Error(`Proxy AllOrigins responded with status ${response.status}`);
-            }
-            const data = await response.json();
-            if (data.status && data.status.http_code && data.status.http_code >= 400) {
-                throw new Error(`Target server responded with status ${data.status.http_code} via AllOrigins`);
-            }
-            if (data.contents === null) {
-                throw new Error('Proxy AllOrigins returned null content, indicating a fetch error.');
-            }
-            return data.contents;
-        }
-    },
-    {
         name: 'corsproxy.io',
         buildUrl: (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
         parseResponse: async (response: Response): Promise<string> => {
@@ -65,6 +48,25 @@ export const PROXIES = [
                 throw new Error(`Proxy corsproxy.io responded with status ${response.status}`);
             }
             return response.text();
+        }
+    },
+    {
+        name: 'AllOrigins',
+        buildUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+        parseResponse: async (response: Response): Promise<string> => {
+            if (!response.ok) {
+                throw new Error(`Proxy AllOrigins responded with status ${response.status}`);
+            }
+            const data = await response.json();
+            // AllOrigins returns the status code of the fetched URL in `status.http_code`
+            if (data.status?.http_code && data.status.http_code >= 400) {
+                throw new Error(`Target server responded with status ${data.status.http_code} via AllOrigins`);
+            }
+            // Sometimes AllOrigins returns null contents if the fetch failed silently
+            if (data.contents === null || data.contents === undefined) {
+                throw new Error('Proxy AllOrigins returned null/undefined content.');
+            }
+            return data.contents;
         }
     }
 ];
