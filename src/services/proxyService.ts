@@ -139,8 +139,6 @@ export const fetchViaProxy = async (
         const compositeKey = `${proxy.name}_${feedType}`;
         if (disabledProxies?.has(compositeKey)) return null;
 
-        console.log(`[ProxyService] Trying proxy: ${proxy.name} for URL: ${targetUrl}`);
-
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort('signal is aborted without reason'), 30000);
@@ -157,13 +155,11 @@ export const fetchViaProxy = async (
             const content = await proxy.parseResponse(response);
 
             if (response.ok) {
-                console.log(`[ProxyService] Success: ${proxy.name}`);
                 onAttempt?.(proxy.name, 'success', feedType);
                 return content;
             }
             throw new Error("Proxy returned empty or invalid content.");
         } catch (error) {
-            console.warn(`[ProxyService] Failure: ${proxy.name}`, error);
             let specificError = error;
             if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
                 specificError = new Error(`Network error for proxy '${proxy.name}'. It may be offline or blocked by an ad-blocker.`);
