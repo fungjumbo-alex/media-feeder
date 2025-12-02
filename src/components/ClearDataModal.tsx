@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { XIcon, TrashIcon, AlertTriangleIcon } from './icons';
 
@@ -6,16 +6,23 @@ export const ClearDataModal: React.FC = () => {
     const { 
         isClearDataModalOpen, 
         setIsClearDataModalOpen, 
-        handleClearArticlesAndHistory,
+        handleClearArticles,
         handleFactoryReset
     } = useAppContext();
+
+    const [keepReadLater, setKeepReadLater] = useState(true);
 
     if (!isClearDataModalOpen) return null;
 
     const onClose = () => setIsClearDataModalOpen(false);
 
-    const onClearArticles = () => {
-        handleClearArticlesAndHistory();
+    const onClearYT = () => {
+        handleClearArticles({ clearYT: true, clearNonYT: false, keepReadLater });
+        onClose();
+    };
+
+    const onClearNonYT = () => {
+        handleClearArticles({ clearYT: false, clearNonYT: true, keepReadLater });
         onClose();
     };
 
@@ -41,18 +48,48 @@ export const ClearDataModal: React.FC = () => {
                 </div>
                 
                 <div className="space-y-4 mt-6">
-                    <button
-                        onClick={onClearArticles}
-                        className="w-full flex flex-col items-start text-left p-4 rounded-lg bg-gray-700 hover:bg-gray-600 border border-gray-600 hover:border-indigo-500 transition-colors"
-                    >
-                        <div className="flex items-center gap-3">
-                            <TrashIcon className="w-5 h-5 text-gray-300" />
-                            <span className="font-semibold text-gray-100">Clear Articles & History</span>
-                        </div>
-                        <p className="text-sm text-gray-400 mt-1 pl-8">
-                            This will remove all downloaded articles, reading history, and your "Read Later" list. Your channel subscriptions and tags will be kept.
-                        </p>
-                    </button>
+                    <div className="bg-gray-700/50 p-4 rounded-lg space-y-4">
+                        <button
+                            onClick={onClearYT}
+                            className="w-full flex flex-col items-start text-left p-3 rounded-lg bg-gray-700 hover:bg-gray-600 border border-gray-600 hover:border-indigo-500 transition-colors"
+                        >
+                            <div className="flex items-center gap-3">
+                                <TrashIcon className="w-5 h-5 text-gray-300" />
+                                <span className="font-semibold text-gray-100">Clear YouTube Articles & History</span>
+                            </div>
+                            <p className="text-sm text-gray-400 mt-1 pl-8">
+                                Removes all downloaded YouTube videos and reading history. Subscriptions will be kept.
+                            </p>
+                        </button>
+
+                        <button
+                            onClick={onClearNonYT}
+                            className="w-full flex flex-col items-start text-left p-3 rounded-lg bg-gray-700 hover:bg-gray-600 border border-gray-600 hover:border-indigo-500 transition-colors"
+                        >
+                            <div className="flex items-center gap-3">
+                                <TrashIcon className="w-5 h-5 text-gray-300" />
+                                <span className="font-semibold text-gray-100">Clear Non-YouTube Articles & History</span>
+                            </div>
+                            <p className="text-sm text-gray-400 mt-1 pl-8">
+                                Removes all articles from RSS, Reddit, etc., and their reading history. Subscriptions will be kept.
+                            </p>
+                        </button>
+                    </div>
+
+                    <div className="p-4 bg-gray-900/50 rounded-lg">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={keepReadLater}
+                                onChange={(e) => setKeepReadLater(e.target.checked)}
+                                className="h-5 w-5 rounded border-gray-500 bg-gray-700 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div className="flex-grow">
+                                <span className="font-semibold text-gray-100">Keep 'Read Later' articles</span>
+                                <p className="text-xs text-gray-400">When checked, articles saved to your "Read Later" list will not be deleted.</p>
+                            </div>
+                        </label>
+                    </div>
 
                     <button
                         onClick={onFactoryReset}

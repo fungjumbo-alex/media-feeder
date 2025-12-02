@@ -97,10 +97,10 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                 />
             )}
             <div 
-                className={`relative w-full overflow-hidden ${imageSizeClasses[zoomLevel]}`}
+                className={`relative w-full overflow-hidden ${imageSizeClasses[zoomLevel]} ${article.isReddit && article.imageUrl ? 'bg-black' : ''}`}
             >
                 {article.imageUrl ? (
-                    <img src={article.imageUrl} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    <img src={article.imageUrl} alt={article.title} className={`w-full h-full ${article.isReddit ? 'object-contain' : 'object-cover group-hover:scale-105 transition-transform duration-300'}`} />
                 ) : (
                     <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-500">
                         No Image

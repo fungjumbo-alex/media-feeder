@@ -1,0 +1,58 @@
+<svg width="180" height="180" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Gemini-powered Feeds Logo</title>
+  <desc id="desc">Three flowing arcs funnel multiple media feeds into a bright, star-like insight.</desc>
+
+  <!-- Gradients -->
+  <defs>
+    <!-- Vibrant multi-stop gradients for the three feed arcs -->
+    <linearGradient id="grad-feed-1" x1="10" y1="30" x2="90" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00E5FF"/>
+      <stop offset="50%" stop-color="#2979FF"/>
+      <stop offset="100%" stop-color="#7C4DFF"/>
+    </linearGradient>
+
+    <linearGradient id="grad-feed-2" x1="10" y1="60" x2="90" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1DE9B6"/>
+      <stop offset="50%" stop-color="#00BFA5"/>
+      <stop offset="100%" stop-color="#00ACC1"/>
+    </linearGradient>
+
+    <linearGradient id="grad-feed-3" x1="10" y1="90" x2="90" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFEA00"/>
+      <stop offset="50%" stop-color="#FFC400"/>
+      <stop offset="100%" stop-color="#FF6D00"/>
+    </linearGradient>
+
+    <!-- Star fill + glow -->
+    <radialGradient id="grad-star" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(90 60) rotate(90) scale(14)">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.35" stop-color="#FFF59D"/>
+      <stop offset="0.75" stop-color="#FFD54F"/>
+      <stop offset="1" stop-color="rgba(255,213,79,0)"/>
+    </radialGradient>
+
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Three layered, flowing feed arcs -->
+  <path d="M10 30 C 36 20, 48 40, 72 58 C 78 62, 84 62, 90 60" stroke="url(#grad-feed-1)" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.95"/>
+  <path d="M10 60 C 36 55, 48 66, 72 60 C 78 58, 84 59, 90 60" stroke="url(#grad-feed-2)" stroke-width="6" stroke-linecap="round" fill="none" opacity="0.9"/>
+  <path d="M10 90 C 36 100, 48 80, 72 62 C 78 58, 84 58, 90 60" stroke="url(#grad-feed-3)" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.95"/>
+
+  <!-- Convergence glow -->
+  <circle cx="90" cy="60" r="14" fill="url(#grad-star)" filter="url(#glow)" opacity="0.85"/>
+
+  <!-- Crisp Gemini-like star/spark at the focal point -->
+  <g transform="translate(90 60)" filter="url(#glow)">
+    <!-- 8-point abstract star -->
+    <path d="M0 -7 L2 -1 L8 1 L2 3 L0 9 L-2 3 L-8 1 L-2 -1 Z"
+          fill="#FFFFFF"/>
+  </g>
+</svg>

@@ -1,8 +1,8 @@
 import React from 'react';
 import { useAppContext } from '../contexts/AppContext';
-import { SparklesIcon, TagIcon, ImportIcon, ExportIcon, RssIcon, BookmarkIcon } from './icons';
+import { SparklesIcon, TagIcon, ImportIcon, ExportIcon, RssIcon, BookmarkIcon, ExternalLinkIcon } from './icons';
 
-const Feature: React.FC<{ icon: React.ReactNode; title: string; description: string; }> = ({ icon, title, description }) => (
+const Feature: React.FC<{ icon: React.ReactNode; title: string; description: React.ReactNode; }> = ({ icon, title, description }) => (
     <div className="flex items-start gap-4">
         <div className="flex-shrink-0 mt-1 text-indigo-400">{icon}</div>
         <div>
@@ -53,6 +53,23 @@ export const AboutContent: React.FC = () => {
                         icon={<ExportIcon className="w-6 h-6" />}
                         title="Privacy First & Data Portability"
                         description="All your data is stored locally in your browser—we have no servers and collect no personal information. Easily export your entire setup to a file or a shareable link to sync across devices."
+                    />
+                    <Feature
+                        icon={<ExternalLinkIcon className="w-6 h-6" />}
+                        title="Companion Browser Extension"
+                        description={
+                            <>
+                                Install our Chrome extension to add new feeds directly from any webpage and get a quick overview of your unread content. {' '}
+                                <a
+                                    href="https://chromewebstore.google.com/detail/add-to-ai-news-reader/mndmgjhcpmeoaideiakfkgmdafambabe"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-indigo-400 hover:text-indigo-300 underline"
+                                >
+                                    Get it on the Chrome Web Store.
+                                </a>
+                            </>
+                        }
                     />
                 </div>
 

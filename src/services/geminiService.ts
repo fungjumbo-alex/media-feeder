@@ -1,69 +1,107 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+*/
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { fetchViaProxy, INVIDIOUS_INSTANCES } from './proxyService';
-import type { RecommendedFeed, HistoryDigest, WebSource, AiModel, TranscriptLine, CaptionChoice, StructuredVideoSummary, Feed, Article, SummarySection } from '../types';
+import type { RecommendedFeed, DetailedDigest, ThematicDigest, WebSource, AiModel, TranscriptLine, CaptionChoice, StructuredVideoSummary, Feed, Article } from '../types';
 
-const API_KEY = process.env.API_KEY;
 let ai: GoogleGenAI | null = null;
 
-// Helper function to replicate Promise.any for older environments.
-const promiseAny = <T>(promises: Promise<T>[]): Promise<T> => {
-    return new Promise((resolve, reject) => {
-        const errors: any[] = [];
-        let rejectedCount = 0;
+export class QuotaExceededError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'QuotaExceededError';
+    }
+}
 
-        if (promises.length === 0) {
-            // AggregateError might not be available, so we use a generic error.
-            reject(new Error("All promises were rejected: No promises were provided."));
-            return;
-        }
+// FIX: Modified function to return a `WebSource` object, including the `uri`.
+const fetchPageDetails = async (url: string): Promise<WebSource> => {
+    try {
+        const htmlContent = await fetchViaProxy(url, 'rss'); // Using 'rss' type for general web page fetching
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlContent, 'text/html');
 
-        promises.forEach((promise, index) => {
-            Promise.resolve(promise)
-                .then(resolve) // Resolves as soon as the first promise resolves
-                .catch(error => {
-                    errors[index] = error;
-                    rejectedCount++;
-                    if (rejectedCount === promises.length) {
-                        // All promises rejected. Using a generic error as AggregateError might not be available.
-                        reject(new Error("All promises were rejected."));
-                    }
-                });
-        });
-    });
+        const title = doc.querySelector('title')?.textContent || url;
+        const description = doc.querySelector('meta[name="description"]')?.getAttribute('content') || undefined;
+
+        return { uri: url, title: title.trim(), description: description?.trim() };
+    } catch (error) {
+        console.warn(`Failed to fetch page details for ${url}:`, error);
+        // Fallback to the original URL as the title if fetching fails.
+        return { uri: url, title: url };
+    }
 };
 
 const getAiClient = (): GoogleGenAI => {
+    const API_KEY = (window as any).process?.env?.API_KEY;
     if (!API_KEY) throw new Error("API_KEY for Gemini is not configured. Please set the environment variable.");
     if (!ai) ai = new GoogleGenAI({ apiKey: API_KEY });
     return ai;
 };
 
-const sanitizeSourceUrl = (url: string): string => {
-    if (url.includes('vertexaisearch.cloud.google.com/deeplink')) {
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const generateContentWithRetry = async (
+    params: Parameters<InstanceType<typeof GoogleGenAI>['models']['generateContent']>[0],
+    maxRetries = 5,
+    initialDelay = 2000 // Start with 2 seconds
+): Promise<GenerateContentResponse> => {
+    let attempt = 0;
+    let delay = initialDelay;
+    const aiClient = getAiClient();
+
+    while (attempt < maxRetries) {
         try {
-            const urlObject = new URL(url);
-            // The parameter for the target URL can be 'u' or 'url'.
-            const targetUrl = urlObject.searchParams.get('u') || urlObject.searchParams.get('url');
-            if (targetUrl) {
-                // It's typically URL-encoded.
-                return decodeURIComponent(targetUrl);
+            const response = await aiClient.models.generateContent(params);
+            return response;
+        } catch (error: any) {
+            let isQuotaError = false;
+            let retryAfterSeconds = 0;
+
+            if (error && typeof error.message === 'string' && (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED'))) {
+                if (error.message.toLowerCase().includes('quota')) {
+                    isQuotaError = true;
+                    const retryMatch = error.message.match(/Please retry in (\d+(\.\d+)?)s/);
+                    if (retryMatch && retryMatch[1]) {
+                        retryAfterSeconds = parseFloat(retryMatch[1]);
+                    }
+                }
             }
-        } catch (e) {
-            console.warn(`Could not parse and sanitize Vertex AI Search URL: ${url}`, e);
+
+            if (attempt >= maxRetries - 1) {
+                if (isQuotaError) {
+                    throw new QuotaExceededError(error.message);
+                }
+                throw error;
+            }
+
+            if (!isQuotaError) {
+                throw error;
+            }
+
+            attempt++;
+
+            const jitter = Math.random() * 1000;
+            const waitTime = retryAfterSeconds > 0
+                ? (retryAfterSeconds * 1000) + jitter
+                : delay + jitter;
+
+            console.warn(`Gemini API rate limit exceeded. Attempt ${attempt}/${maxRetries}. Retrying in ${(waitTime / 1000).toFixed(2)}s.`);
+
+            await wait(waitTime);
+
+            if (retryAfterSeconds === 0) {
+                delay *= 2;
+            }
         }
     }
-    return url;
+    throw new Error('Exhausted all retries for generateContent.');
 };
 
-
-/**
- * Verifies a YouTube channel URL by fetching its content and extracting the canonical URL.
- * @param url The YouTube URL to verify.
- * @returns The canonical URL if valid, otherwise null.
- */
 const verifyAndGetCanonicalUrl = async (url: string): Promise<string | null> => {
     if (!url.includes('youtube.com')) {
-        return url; // Not a YouTube URL, return as is.
+        return url;
     }
     try {
         const htmlContent = await fetchViaProxy(url, 'youtube');
@@ -73,12 +111,11 @@ const verifyAndGetCanonicalUrl = async (url: string): Promise<string | null> => 
         const canonicalLink = doc.querySelector('link[rel="canonical"]');
         if (canonicalLink) {
             const canonicalUrl = canonicalLink.getAttribute('href');
-            // A valid canonical URL for a channel page.
             if (canonicalUrl && (canonicalUrl.includes('/channel/') || canonicalUrl.includes('/c/') || canonicalUrl.includes('/user/') || canonicalUrl.includes('/@'))) {
                 return canonicalUrl;
             }
         }
-        
+
         const ogUrlMeta = doc.querySelector('meta[property="og:url"]');
         if (ogUrlMeta) {
             const ogUrl = ogUrlMeta.getAttribute('content');
@@ -86,673 +123,599 @@ const verifyAndGetCanonicalUrl = async (url: string): Promise<string | null> => 
                 return ogUrl;
             }
         }
-        
-        // As a fallback, confirm it's a valid page by finding a channel ID in the content.
+
         const channelIdMatch = htmlContent.match(/"channelId":"(UC[\w-]{22})"/);
         if (channelIdMatch) {
-            return url; // The page seems valid, so return the original URL.
+            return url;
         }
 
-        console.warn(`Could not confirm YouTube channel validity for URL: ${url}`);
-        return null; // Could not be verified as a valid channel page.
+        return null;
 
     } catch (error) {
         console.warn(`Failed to verify YouTube URL ${url}:`, error);
-        return null; // Return null on fetch error.
+        return null;
     }
 };
 
-const timeToSeconds = (time: string): number => {
-    const parts = time.split(':').map(part => parseFloat(part.replace(',', '.')));
-    let seconds = 0;
-    if (parts.length === 3) {
-        seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-    } else if (parts.length === 2) {
-        seconds = parts[0] * 60 + parts[1];
-    } else if (parts.length === 1) {
-        seconds = parts[0];
-    }
-    return seconds;
-};
-
-const parseVtt = (vtt: string): TranscriptLine[] => {
-    const lines = vtt.split('\n');
-    const transcript: TranscriptLine[] = [];
-    let i = 0;
-
-    while (i < lines.length && !lines[i].includes('-->')) {
-        i++;
-    }
-
-    while (i < lines.length) {
-        const timeLine = lines[i];
-        if (timeLine.includes('-->')) {
-            const timeParts = timeLine.split(' --> ');
-            if (timeParts.length === 2) {
-                const start = timeToSeconds(timeParts[0]);
-                const end = timeToSeconds(timeParts[1]);
-                i++;
-                let text = '';
-                while (i < lines.length && lines[i].trim() !== '') {
-                    text += (text ? ' ' : '') + lines[i].trim();
-                    i++;
-                }
-                transcript.push({
-                    text: text.replace(/<[^>]*>/g, ''),
-                    start,
-                    duration: end - start,
-                });
-            }
-        }
-        i++;
-    }
-    return transcript;
-};
-
-const parseTtml = (ttml: string): TranscriptLine[] => {
-    try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(ttml, 'application/xml');
-        const lines = Array.from(doc.querySelectorAll('p'));
-        const transcript: TranscriptLine[] = [];
-
-        const parseTimeValue = (time: string | null): number | null => {
-            if (!time) return null;
-            if (time.endsWith('s')) return parseFloat(time.slice(0, -1));
-            if (time.endsWith('ms')) return parseFloat(time.slice(0, -2)) / 1000;
-            const parts = time.split(':');
-            if (parts.length === 3) {
-                 const secondsParts = parts[2].split('.');
-                const hours = parseInt(parts[0], 10);
-                const minutes = parseInt(parts[1], 10);
-                const seconds = parseInt(secondsParts[0], 10);
-                const milliseconds = secondsParts.length > 1 ? parseInt(secondsParts[1], 10) : 0;
-                return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
-            }
-            return parseFloat(time);
-        };
-
-        lines.forEach(line => {
-            const begin = parseTimeValue(line.getAttribute('begin'));
-            const end = parseTimeValue(line.getAttribute('end'));
-            const text = line.textContent?.trim() || '';
-
-            if (begin !== null && end !== null && text) {
-                transcript.push({
-                    text,
-                    start: begin,
-                    duration: end - begin,
-                });
-            }
-        });
-
-        return transcript;
-    } catch (e) {
-        console.error("Failed to parse TTML:", e);
+const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
+    if (!content || !content.trim()) {
         return [];
     }
-};
 
-export const fetchAndParseTranscript = async (
-    transcriptUrl: string,
-): Promise<TranscriptLine[]> => {
-    console.log(`[DEBUG] Fetching transcript content via proxy from: ${transcriptUrl}`);
-    const captionContent = await fetchViaProxy(transcriptUrl, 'youtube');
-    console.log(`[DEBUG] Successfully fetched transcript via proxy.`);
+    if (content.trim().startsWith('WEBVTT')) {
+        try {
+            const parseVTTTimestamp = (timestamp: string): number => {
+                const parts = timestamp.split(':');
+                let seconds = 0;
+                if (parts.length === 3) {
+                    seconds = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2]);
+                } else if (parts.length === 2) {
+                    seconds = parseInt(parts[0], 10) * 60 + parseFloat(parts[1]);
+                }
+                return seconds;
+            };
 
-    if (captionContent) {
-        if (captionContent.trim().startsWith('WEBVTT')) {
-            return parseVtt(captionContent);
-        } else if (captionContent.trim().startsWith('<?xml')) {
-            return parseTtml(captionContent);
+            const lines = content.split('\n');
+            const transcript: TranscriptLine[] = [];
+            let i = 0;
+
+            while (i < lines.length && !lines[i].includes('-->')) {
+                i++;
+            }
+
+            while (i < lines.length) {
+                const timeLine = lines[i];
+                if (timeLine.includes('-->')) {
+                    const [startTimeStr, endTimeStr] = timeLine.split(' --> ');
+                    const startSeconds = parseVTTTimestamp(startTimeStr);
+                    const endSeconds = parseVTTTimestamp(endTimeStr.split(' ')[0]);
+
+                    i++;
+                    let text = '';
+                    while (i < lines.length && lines[i].trim() !== '') {
+                        text += lines[i].trim() + ' ';
+                        i++;
+                    }
+
+                    if (text) {
+                        transcript.push({
+                            text: text.trim().replace(/<[^>]+>/g, ''),
+                            start: startSeconds,
+                            duration: endSeconds - startSeconds,
+                        });
+                    }
+                }
+                i++;
+            }
+            return transcript;
+        } catch (e) {
+            throw new Error(`Failed to parse WEBVTT transcript: ${e instanceof Error ? e.message : 'Invalid format.'}`);
         }
-        throw new Error(`Unsupported transcript format received from ${transcriptUrl}`);
     }
-    throw new Error('Empty transcript content received.');
+
+    try {
+        const data = JSON.parse(content);
+        if (data && Array.isArray(data.captions)) {
+            return data.captions.map((line: any) => ({
+                text: line.text,
+                start: line.start / 1000,
+                duration: line.duration / 1000
+            }));
+        }
+        throw new Error('Invalid Invidious transcript format: "captions" array not found.');
+    } catch (e) {
+        throw new Error(`Failed to parse transcript: ${e instanceof Error ? e.message : 'Invalid JSON format.'}`);
+    }
 };
 
 export const fetchAvailableCaptionChoices = async (videoId: string): Promise<CaptionChoice[]> => {
-    console.log('[DEBUG] Fetching available captions for video via Invidious API.');
+    if (!videoId) return [];
+    let lastError: unknown = null;
 
-    const promises = INVIDIOUS_INSTANCES.map(instance => 
-        (async () => {
+    // Try up to 3 instances for better performance
+    for (const instance of INVIDIOUS_INSTANCES.slice(0, 3)) {
+        try {
             const captionsListUrl = `${instance}/api/v1/captions/${videoId}`;
-            try {
-                const content = await fetchViaProxy(captionsListUrl, 'youtube');
-                const captionsData = JSON.parse(content);
-                const availableCaptions: any[] = captionsData.captions;
-
-                if (!Array.isArray(availableCaptions) || availableCaptions.length === 0) {
-                    throw new Error(`No captions array found on instance ${instance}`);
+            const content = await fetchViaProxy(captionsListUrl, 'youtube');
+            const data = JSON.parse(content);
+            const captionsArray = Array.isArray(data) ? data : data?.captions;
+            if (Array.isArray(captionsArray)) {
+                if (captionsArray.length > 0) {
+                    return captionsArray.map((track: any) => ({
+                        label: track.label,
+                        language_code: track.languageCode || track.language_code,
+                        url: `${instance}${track.url}`
+                    }));
                 }
-
-                const choices: CaptionChoice[] = availableCaptions.map(c => ({
-                    label: c.label,
-                    language_code: c.language_code || 'unknown',
-                    url: new URL(c.url, instance).href
-                }));
-                
-                if (choices.length === 0) {
-                     throw new Error(`No captions found on instance ${instance}`);
-                }
-
-                return choices;
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                console.warn(`[DEBUG] Caption choices from instance ${instance} failed: ${message}.`);
-                throw error; // Re-throw to allow promiseAny to work correctly
+                // If we successfully got a response but there are no captions, return empty
+                return [];
             }
-        })()
-    );
-
-    try {
-        // Promise.any will return the first successful promise's result.
-        const choices = await promiseAny(promises);
-        return choices;
-    } catch (e) {
-        // This catch block is for when ALL promises reject.
-        console.warn(`[DEBUG] All Invidious instances failed for video ${videoId}.`, e);
-        return [];
+            throw new Error(`Invalid caption list data structure from ${instance}`);
+        } catch (error) {
+            lastError = error;
+            // Continue to next instance
+        }
     }
+
+    // If all instances failed, throw the error so calling code can handle it
+    if (lastError) {
+        const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+        throw new Error(`All Invidious instances failed to provide a caption list. Last error: ${errorMessage}`);
+    }
+    return [];
 };
 
+export const fetchAndParseTranscript = async (url: string): Promise<TranscriptLine[]> => {
+    const content = await fetchViaProxy(url, 'youtube');
+    return parseInvidiousTranscript(content);
+};
 
-export const summarizeText = async (text: string, model: AiModel): Promise<string> => {
-    const aiClient = getAiClient();
-    if (!text) throw new Error("Cannot summarize empty text.");
-    
-    const response: GenerateContentResponse = await aiClient.models.generateContent({
-        model: model,
-        contents: `First, identify the language of the following text. Then, summarize the text in that same language in a concise and clear manner:\n\n---\n\n${text}`,
-        config: {
-            temperature: 0.2,
-            topP: 0.9,
-            topK: 20,
-        },
-    });
+export const summarizeText = async (
+    text: string,
+    link: string | null,
+    model: AiModel,
+    targetLanguage: string,
+    contentType: 'article' | 'video' = 'article'
+): Promise<{ summary: string, sources: WebSource[] }> => {
+    let systemInstruction = `You are an expert summarizer. Your goal is to provide a highly detailed and thorough summary of the provided text.
+    - The summary must be comprehensive, meticulously capturing all main points, key arguments, supporting details, important examples, findings, and conclusions.
+    - Structure the summary into multiple, well-developed paragraphs to ensure it is easy to read and understand. Aim for a substantial summary, not a brief overview.
+    - Do not use lists or bullet points. The output should be narrative prose.
+    - Respond only with the summary text itself. Do not include any introductory or concluding phrases like "Here is the summary:" or "In conclusion...".`;
 
-    const summary = response.text;
-    if (!summary) throw new Error("The AI returned an empty summary.");
-    return summary;
+    if (targetLanguage && targetLanguage !== 'original') {
+        systemInstruction += `\n- If the original text is not in ${targetLanguage}, please translate the final summary into ${targetLanguage}.`;
+    }
+
+    const contents = `Please summarize the following ${contentType} content:\n\n---\n\n${text.substring(0, 30000)}\n\n---`;
+    const config: any = { systemInstruction, tools: [] };
+    if (link && !link.includes('youtube.com') && !link.includes('youtu.be')) {
+        config.tools.push({ googleSearch: {} });
+    }
+    const response = await generateContentWithRetry({ model, contents, config });
+    const summary = response.text || '';
+    if (!summary) throw new Error("AI did not return a summary.");
+
+    let sources: WebSource[] = [];
+    if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+        const uniqueSources = new Map<string, { title: string }>();
+        response.candidates[0].groundingMetadata.groundingChunks.forEach(chunk => {
+            if (chunk.web) {
+                const { uri, title } = chunk.web;
+                if (uri && !uniqueSources.has(uri)) uniqueSources.set(uri, { title: title || uri });
+            }
+        });
+        sources = await Promise.all(Array.from(uniqueSources.keys()).map(fetchPageDetails));
+    }
+    return { summary, sources };
 };
 
 export const summarizeYouTubeVideo = async (
     videoTitle: string,
     transcript: TranscriptLine[],
-    model: AiModel
-): Promise<StructuredVideoSummary> => {
-    const aiClient = getAiClient();
+    model: AiModel,
+    targetLanguage: string
+): Promise<{ summary: StructuredVideoSummary, sources: WebSource[] }> => {
+    const fullTranscriptText = transcript.map(line => line.text).join(' ');
+    let systemInstruction = `You are an expert at summarizing YouTube video transcripts.
+    Your task is to:
+    1. Create a comprehensive, engaging, and detailed overall summary of the video's content. It should be at least two paragraphs long.
+    2. Identify 5-7 key moments or sections. For each section, provide:
+        a. A precise timestamp (in seconds) corresponding to the start of the section in the transcript.
+        b. A concise, descriptive title for the section.
+        c. A detailed summary for that section, about 2-4 sentences long.
+    - Base your summary *only* on the provided transcript and title. Do not invent information or infer content not present.
+    - For timestamps, use the start time of the relevant transcript segment. Pick the most representative start time for the topic.
+    - Respond only with the JSON object. Do not include any introductory phrases or markdown formatting.`;
 
-    if (!transcript || transcript.length === 0) {
-        throw new Error("Transcript is empty and cannot be summarized.");
+    if (targetLanguage && targetLanguage !== 'original') {
+        systemInstruction += `\n- If the original transcript is not in ${targetLanguage}, please translate the 'overallSummary', and the 'title' and 'summary' for each section into ${targetLanguage}.`;
     }
 
-    // Helper to format seconds into MM:SS or HH:MM:SS
-    const formatTranscriptTime = (seconds: number): string => {
-        if (isNaN(seconds) || seconds < 0) return '00:00';
-        const date = new Date(0);
-        date.setSeconds(seconds);
-        const timeString = date.toISOString().substr(11, 8);
-        return timeString.startsWith('00:') ? timeString.substr(3) : timeString;
-    };
+    const contents = `Video Title: ${videoTitle}\n\nTranscript:\n${fullTranscriptText.substring(0, 50000)}`;
 
-    const transcriptWithTimestamps = transcript
-        .map(line => `[${formatTranscriptTime(line.start)}] ${line.text}`)
-        .join('\n');
-
-    const prompt = `You are a professional video editor. You are given a transcript of the video titled "${videoTitle}". Your task is to:
-1.  First, identify the primary language of the transcript.
-2.  Summarize the full content clearly and concisely. This will be the 'overallSummary'.
-3.  Break the transcript down into 5 to 10 logical, sequential sections based on topic, flow, or speaker intent.
-4.  For each section, you must provide the following details:
-    - 'title': A descriptive title for what the section is about.
-    - 'summary': A brief summary (2–4 sentences) of the section. Avoid redundancy between section summaries.
-    - 'timestamp': The starting timestamp of that section in seconds. This must be as accurate as possible.
-    - 'startingPhrase': The first 5-10 words of the exact transcript line that corresponds to the 'timestamp' to ensure accuracy.
-
-Important Notes:
-- Your entire response (all summaries and titles) MUST be in the same language as the transcript.
-- Ensure each section has a distinct theme or transition.
-- Each section must cover more than 60 seconds of content, except for the final section if the remaining transcript is shorter.
-- The sections must cover the video's main topics in chronological order.
-
-Here is the transcript with timestamps:
----
-${transcriptWithTimestamps}
----
-`;
-
-    const response: GenerateContentResponse = await aiClient.models.generateContent({
-        model: model,
-        contents: prompt,
+    const response = await generateContentWithRetry({
+        model,
+        contents,
         config: {
+            systemInstruction,
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {
-                    overallSummary: {
-                        type: Type.STRING,
-                        description: 'A concise overall summary of the entire video.'
-                    },
+                    overallSummary: { type: Type.STRING },
                     sections: {
                         type: Type.ARRAY,
                         items: {
                             type: Type.OBJECT,
                             properties: {
-                                timestamp: {
-                                    type: Type.INTEGER,
-                                    description: `The starting timestamp of the section in seconds. Must be the exact start time of the line where the topic begins.`
-                                },
-                                title: {
-                                    type: Type.STRING,
-                                    description: 'A short title for the video section.'
-                                },
-                                summary: {
-                                    type: Type.STRING,
-                                    description: 'A concise summary of the video section.'
-                                },
-                                startingPhrase: {
-                                    type: Type.STRING,
-                                    description: 'The first 5-10 words of the transcript line that corresponds to the timestamp.'
-                                }
+                                timestamp: { type: Type.NUMBER },
+                                title: { type: Type.STRING },
+                                summary: { type: Type.STRING }
                             },
-                            required: ["timestamp", "title", "summary", "startingPhrase"],
-                        },
-                    }
-                },
-                required: ["overallSummary", "sections"],
-            },
-            temperature: 0.2,
-        },
-    });
-
-    let jsonStr = (response.text ?? '').trim();
-    if (jsonStr.startsWith('```json')) {
-        jsonStr = jsonStr.substring(7, jsonStr.length - 3).trim();
-    }
-    
-    try {
-        // Define local interfaces to handle the AI's response including the new field.
-        interface AiSummarySection extends SummarySection {
-            startingPhrase: string;
-        }
-        interface AiStructuredVideoSummary {
-            overallSummary: string;
-            sections: AiSummarySection[];
-        }
-
-        const parsedSummary = JSON.parse(jsonStr) as AiStructuredVideoSummary;
-        
-        // More robust validation
-        if (
-            !parsedSummary || 
-            typeof parsedSummary.overallSummary !== 'string' || 
-            !Array.isArray(parsedSummary.sections) ||
-            parsedSummary.sections.some(s => 
-                typeof s.timestamp !== 'number' || 
-                !s.title || 
-                !s.summary ||
-                typeof s.startingPhrase !== 'string'
-            )
-        ) {
-            throw new Error("AI returned a malformed structured summary.");
-        }
-        
-        const validatedSections = parsedSummary.sections
-            .filter(section => 
-                section.timestamp >= 0 && 
-                section.startingPhrase.trim() !== ''
-            )
-            .map(section => {
-                const { timestamp: aiTimestamp, startingPhrase } = section;
-                const normalizedPhrase = startingPhrase.trim().toLowerCase();
-
-                // Define a search window around the AI's timestamp to improve efficiency and accuracy.
-                const searchWindowStart = Math.max(0, aiTimestamp - 30);
-                const searchWindowEnd = aiTimestamp + 15;
-
-                const candidateLines = transcript.filter(line => line.start >= searchWindowStart && line.start <= searchWindowEnd);
-
-                let bestMatchLine: TranscriptLine | null = null;
-
-                // 1. Exact start match (highest priority)
-                for (const line of candidateLines) {
-                    if (line.text.trim().toLowerCase().startsWith(normalizedPhrase)) {
-                        bestMatchLine = line;
-                        break;
-                    }
-                }
-
-                // 2. Contains match (second priority, takes first found in window)
-                if (!bestMatchLine) {
-                    for (const line of candidateLines) {
-                        if (line.text.trim().toLowerCase().includes(normalizedPhrase)) {
-                            bestMatchLine = line;
-                            break;
+                            required: ['timestamp', 'title', 'summary']
                         }
                     }
-                }
-
-                // 3. Fallback to closest timestamp in the whole transcript if no phrase match found.
-                if (!bestMatchLine) {
-                    bestMatchLine = transcript.reduce((prev, curr) => 
-                        (Math.abs(curr.start - aiTimestamp) < Math.abs(prev.start - aiTimestamp) ? curr : prev)
-                    );
-                }
-
-                // Return a clean section object without the temporary 'startingPhrase'.
-                return {
-                    title: section.title,
-                    summary: section.summary,
-                    timestamp: bestMatchLine.start,
-                };
-            })
-            // Ensure the summary is in chronological order after corrections.
-            .sort((a, b) => a.timestamp - b.timestamp);
-
-        return {
-            overallSummary: parsedSummary.overallSummary,
-            sections: validatedSections,
-        };
-
-    } catch (e) {
-        console.error("Failed to parse or validate structured summary from AI:", e);
-        throw new Error("The AI returned an invalid summary format. Please try again.");
-    }
-};
-
-export const generateTranscriptDigest = async (
-    transcripts: { title: string; link: string; content: TranscriptLine[] }[],
-    viewTitle: string,
-    model: AiModel
-): Promise<HistoryDigest> => {
-    const aiClient = getAiClient();
-    if (transcripts.length === 0) {
-        throw new Error("No transcripts were provided to generate a digest.");
-    }
-
-    const transcriptContent = transcripts.map(t => 
-        `Video Title: ${t.title}\nTranscript: ${t.content.map(l => l.text).join(' ')}`
-    ).join('\n\n---\n\n');
-
-    const sourceLinksToExclude = transcripts.map(t => `- ${t.link}`).join('\n');
-
-    const prompt = `
-You are a helpful research assistant. Based on the following video transcripts from a user's feed titled "${viewTitle}", do the following:
-
-1.  **Identify Language**: First, determine the primary language used across all transcripts.
-2.  **Synthesize and Structure**: Write a cohesive synthesis of the main topics. The synthesis MUST be in the same language as the transcripts and formatted using markdown with the following structure:
-    - A main title for the digest (e.g., "# Tech News Roundup").
-    - A brief introductory summary paragraph.
-    - A bulleted list of 3-5 key takeaways (e.g., "* Key takeaway one.").
-    - Detailed paragraphs expanding on the topics.
-    - Cite your synthesis using [number] format, referencing the web pages you find, not the source videos.
-3.  **Find Recent & Valid Links**: Use Google Search to find 3-5 high-quality, relevant web pages (articles, blogs, etc.). These links MUST be:
-    - Published within the last month.
-    - Verified to be active and accessible.
-    - Provide additional context or different perspectives on the summarized topics.
-4.  **Exclusion Rule**: Crucially, you **MUST NOT** include links to the original source videos provided below in your list of related links. Your goal is to find new, supplementary information from different sources.
-5.  **Format Sources**: After your synthesis, add a special block for sources. Start the block with '---SOURCES---' and end it with '---ENDSOURCES---'. Inside this block, list each source you used. For each source, you MUST provide its Title, URL, and a brief Description explaining its relevance. Format each entry exactly like this:
-    Title: [The page title]
-    URL: [The full URL]
-    Description: [A brief, relevant description]
-
-Source Videos to Exclude from search results:
-${sourceLinksToExclude}
-
-Transcripts:
----
-${transcriptContent}
----
-
-Your entire response, including the markdown formatting and the sources block, must be in the language you identified.
-`;
-
-    const response = await aiClient.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-            tools: [{googleSearch: {}}],
+                },
+                required: ['overallSummary', 'sections']
+            }
         }
     });
 
-    let synthesis = response.text;
-    if (!synthesis) {
-        throw new Error("The AI failed to generate a digest synthesis.");
+    const summaryJson = JSON.parse(response.text || '{}');
+    if (!summaryJson.overallSummary || !Array.isArray(summaryJson.sections)) {
+        throw new Error("AI returned an invalid format for the structured summary.");
     }
 
-    let sources: WebSource[] = [];
-    const sourcesBlockRegex = /---SOURCES---([\s\S]*?)---ENDSOURCES---/;
-    const sourcesBlockMatch = synthesis.match(sourcesBlockRegex);
+    summaryJson.sections.sort((a: any, b: any) => a.timestamp - b.timestamp);
 
-    if (sourcesBlockMatch && sourcesBlockMatch[1]) {
-        synthesis = synthesis.replace(sourcesBlockRegex, '').trim(); // Remove the sources block from the main synthesis
-        const sourcesText = sourcesBlockMatch[1].trim();
-        const sourceEntries = sourcesText.split(/Title:/).slice(1);
-
-        for (const entry of sourceEntries) {
-            const lines = entry.trim().split('\n');
-            const title = lines[0]?.trim();
-            const urlLine = lines.find(line => line.startsWith('URL:'));
-            const descriptionLine = lines.find(line => line.startsWith('Description:'));
-
-            if (title && urlLine) {
-                const uri = sanitizeSourceUrl(urlLine.substring(4).trim());
-                const description = descriptionLine ? descriptionLine.substring(12).trim() : undefined;
-                sources.push({ title, uri, description });
-            }
-        }
-    } else {
-        // Fallback to grounding chunks if the special block is not found
-        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-        sources = (groundingChunks || [])
-            .map((chunk: any) => ({
-                uri: sanitizeSourceUrl(chunk.web?.uri || ''),
-                title: chunk.web?.title || '',
-            }))
-            .filter(source => source.uri && source.title);
-    }
-    
-    return { synthesis, sources };
+    return {
+        summary: summaryJson as StructuredVideoSummary,
+        sources: [] // YouTube summary doesn't use web grounding.
+    };
 };
-
 
 export const generateRecommendations = async (
-    currentFeeds: Feed[],
-    history: Article[],
+    feeds: Feed[],
+    historyArticles: Article[],
     model: AiModel,
     customQuery?: string,
-    excludeUrls: string[] = []
-): Promise<{ recommendations: RecommendedFeed[], sources: WebSource[] }> => {
-    const aiClient = getAiClient();
-    const existingUrls = new Set([...currentFeeds.map(f => f.url), ...excludeUrls]);
+    existingRecUrls?: string[]
+): Promise<{ recommendations: RecommendedFeed[] }> => {
+    const systemInstruction = `You are a content recommendation expert. Your goal is to suggest new YouTube channels or RSS feeds based on the user's current subscriptions and reading history.
+    - Analyze the provided titles of subscriptions and recently read articles.
+    - Find diverse, high-quality, and relevant new sources.
+    - Provide a brief, compelling reason for each recommendation.
+    - If the user provides a custom query, prioritize recommendations that match it.
+    - If a list of existing recommendations is provided, do not suggest the same URLs again.
+    - Respond only with the JSON object.`;
 
-    const feedProfile = currentFeeds.slice(0, 20).map(f => `- ${f.title} (${(f.tags || []).join(', ')})`).join('\n');
-    const historyProfile = history.slice(0, 20).map(a => `- ${a.title}`).join('\n');
+    const feedTitles = feeds.map(f => f.title).join(', ');
+    const articleTitles = historyArticles.slice(0, 30).map(a => a.title).join(', ');
 
-    let prompt = `
-        Based on the user's subscriptions and reading history, please use Google Search to find and recommend 5 new, recently active YouTube channels that have posted in the last month.
-        
-        User's Subscriptions (a sample):
-        ${feedProfile}
-
-        User's Recent Reading History (a sample):
-        ${historyProfile}
-    `;
-
+    let contents = `Current Subscriptions:\n${feedTitles}\n\nRecently Read Articles:\n${articleTitles}\n\n`;
     if (customQuery) {
-        prompt += `\n\nThe user has also provided a specific request: "${customQuery}"\nPlease prioritize recommendations that match this request while still being relevant to their general interests.`;
+        contents += `User's specific request: "${customQuery}"\n\n`;
     }
+    if (existingRecUrls && existingRecUrls.length > 0) {
+        contents += `Do not recommend these URLs again:\n${existingRecUrls.join('\n')}\n\n`;
+    }
+    contents += `Please recommend 5 new feeds.`;
 
-    prompt += `
-        
-        For each recommendation, provide a reason why it's a good suggestion.
-        Do not recommend any of these existing subscription URLs:
-        ${Array.from(existingUrls).join('\n')}
-
-        Format each recommendation exactly like this, with each field on a new line:
-        Title: [The channel title]
-        URL: [The full YouTube channel URL, using the modern @handle format, e.g., https://www.youtube.com/@handle]
-        Reason: [A brief reason for the recommendation]
-    `;
-    
-    const response: GenerateContentResponse = await aiClient.models.generateContent({
-        model: model,
-        contents: prompt,
+    const response = await generateContentWithRetry({
+        model,
+        contents,
         config: {
-            tools: [{googleSearch: {}}],
-        }
-    });
-
-    const text = response.text;
-    if (!text) {
-        throw new Error("The AI returned an empty response for recommendations.");
-    }
-
-    const recommendations: RecommendedFeed[] = [];
-    const recommendationBlocks = text.split('Title:').slice(1);
-
-    for (const block of recommendationBlocks) {
-        const lines = block.trim().split('\n');
-        const title = lines[0]?.trim();
-        const urlLine = lines.find((line: string) => line.startsWith('URL:'));
-        const reasonLine = lines.find((line: string) => line.startsWith('Reason:'));
-
-        if (title && urlLine && reasonLine) {
-            const url = urlLine.substring(4).trim();
-            const reason = reasonLine.substring(7).trim();
-            if (!existingUrls.has(url)) {
-                recommendations.push({ title, url, reason });
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    recommendations: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                title: { type: Type.STRING },
+                                url: { type: Type.STRING },
+                                reason: { type: Type.STRING }
+                            },
+                            required: ['title', 'url', 'reason']
+                        }
+                    }
+                },
+                required: ['recommendations']
             }
         }
-    }
-    
-    const verificationPromises = recommendations.map(async (rec) => {
-        const verifiedUrl = await verifyAndGetCanonicalUrl(rec.url);
-        if (verifiedUrl) {
-            return { ...rec, url: verifiedUrl };
-        }
-        console.log(`Skipping recommendation "${rec.title}" due to invalid or unverifiable URL: ${rec.url}`);
-        return null;
     });
 
-    const verifiedResults = await Promise.all(verificationPromises);
-    const finalRecommendations = verifiedResults.filter((rec): rec is RecommendedFeed => rec !== null);
+    const recommendationsJson = JSON.parse(response.text || '{}');
+    if (!recommendationsJson.recommendations || !Array.isArray(recommendationsJson.recommendations)) {
+        throw new Error("AI returned an invalid format for recommendations.");
+    }
 
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    const sources: WebSource[] = (groundingChunks || [])
-        .map((chunk: any) => ({
-            uri: sanitizeSourceUrl(chunk.web?.uri || ''),
-            title: chunk.web?.title || '',
-        }))
-        .filter((source: any) => source.uri && source.title);
-
-    return { recommendations: finalRecommendations, sources };
+    return recommendationsJson;
 };
 
 export const generateRelatedChannels = async (
     sourceFeed: Feed,
-    excludeUrls: string[],
+    existingUrls: string[],
     model: AiModel
-): Promise<{ recommendations: RecommendedFeed[], sources: WebSource[] }> => {
-    const aiClient = getAiClient();
-    const existingUrls = new Set(excludeUrls);
+): Promise<{ recommendations: RecommendedFeed[] }> => {
+    const systemInstruction = `You are a YouTube channel recommendation expert. Based on the provided channel's title and description, suggest 5 similar channels that the user might enjoy.
+    - For each recommendation, provide the channel title, its YouTube URL, and a brief reason why it's a good match.
+    - Do not recommend channels that are already in the user's subscription list.
+    - Respond only with the JSON object.`;
 
-    const prompt = `
-        Based on the following source channel, please use Google Search to find and recommend 5 similar and recently active YouTube channels that have posted in the last month.
-        
-        Source Channel:
-        - Title: ${sourceFeed.title}
-        - Description: ${sourceFeed.description || 'N/A'}
-        - Tags: ${(sourceFeed.tags || []).join(', ')}
+    const contents = `Find channels related to this one:
+    Title: ${sourceFeed.title}
+    Description: ${sourceFeed.description || ''}
+    
+    Do not include any of these URLs in your recommendations:
+    ${existingUrls.join('\n')}
+    
+    Please provide 5 recommendations.`;
 
-        For each recommendation, provide a reason why it's a good suggestion based on the source channel.
-        Do not recommend channels that are already in this list of existing subscription URLs:
-        ${Array.from(existingUrls).map(url => `- ${url}`).join('\n')}
-
-        Format each recommendation exactly like this, with each field on a new line:
-        Title: [The channel title]
-        URL: [The full YouTube channel URL, using the modern @handle format, e.g., https://www.youtube.com/@handle]
-        Reason: [A brief reason for the recommendation]
-    `;
-
-    const response: GenerateContentResponse = await aiClient.models.generateContent({
-        model: model,
-        contents: prompt,
+    const response = await generateContentWithRetry({
+        model,
+        contents,
         config: {
-            tools: [{googleSearch: {}}],
-        }
-    });
-
-    const text = response.text;
-    if (!text) {
-        throw new Error("The AI returned an empty response for related channels.");
-    }
-
-    const recommendations: RecommendedFeed[] = [];
-    const recommendationBlocks = text.split('Title:').slice(1);
-
-    for (const block of recommendationBlocks) {
-        const lines = block.trim().split('\n');
-        const title = lines[0]?.trim();
-        const urlLine = lines.find((line: string) => line.startsWith('URL:'));
-        const reasonLine = lines.find((line: string) => line.startsWith('Reason:'));
-
-        if (title && urlLine && reasonLine) {
-            const url = urlLine.substring(4).trim();
-            const reason = reasonLine.substring(7).trim();
-            if (!existingUrls.has(url)) {
-                recommendations.push({ title, url, reason });
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    recommendations: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                title: { type: Type.STRING },
+                                url: { type: Type.STRING },
+                                reason: { type: Type.STRING }
+                            },
+                            required: ['title', 'url', 'reason']
+                        }
+                    }
+                },
+                required: ['recommendations']
             }
         }
-    }
-
-    const verificationPromises = recommendations.map(async (rec) => {
-        const verifiedUrl = await verifyAndGetCanonicalUrl(rec.url);
-        if (verifiedUrl) {
-            return { ...rec, url: verifiedUrl };
-        }
-        console.log(`Skipping related channel recommendation "${rec.title}" due to invalid or unverifiable URL: ${rec.url}`);
-        return null;
     });
 
-    const verifiedResults = await Promise.all(verificationPromises);
-    const finalRecommendations = verifiedResults.filter((rec): rec is RecommendedFeed => rec !== null);
+    const recommendationsJson = JSON.parse(response.text || '{}');
+    if (!recommendationsJson.recommendations || !Array.isArray(recommendationsJson.recommendations)) {
+        throw new Error("AI returned an invalid format for related channels.");
+    }
 
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    const sources: WebSource[] = (groundingChunks || [])
-        .map((chunk: any) => ({
-            uri: sanitizeSourceUrl(chunk.web?.uri || ''),
-            title: chunk.web?.title || '',
-        }))
-        .filter((source: any) => source.uri && source.title);
+    // Post-processing to ensure URLs are valid channel URLs
+    const validatedRecommendations = await Promise.all(
+        (recommendationsJson.recommendations as RecommendedFeed[]).map(async rec => {
+            const canonicalUrl = await verifyAndGetCanonicalUrl(rec.url);
+            return canonicalUrl ? { ...rec, url: canonicalUrl } : null;
+        })
+    );
 
-    return { recommendations: finalRecommendations, sources };
+    return { recommendations: validatedRecommendations.filter((r): r is RecommendedFeed => r !== null) };
 };
 
-export const translateDigestContent = async (digest: HistoryDigest, targetLanguage: string, model: AiModel): Promise<{ synthesis: string }> => {
-    const aiClient = getAiClient();
-    
-    const prompt = `
-        Translate the following synthesis into ${targetLanguage}.
-        Maintain the original meaning and tone.
-        Return only the translated text, with no extra formatting or commentary.
+export const generateThematicDigest = async (
+    articles: Article[],
+    model: AiModel
+): Promise<ThematicDigest> => {
+    const systemInstruction = `You are an expert at creating thematic digests. Your task is to analyze a list of articles, group them by common themes, and provide a summary for each theme.
+    - Identify 2-4 main themes present in the articles.
+    - For each theme, provide a title, a concise summary of the theme, a list of relevant keywords, and list the articles that fall under it.
+    - Create a main, overarching title for the entire digest.
+    - Respond only with the JSON object.`;
 
-        Synthesis to Translate:
-        ---
-        ${digest.synthesis}
-        ---
-    `;
+    const articleInfo = articles.map(a => `- Title: ${a.title}\n  Description: ${a.description.substring(0, 200)}...`).join('\n');
+    const contents = `Here is a list of articles:\n\n${articleInfo}\n\nPlease create a thematic digest based on them.`;
 
-    const response: GenerateContentResponse = await aiClient.models.generateContent({
-        model: model,
-        contents: prompt,
+    const response = await generateContentWithRetry({
+        model,
+        contents,
+        config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    digestTitle: { type: Type.STRING },
+                    themedGroups: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                themeTitle: { type: Type.STRING },
+                                themeSummary: { type: Type.STRING },
+                                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                articles: {
+                                    type: Type.ARRAY,
+                                    items: {
+                                        type: Type.OBJECT,
+                                        properties: {
+                                            title: { type: Type.STRING }
+                                        },
+                                        required: ['title']
+                                    }
+                                }
+                            },
+                            required: ['themeTitle', 'themeSummary', 'keywords', 'articles']
+                        }
+                    }
+                },
+                required: ['digestTitle', 'themedGroups']
+            }
+        }
     });
 
-    const translatedSynthesis = response.text;
-    if (!translatedSynthesis) {
-        throw new Error("The AI returned an empty translation.");
+    const digestJson = JSON.parse(response.text || '{}');
+    if (!digestJson.digestTitle || !Array.isArray(digestJson.themedGroups)) {
+        throw new Error("AI returned an invalid format for the thematic digest.");
     }
 
-    return { synthesis: translatedSynthesis };
+    // Map article titles from response back to full article objects
+    const articlesByTitle = new Map(articles.map(a => [a.title, a]));
+    digestJson.themedGroups.forEach((group: any) => {
+        group.articles = group.articles
+            .map((articleInfo: { title: string }) => {
+                const fullArticle = articlesByTitle.get(articleInfo.title);
+                return fullArticle ? { id: fullArticle.id, feedId: fullArticle.feedId, title: fullArticle.title, link: fullArticle.link } : null;
+            })
+            .filter((a: any) => a !== null);
+    });
+
+    return digestJson as ThematicDigest;
+};
+
+export const translateText = async (text: string, targetLanguage: string, model: AiModel): Promise<string> => {
+    const systemInstruction = `You are a helpful translation assistant. Translate the given text into ${targetLanguage}.
+    - Respond only with the translated text. Do not add any extra phrases like "Here is the translation:".
+    - Preserve the original formatting (e.g., paragraphs) as best as possible.`;
+
+    const contents = text;
+
+    const response = await generateContentWithRetry({ model, contents, config: { systemInstruction } });
+    const translatedText = response.text;
+
+    if (!translatedText) throw new Error("Translation failed: AI did not return any text.");
+
+    return translatedText;
+};
+
+export const translateStructuredSummary = async (summary: StructuredVideoSummary, targetLanguage: string, model: AiModel): Promise<StructuredVideoSummary> => {
+    const systemInstruction = `You are a translation assistant specializing in structured summaries. Translate the 'overallSummary', and the 'title' and 'summary' for each section into ${targetLanguage}.
+    - Respond *only* with the translated JSON object, maintaining the original structure and keys.
+    - Keep the 'timestamp' values exactly as they are.`;
+
+    const contents = JSON.stringify(summary);
+
+    const response = await generateContentWithRetry({
+        model,
+        contents,
+        config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    overallSummary: { type: Type.STRING },
+                    sections: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                timestamp: { type: Type.NUMBER },
+                                title: { type: Type.STRING },
+                                summary: { type: Type.STRING }
+                            },
+                            required: ['timestamp', 'title', 'summary']
+                        }
+                    }
+                },
+                required: ['overallSummary', 'sections']
+            }
+        }
+    });
+
+    const translatedJson = JSON.parse(response.text || '{}');
+    if (!translatedJson.overallSummary || !Array.isArray(translatedJson.sections)) {
+        throw new Error("AI returned an invalid format for the translated structured summary.");
+    }
+
+    return translatedJson as StructuredVideoSummary;
+};
+
+export const translateDetailedDigest = async (digest: DetailedDigest, targetLanguage: string, model: AiModel): Promise<DetailedDigest> => {
+    const translationPromises = digest.map(async (item) => {
+        if (typeof item.summary === 'string') {
+            const translatedSummary = await translateText(item.summary, targetLanguage, model);
+            return { ...item, summary: translatedSummary };
+        } else {
+            const translatedStructuredSummary = await translateStructuredSummary(item.summary, targetLanguage, model);
+            return { ...item, summary: translatedStructuredSummary };
+        }
+    });
+
+    return Promise.all(translationPromises);
+};
+
+export const translateThematicDigest = async (digest: ThematicDigest, targetLanguage: string, model: AiModel): Promise<ThematicDigest> => {
+    const systemInstruction = `You are a translation assistant. Translate the 'digestTitle', and the 'themeTitle' and 'themeSummary' for each group into ${targetLanguage}.
+    - Do NOT translate the 'keywords' or any article 'title' or 'link'.
+    - Respond *only* with the translated JSON object, maintaining the original structure.`;
+
+    const contents = JSON.stringify(digest);
+
+    const response = await generateContentWithRetry({
+        model,
+        contents,
+        config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    digestTitle: { type: Type.STRING },
+                    themedGroups: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                themeTitle: { type: Type.STRING },
+                                themeSummary: { type: Type.STRING },
+                                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                articles: {
+                                    type: Type.ARRAY,
+                                    items: {
+                                        type: Type.OBJECT,
+                                        properties: {
+                                            id: { type: Type.STRING },
+                                            feedId: { type: Type.STRING },
+                                            title: { type: Type.STRING },
+                                            link: { type: Type.STRING }
+                                        },
+                                        required: ['id', 'feedId', 'title']
+                                    }
+                                }
+                            },
+                            required: ['themeTitle', 'themeSummary', 'keywords', 'articles']
+                        }
+                    }
+                },
+                required: ['digestTitle', 'themedGroups']
+            }
+        }
+    });
+
+    const translatedJson = JSON.parse(response.text || '{}');
+    if (!translatedJson.digestTitle || !Array.isArray(translatedJson.themedGroups)) {
+        throw new Error("AI returned an invalid format for the translated thematic digest.");
+    }
+
+    return translatedJson as ThematicDigest;
+};
+
+export const generatePageViewDigest = async (
+    articles: { id: string, feedId: string, title: string, link: string | null, content: string }[],
+    model: AiModel
+): Promise<{ digestTitle: string, digestContent: string }> => {
+    const systemInstruction = `You are an expert at synthesizing information. Your task is to analyze a list of article titles and brief descriptions, then generate a single, cohesive digest in Markdown format.
+    - Start with an overall title for the digest (e.g., "Digest of Recent Tech News").
+    - Group related articles under thematic subheadings (e.g., "## AI Developments").
+    - Under each subheading, write a 1-2 paragraph summary of that theme.
+    - After the summary, list the relevant articles as bullet points with Markdown links.
+    - Respond only with the generated title and content.`;
+
+    const articleInfo = articles.map(a => `- Title: ${a.title}\n  Content Preview: ${a.content.substring(0, 200)}...`).join('\n');
+    const contents = `Here is a list of articles from the current view:\n\n${articleInfo}\n\nPlease create a digest of this page view.`;
+
+    const response = await generateContentWithRetry({
+        model,
+        contents,
+        config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    digestTitle: { type: Type.STRING },
+                    digestContent: { type: Type.STRING, description: "The full digest content in Markdown format." }
+                },
+                required: ['digestTitle', 'digestContent']
+            }
+        }
+    });
+
+    const digestJson = JSON.parse(response.text || '{}');
+    if (!digestJson.digestTitle || !digestJson.digestContent) {
+        throw new Error("AI returned an invalid format for the page view digest.");
+    }
+
+    // Add source links to the bottom of the content
+    const sourceLinks = articles.map(a => `- [${a.title}](${a.link})`).join('\n');
+    digestJson.digestContent += `\n\n---\n\n## Original Sources\n${sourceLinks}`;
+
+    return digestJson;
 };

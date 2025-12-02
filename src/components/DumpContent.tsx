@@ -3,16 +3,29 @@ import { useAppContext } from '../contexts/AppContext';
 
 export const DumpContent: React.FC = () => {
     const {
-        allTags,
+        youtubeTags,
+        rssTags,
         feedsByTag,
         unreadCounts,
-        unreadTagCounts,
+        youtubeUnreadTagCounts,
+        rssUnreadTagCounts,
         favoriteFeeds,
-        unreadFavoritesCount,
+        unreadFavoritesYtCount,
+        unreadFavoritesRssCount,
+        unreadPublishedTodayYtCount,
+        unreadPublishedTodayRssCount,
+        unreadReadLaterYtCount,
+        unreadReadLaterRssCount,
+        historyYtCount,
+        historyRssCount,
+        unreadAiSummaryYtCount,
     } = useAppContext();
 
     const jsonData = useMemo(() => {
-        // Build the structured data for views, following the requested schema.
+        const isYouTubeFeed = (feed: {url: string}) => feed.url.toLowerCase().includes('youtube.com');
+        const ytFavoriteFeeds = favoriteFeeds.filter(isYouTubeFeed);
+        const rssFavoriteFeeds = favoriteFeeds.filter(feed => !isYouTubeFeed(feed));
+
         const views = [
             {
                 name: 'All Subscriptions',
@@ -20,28 +33,65 @@ export const DumpContent: React.FC = () => {
                 channels: [],
             },
             {
-                name: 'Favorites',
-                path: '/#/favorites',
-                unreadCount: unreadFavoritesCount,
-                channels: favoriteFeeds.map(feed => ({
+                name: 'Favorites (YouTube)',
+                path: '/#/favorites/yt',
+                unreadCount: unreadFavoritesYtCount,
+                channels: ytFavoriteFeeds.map(feed => ({
                     url: feed.id,
                     title: feed.title,
                     unreadCount: unreadCounts[feed.id] || 0,
                 })),
             },
             {
-                name: 'Read Later',
-                path: '/#/readLater',
+                name: 'Favorites (RSS)',
+                path: '/#/favorites/rss',
+                unreadCount: unreadFavoritesRssCount,
+                channels: rssFavoriteFeeds.map(feed => ({
+                    url: feed.id,
+                    title: feed.title,
+                    unreadCount: unreadCounts[feed.id] || 0,
+                })),
+            },
+            {
+                name: 'Read Later (YouTube)',
+                path: '/#/readLater/yt',
+                unreadCount: unreadReadLaterYtCount,
+                channels: [], // This view is article-based, not channel-based.
+            },
+            {
+                name: 'Read Later (RSS)',
+                path: '/#/readLater/rss',
+                unreadCount: unreadReadLaterRssCount,
                 channels: [],
             },
             {
-                name: 'Published Today',
-                path: '/#/published-today',
+                name: 'Published Today (YouTube)',
+                path: '/#/published-today/yt',
+                unreadCount: unreadPublishedTodayYtCount,
+                channels: [], // Article-based
+            },
+            {
+                name: 'Published Today (RSS)',
+                path: '/#/published-today/rss',
+                unreadCount: unreadPublishedTodayRssCount,
                 channels: [],
             },
             {
-                name: 'History',
-                path: '/#/history',
+                name: 'History (YouTube)',
+                path: '/#/history/yt',
+                unreadCount: historyYtCount, // This is count of read articles.
+                channels: [],
+            },
+            {
+                name: 'History (RSS)',
+                path: '/#/history/rss',
+                unreadCount: historyRssCount, // count of read articles.
+                channels: [],
+            },
+            {
+                name: 'YT with AI Summary',
+                path: '/#/ai-summary-yt',
+                unreadCount: unreadAiSummaryYtCount,
                 channels: [],
             },
             {
@@ -56,36 +106,55 @@ export const DumpContent: React.FC = () => {
             }
         ];
 
-        // Build the structured data for tags.
-        const tags = allTags.map(tag => ({
+        const ytTags = youtubeTags.map(tag => ({
             name: tag,
-            unreadCount: unreadTagCounts[tag] || 0,
-            channels: (feedsByTag.get(tag) || []).map(feed => ({
+            path: `/#/tag/youtube/${encodeURIComponent(tag)}`,
+            unreadCount: youtubeUnreadTagCounts[tag] || 0,
+            channels: (feedsByTag.get(tag) || []).filter(isYouTubeFeed).map(feed => ({
+                url: feed.id,
+                title: feed.title,
+                unreadCount: unreadCounts[feed.id] || 0,
+            })),
+        }));
+
+        const nonYtTags = rssTags.map(tag => ({
+            name: tag,
+            path: `/#/tag/rss/${encodeURIComponent(tag)}`,
+            unreadCount: rssUnreadTagCounts[tag] || 0,
+            channels: (feedsByTag.get(tag) || []).filter(feed => !isYouTubeFeed(feed)).map(feed => ({
                 url: feed.id,
                 title: feed.title,
                 unreadCount: unreadCounts[feed.id] || 0,
             })),
         }));
         
-        // Build the structured data for actions.
         const actions = [
             { name: 'Refresh All Feeds', path: '/#/refresh-all' },
             { name: 'Refresh Favorite Feeds', path: '/#/refresh-favorites' },
             { name: 'Refresh Tagged Feeds', path: '/#/refresh-tagged' }
         ];
 
-        const finalData = { views, tags, actions };
-
-        // Convert the structured data to a formatted JSON string.
+        const finalData = { views, youtubeTags: ytTags, rssTags: nonYtTags, actions };
+        
         return JSON.stringify(finalData, null, 2);
 
     }, [
-        allTags,
-        favoriteFeeds,
+        youtubeTags,
+        rssTags,
         feedsByTag,
         unreadCounts,
-        unreadFavoritesCount,
-        unreadTagCounts,
+        youtubeUnreadTagCounts,
+        rssUnreadTagCounts,
+        favoriteFeeds,
+        unreadFavoritesYtCount,
+        unreadFavoritesRssCount,
+        unreadPublishedTodayYtCount,
+        unreadPublishedTodayRssCount,
+        unreadReadLaterYtCount,
+        unreadReadLaterRssCount,
+        historyYtCount,
+        historyRssCount,
+        unreadAiSummaryYtCount,
     ]);
 
     return (

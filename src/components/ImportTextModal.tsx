@@ -1,15 +1,26 @@
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { XIcon, ImportIcon } from './icons';
-import type { SyncData } from '../types';
+import type { SyncData, Feed } from '../types';
+import { parseOpml } from '../utils/opmlUtils';
 
 export const ImportTextModal: React.FC = () => {
-    const { isImportTextModalOpen, setIsImportTextModalOpen, handleImportData, setToast, handleAddFeed, recentShareCodes, importCodeFromUrl, setImportCodeFromUrl } = useAppContext();
+    const { 
+        isImportTextModalOpen, 
+        setIsImportTextModalOpen, 
+        handleImportData, 
+        setToast, 
+        handleAddFeed, 
+        handleImportBundledChannels, 
+        recentShareCodes, 
+        importCodeFromUrl, 
+        setImportCodeFromUrl 
+    } = useAppContext();
     const [jsonText, setJsonText] = useState('');
     const [isImporting, setIsImporting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const opmlFileInputRef = useRef<HTMLInputElement>(null);
 
     const onClose = useCallback(() => {
         setIsImportTextModalOpen(false);
@@ -31,45 +42,43 @@ export const ImportTextModal: React.FC = () => {
         setIsImporting(true);
         setError(null);
         
-        let importContent = textToImport.trim();
+        const importContent = textToImport.trim();
 
-        // Regular expressions to find an import code within a full URL.
-        const oldImportUrlRegex = /#\/import=([a-zA-Z0-9]+)/;
-        const newImportUrlRegex = /#\/import\/([a-zA-Z0-9]+)/;
-
-        const oldMatch = importContent.match(oldImportUrlRegex);
-        const newMatch = importContent.match(newImportUrlRegex);
-
-        if (oldMatch?.[1]) {
-            importContent = oldMatch[1]; // Extract code from old format
-        } else if (newMatch?.[1]) {
-            importContent = newMatch[1]; // Extract code from new format
-        }
-
-        const shareCodeRegex = /^[a-zA-Z0-9]+$/;
-
-        try {
-            // Now check if the (potentially extracted) content is a share code.
-            if (shareCodeRegex.test(importContent) && !importContent.includes('{')) {
-                // handleAddFeed can also parse codes, so this is fine.
-                await handleAddFeed(importContent, 5);
-                onClose();
-            } else {
-                // If it's not a simple code, it must be JSON.
-                const parsedData = JSON.parse(importContent);
-                if (parsedData && typeof parsedData === 'object' && Array.isArray(parsedData.feeds)) {
-                    handleImportData(parsedData as SyncData);
+        // Heuristic: JSON data usually starts with '{' or '['. Everything else is treated as a URL/code.
+        if (importContent.startsWith('{') || importContent.startsWith('[')) {
+            try {
+                const parsedJson = JSON.parse(importContent);
+                
+                // Case 1: Full backup file (`{ feeds: [...] }`)
+                if (parsedJson.feeds && Array.isArray(parsedJson.feeds)) {
+                    handleImportData(parsedJson as SyncData);
                     onClose();
-                } else {
-                    throw new Error("Invalid format. Please paste a full JSON backup or a share code.");
+                } 
+                // Case 2: Channel list file (`[{ url: ..., title: ... }]`)
+                else if (Array.isArray(parsedJson) && parsedJson.length > 0 && parsedJson.every(item => item.url && item.title)) {
+                    handleImportBundledChannels(parsedJson as Omit<Feed, 'id' | 'items' | 'error'>[]);
+                    onClose();
+                } 
+                else {
+                    throw new Error("The provided JSON is not a valid backup or channel list.");
                 }
+            } catch (err) {
+                const message = err instanceof Error ? err.message : "An unknown error occurred during JSON parsing.";
+                setError(`Failed to import data. Error: ${message}`);
+                setIsImporting(false);
             }
-        } catch (err) {
-            const message = err instanceof Error ? err.message : "An unknown error occurred.";
-            setError(`Failed to parse or import data. Error: ${message}`);
-            setIsImporting(false);
+        } else {
+            // Case 3: Treat as a URL or a share code. `handleAddFeed` handles various formats.
+            try {
+                await handleAddFeed(importContent);
+                onClose();
+            } catch (addFeedErr) {
+                const message = addFeedErr instanceof Error ? addFeedErr.message : "An unknown error occurred.";
+                setError(`Failed to import data. Error: ${message}`);
+                setIsImporting(false);
+            }
         }
-    }, [handleAddFeed, handleImportData, onClose]);
+    }, [handleImportData, handleAddFeed, handleImportBundledChannels, setToast, onClose]);
     
     useEffect(() => {
         if (importCodeFromUrl) {
@@ -98,23 +107,68 @@ export const ImportTextModal: React.FC = () => {
     const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+
         const reader = new FileReader();
         reader.onload = (event) => {
-            try {
-                const fileContent = event.target?.result as string;
-                JSON.parse(fileContent);
-                setJsonText(fileContent);
-                setToast({ message: 'File content loaded into text area.', type: 'success' });
-                setError(null);
-            } catch (err) {
-                setError('Failed to read or parse the selected file. Please ensure it is a valid JSON backup file.');
+            const fileContent = event.target?.result as string;
+            if (fileContent) {
+                // Directly process the file content instead of populating the text area.
+                runImport(fileContent);
+            } else {
+                setError('The selected file is empty or could not be read.');
             }
         };
         reader.onerror = () => {
             setError('Error reading the file.');
         };
         reader.readAsText(file);
-        if (e.target) e.target.value = '';
+
+        // Reset the file input so the same file can be selected again
+        if (e.target) {
+            e.target.value = '';
+        }
+    };
+
+    const handleLoadFromOpmlClick = () => {
+        opmlFileInputRef.current?.click();
+    };
+
+    const onOpmlFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const fileContent = event.target?.result as string;
+            if (fileContent) {
+                setIsImporting(true);
+                setError(null);
+                try {
+                    const feedsToImport = parseOpml(fileContent);
+                    if (feedsToImport.length === 0) {
+                        setError("The OPML file is valid but contains no subscriptions to import.");
+                        setIsImporting(false);
+                        return;
+                    }
+                    handleImportBundledChannels(feedsToImport);
+                    onClose();
+                } catch (err) {
+                    const message = err instanceof Error ? err.message : "An unknown error occurred during OPML parsing.";
+                    setError(`Failed to import OPML. Error: ${message}`);
+                    setIsImporting(false);
+                }
+            } else {
+                setError('The selected OPML file is empty or could not be read.');
+            }
+        };
+        reader.onerror = () => {
+            setError('Error reading the OPML file.');
+        };
+        reader.readAsText(file);
+
+        if (e.target) {
+            e.target.value = '';
+        }
     };
 
 
@@ -123,6 +177,7 @@ export const ImportTextModal: React.FC = () => {
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
             <input type="file" accept=".json" ref={fileInputRef} onChange={onFileSelected} style={{ display: 'none' }} />
+            <input type="file" accept=".opml,.xml" ref={opmlFileInputRef} onChange={onOpmlFileSelected} style={{ display: 'none' }} />
             <div className="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-2xl m-4 relative flex flex-col max-h-[90vh]">
                 <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white">
                     <XIcon className="w-6 h-6" />
@@ -166,28 +221,35 @@ export const ImportTextModal: React.FC = () => {
                 )}
                 
                 {error && <div className="mt-4 text-sm text-red-400 bg-red-900/40 p-3 rounded-md flex-shrink-0">{error}</div>}
-                <div className="mt-6 grid grid-cols-2 grid-rows-2 gap-3 flex-shrink-0">
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 flex-shrink-0">
                     <button
                         type="button"
                         onClick={handleImportClick}
                         disabled={isImporting}
-                        className="w-full px-3 py-2.5 rounded-md text-xs font-semibold flex items-center justify-center gap-2 transition-colors bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-indigo-400/50 disabled:cursor-not-allowed"
+                        className="w-full px-3 py-2.5 rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-colors bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-indigo-400/50 disabled:cursor-not-allowed"
                     >
-                        {isImporting ? 'Importing...' : 'Import Data'}
+                        {isImporting ? 'Importing...' : 'Import from Text'}
+                    </button>
+                     <button
+                        type="button"
+                        onClick={onClose}
+                        className="w-full px-3 py-2.5 rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-colors bg-gray-700 text-gray-300 hover:bg-gray-600"
+                    >
+                        Cancel
                     </button>
                     <button
                         type="button"
                         onClick={handleLoadFromFileClick}
-                        className="w-full px-3 py-2.5 rounded-md text-xs font-semibold flex items-center justify-center gap-2 transition-colors bg-gray-700 text-gray-300 hover:bg-gray-600"
+                        className="w-full px-3 py-2.5 rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-colors bg-gray-700 text-gray-300 hover:bg-gray-600"
                     >
-                        Load from File...
+                        Load from JSON File...
                     </button>
-                    <button 
-                        type="button" 
-                        onClick={onClose} 
-                        className="w-full px-3 py-2.5 rounded-md text-xs font-semibold flex items-center justify-center gap-2 transition-colors bg-gray-700 text-gray-300 hover:bg-gray-600 col-start-2"
+                    <button
+                        type="button"
+                        onClick={handleLoadFromOpmlClick}
+                        className="w-full px-3 py-2.5 rounded-md text-sm font-semibold flex items-center justify-center gap-2 transition-colors bg-gray-700 text-gray-300 hover:bg-gray-600"
                     >
-                        Cancel
+                        Load from OPML File...
                     </button>
                 </div>
             </div>

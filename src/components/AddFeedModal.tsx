@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { XIcon } from './icons';
@@ -6,7 +5,6 @@ import { XIcon } from './icons';
 export const AddFeedModal: React.FC = () => {
     const { isAddFeedModalOpen, setAddFeedModalOpen, handleAddFeed, urlFromExtension, setUrlFromExtension, enableRssAndReddit } = useAppContext();
     const [url, setUrl] = useState('');
-    const [maxArticles, setMaxArticles] = useState(5);
     const [isAdding, setIsAdding] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -22,7 +20,6 @@ export const AddFeedModal: React.FC = () => {
         if (isAddFeedModalOpen) {
             // When modal opens, pre-fill URL if it came from the extension, otherwise reset state.
             setUrl(urlFromExtension || '');
-            setMaxArticles(5);
             setError(null);
             setIsAdding(false);
         }
@@ -40,13 +37,6 @@ export const AddFeedModal: React.FC = () => {
     const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setUrl(e.target.value);
         if (error) setError(null);
-    };
-
-    const handleMaxArticlesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = parseInt(e.target.value, 10);
-        if (!isNaN(value) && value > 0) {
-            setMaxArticles(value);
-        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -68,7 +58,7 @@ export const AddFeedModal: React.FC = () => {
         setIsAdding(true);
         setError(null);
         try {
-            await handleAddFeed(url, maxArticles);
+            await handleAddFeed(url);
             onClose(); // Close modal on success
         } catch (err) {
             setError(err instanceof Error ? err.message : "An unknown error occurred while adding the feed.");
@@ -93,11 +83,6 @@ export const AddFeedModal: React.FC = () => {
                         <div>
                             <label htmlFor="feed-url" className="text-sm font-medium text-gray-400">Source URL, Link, or Code</label>
                             <input id="feed-url" type="text" value={url} onChange={handleUrlChange} placeholder="e.g., wired.com, .../#/import/qez7S, or qez7S" className="w-full bg-gray-900 border border-gray-700 text-white rounded-md p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition mt-1" required autoFocus />
-                        </div>
-                        <div>
-                            <label htmlFor="feed-max-articles" className="text-sm font-medium text-gray-400">Number of latest articles to download</label>
-                            <input id="feed-max-articles" type="number" value={maxArticles} onChange={handleMaxArticlesChange} min="1" className="w-full bg-gray-900 border border-gray-700 text-white rounded-md p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition mt-1" required />
-                             <p className="text-xs text-gray-500 mt-1">Default is 5. This is ignored for link or code imports.</p>
                         </div>
                     </div>
                     {error && <div className="mt-4 text-sm text-red-400 bg-red-900/40 p-3 rounded-md">{error}</div>}

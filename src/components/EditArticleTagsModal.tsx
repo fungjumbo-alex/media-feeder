@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { XIcon, TagIcon } from './icons';
@@ -15,7 +17,8 @@ export const EditArticleTagsModal: React.FC = () => {
     useEffect(() => {
         if (article && isOpen) {
             setNewTagInput('');
-            setSelectedTags(new Set(article.tags || []));
+            // FIX: Explicitly cast `article.tags` to `string[]` to ensure correct type for Set constructor.
+            setSelectedTags(new Set((article.tags as string[]) || []));
         }
     }, [article, isOpen]);
 

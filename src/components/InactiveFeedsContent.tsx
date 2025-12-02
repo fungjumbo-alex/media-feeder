@@ -31,7 +31,7 @@ const FeedRow: React.FC<{
     isRefreshing: boolean;
 }> = ({ feed, isSelected, onToggleSelect, onRefresh, isRefreshing }) => {
     const [iconError, setIconError] = useState(false);
-    const isYouTubeFeed = feed.url.includes('youtube.com');
+    const isYouTubeFeed = feed.url.toLowerCase().includes('youtube.com');
     const hasError = !!feed.error;
     const hasNeverPosted = feed.lastPostTimestamp === 0 && !hasError;
 

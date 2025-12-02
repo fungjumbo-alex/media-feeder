@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useAppContext } from '../contexts/AppContext';
-import { PlusIcon, RssIcon, HistoryIcon, TrashIcon, ExportIcon, ImportIcon, ClockIcon, StarIcon, SettingsIcon, YouTubeIcon, TagIcon, TagsIcon, ChevronDoubleLeftIcon, RefreshIcon, AlertTriangleIcon, ChevronRightIcon, BookmarkIcon, CheckCircleIcon, GridViewIcon, RedditIcon, YouTubePlaylistIcon, SparklesIcon, PackageIcon, InfoIcon } from './icons';
+import { RssIcon, HistoryIcon, ClockIcon, StarIcon, SettingsIcon, YouTubeIcon, TagIcon, ChevronDoubleLeftIcon, ChevronRightIcon, BookmarkIcon, GridViewIcon, RedditIcon, YouTubePlaylistIcon, RefreshIcon, CheckCircleIcon, PlusIcon, PackageIcon, SyncIcon, ImportIcon, ExportIcon, ListIcon, FolderIcon, TrendingUpIcon, AiSummaryIcon } from './icons';
 import { SearchInput } from './SearchInput';
 import type { Feed } from '../types';
 
@@ -18,338 +18,648 @@ const Tooltip: React.FC<{ text: string; isVisible: boolean; children: React.Reac
     );
 };
 
-const isYouTubePlaylist = (feed: Feed) => feed.id.includes('/playlist?list=') || feed.id.includes('playlist_id=');
-const isYouTubeChannel = (feed: Feed) => feed.url.includes('youtube.com') && !isYouTubePlaylist(feed);
+const MenuButton: React.FC<{
+    onClick: () => void;
+    icon: React.ElementType;
+    label: string;
+    disabled?: boolean;
+    isDanger?: boolean;
+}> = ({ onClick, icon: Icon, label, disabled = false, isDanger = false }) => (
+     <button 
+        onClick={onClick} 
+        disabled={disabled} 
+        className={`w-full flex items-center px-3 py-2 text-sm rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isDanger ? 'text-red-400 hover:bg-red-500/20' : 'text-gray-200 hover:bg-gray-600'}`}
+    >
+        <Icon className="w-4 h-4 mr-3"/>{label}
+    </button>
+);
+
+
+const isYouTubeFeed = (feed: Feed) => feed.url.toLowerCase().includes('youtube.com');
+const isYouTubePlaylist = (feed: Feed) => isYouTubeFeed(feed) && (feed.id.includes('/playlist?list=') || feed.id.includes('playlist_id='));
+const isYouTubeChannel = (feed: Feed) => isYouTubeFeed(feed) && !isYouTubePlaylist(feed);
+
+const NavItem: React.FC<{
+    type: string;
+    value?: any;
+    icon: React.ElementType;
+    label: string;
+    count?: number;
+    isTabbed?: boolean;
+    currentTab?: 'yt' | 'rss';
+}> = ({ type, value, icon: Icon, label, count, isTabbed = false, currentTab }) => {
+    const { handleViewChange, currentView, isSidebarCollapsed, isMobileView } = useAppContext();
+
+    const handleClick = () => {
+        if (isTabbed) handleViewChange(type, currentTab);
+        else handleViewChange(type, value);
+    };
+    
+    const effectiveValue = isTabbed ? value : (value !== undefined ? value : '');
+    let finalIsActive = currentView.type === type;
+    if (effectiveValue) {
+        if (typeof effectiveValue === 'object') {
+            finalIsActive = finalIsActive && JSON.stringify(currentView.value) === JSON.stringify(effectiveValue);
+        } else {
+            finalIsActive = finalIsActive && currentView.value === effectiveValue;
+        }
+    } else if (currentView.type === type && type === 'readLater' && !currentView.value) {
+        // Special case for readLater when no tab is selected. Defaults to 'yt'.
+        finalIsActive = currentTab === 'yt';
+    } else if (currentView.type === type) {
+        finalIsActive = !currentView.value || currentView.value === currentTab;
+    } else {
+        finalIsActive = false;
+    }
+
+    const hrefValue = value ? (typeof value === 'object' ? `/${value.type}/${encodeURIComponent(value.name)}` : `/${encodeURIComponent(value)}`) : (isTabbed ? `/${currentTab}`: '');
+
+    return (
+        <Tooltip text={label} isVisible={isSidebarCollapsed && !isMobileView}>
+            <a
+                href={`#/${type}${hrefValue}`}
+                onClick={(e) => { e.preventDefault(); handleClick(); }}
+                className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-colors ${finalIsActive ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'}`}
+            >
+                <Icon className="w-5 h-5" />
+                {!isSidebarCollapsed && (
+                    <span className="ml-3 flex-1 truncate">{label}</span>
+                )}
+                {count !== undefined && count > 0 && !isSidebarCollapsed && (
+                    <span className="ml-auto text-xs font-semibold bg-gray-600 text-gray-200 rounded-full px-2 py-0.5">
+                        {count}
+                    </span>
+                )}
+            </a>
+        </Tooltip>
+    );
+};
+
+const colors = [
+    'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-500', 
+    'bg-lime-500', 'bg-green-500', 'bg-emerald-500', 'bg-teal-500', 
+    'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500', 
+    'bg-violet-500', 'bg-purple-500', 'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500'
+];
+
+const getHash = (str: string): number => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return hash;
+};
+
+const SidebarFeedIcon: React.FC<{ feed: Feed, count: number }> = ({ feed, count }) => {
+    const { handleSelectFeed, currentView } = useAppContext();
+    const [hasError, setHasError] = useState(false);
+    const unreadCount = count;
+    const isActive = currentView.type === 'feed' && currentView.value === feed.id;
+
+    const fallbackColor = useMemo(() => {
+        const hash = getHash(feed.title || 'Fallback');
+        return colors[Math.abs(hash) % colors.length];
+    }, [feed.title]);
+
+    const initial = useMemo(() => {
+        return (feed.title || 'F').charAt(0).toUpperCase();
+    }, [feed.title]);
+
+    const FallbackIcon = () => (
+        <div className={`w-full h-full flex items-center justify-center rounded ${fallbackColor}`}>
+            <span className="font-bold text-white/80 text-lg">{initial}</span>
+        </div>
+    );
+
+    return (
+        <Tooltip text={feed.title} isVisible={true}>
+            <button
+                onClick={() => handleSelectFeed(feed.id)}
+                className={`relative aspect-square w-full bg-gray-700 rounded-md overflow-hidden transform z-0 hover:scale-125 hover:z-10 transition-transform duration-200 focus:outline-none focus:ring-2 ring-offset-2 ring-offset-gray-800 ring-indigo-500 ${isActive ? 'ring-2 ring-indigo-500' : ''}`}
+                title={feed.title}
+            >
+                {feed.iconUrl && !hasError ? (
+                    <img src={feed.iconUrl} alt="" className="w-full h-full object-cover" onError={() => setHasError(true)} />
+                ) : (
+                    <FallbackIcon />
+                )}
+                {unreadCount > 0 && (
+                    <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] font-bold rounded-full px-1 min-w-[16px] h-4 flex items-center justify-center shadow-md border border-gray-800">
+                        {unreadCount}
+                    </div>
+                )}
+            </button>
+        </Tooltip>
+    );
+};
+
+const FeedsList: React.FC<{ feeds: Feed[], typeFilter: (feed: Feed) => boolean, viewUnreadCounts?: Record<string, number> }> = ({ feeds, typeFilter, viewUnreadCounts }) => {
+    const { unreadCounts, sidebarFeedsView } = useAppContext();
+    const filteredFeeds = useMemo(() => feeds.filter(typeFilter), [feeds, typeFilter]);
+    if (filteredFeeds.length === 0) return null;
+
+    if (sidebarFeedsView === 'icons') {
+        return (
+            <div className="grid grid-cols-3 gap-2 p-2">
+                {filteredFeeds.map(feed => {
+                    const count = viewUnreadCounts ? (viewUnreadCounts[feed.id] || 0) : (unreadCounts[feed.id] || 0);
+                    return <SidebarFeedIcon key={feed.id} feed={feed} count={count} />;
+                })}
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-1">
+            {filteredFeeds.map(feed => {
+                const count = viewUnreadCounts ? (viewUnreadCounts[feed.id] || 0) : (unreadCounts[feed.id] || 0);
+                return (
+                    <NavItem
+                        key={feed.id}
+                        type="feed"
+                        value={feed.id}
+                        icon={isYouTubeFeed(feed) ? (isYouTubePlaylist(feed) ? YouTubePlaylistIcon : YouTubeIcon) : (feed.url.includes('reddit.com') ? RedditIcon : RssIcon)}
+                        label={feed.title}
+                        count={count}
+                    />
+                );
+            })}
+        </div>
+    );
+};
+
+const TagWithFeeds: React.FC<{
+    tag: string;
+    unreadCount: number;
+    tagType: 'youtube' | 'rss';
+}> = ({ tag, unreadCount, tagType }) => {
+    const {
+        currentView,
+        handleViewChange,
+        isSidebarCollapsed,
+        isMobileView,
+        expandedTags,
+        onToggleTagExpansion,
+        feedsByTag,
+        favoriteFeeds,
+    } = useAppContext();
+
+    const isFavorites = tag === '__FAVORITES__';
+    const tagName = isFavorites ? '__FAVORITES__' : tag;
+    const compositeKey = `${tagType}-${tagName}`;
+
+    const feedsForDisplay = useMemo(() => {
+        if (isFavorites) {
+            return tagType === 'youtube'
+                ? favoriteFeeds.filter(isYouTubeFeed)
+                : favoriteFeeds.filter(feed => !isYouTubeFeed(feed));
+        }
+        const allFeedsForTag = feedsByTag.get(tag) || [];
+        if (tagType === 'youtube') {
+            return allFeedsForTag.filter(isYouTubeFeed);
+        } else {
+            return allFeedsForTag.filter(feed => !isYouTubeFeed(feed));
+        }
+    }, [feedsByTag, tag, tagType, isFavorites, favoriteFeeds]);
+
+    const isExpanded = expandedTags.has(compositeKey);
+
+    const handleExpandClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleTagExpansion(tagName, tagType);
+    };
+
+    const handleNavClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        if (isFavorites) {
+            handleViewChange('favorites', tagType);
+        } else {
+            handleViewChange('tag', { name: tag, type: tagType });
+        }
+    };
+    
+    const navHref = isFavorites ? `#/favorites/${tagType}` : `#/tag/${tagType}/${encodeURIComponent(tag)}`;
+    const label = isFavorites ? 'Favorites' : tag;
+    const Icon = isFavorites ? StarIcon : TagIcon;
+    
+    const isActive = isFavorites
+        ? currentView.type === 'favorites' && (currentView.value === tagType || (currentView.value === 'yt' && tagType === 'youtube'))
+        : currentView.type === 'tag' && JSON.stringify(currentView.value) === JSON.stringify({ name: tag, type: tagType });
+
+    if (isFavorites && feedsForDisplay.length === 0) {
+        return null;
+    }
+
+    return (
+        <div>
+            <Tooltip text={label} isVisible={isSidebarCollapsed && !isMobileView}>
+                <a
+                    href={navHref}
+                    onClick={handleNavClick}
+                    className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-colors ${isActive ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'}`}
+                >
+                    <Icon className={`w-5 h-5 ${isFavorites ? 'text-yellow-400' : ''}`} />
+                    {!isSidebarCollapsed && (
+                        <>
+                            <span className="ml-3 flex-1 truncate">{label}</span>
+                            {unreadCount > 0 && (
+                                <span className="ml-2 text-xs font-semibold bg-gray-600 text-gray-200 rounded-full px-2 py-0.5">
+                                    {unreadCount}
+                                </span>
+                            )}
+                            {feedsForDisplay.length > 0 && (
+                                <button
+                                    onClick={handleExpandClick}
+                                    className="p-1 ml-1 rounded-full hover:bg-gray-600"
+                                    aria-expanded={isExpanded}
+                                >
+                                    <ChevronRightIcon className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                </button>
+                            )}
+                        </>
+                    )}
+                </a>
+            </Tooltip>
+            {isExpanded && !isSidebarCollapsed && feedsForDisplay.length > 0 && (
+                <div className="pl-4 pt-1">
+                    <FeedsList feeds={feedsForDisplay} typeFilter={() => true} />
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ViewWithFeeds: React.FC<{
+    viewType: 'published-today' | 'readLater' | 'history';
+    icon: React.ElementType;
+    label: string;
+    totalUnreadCount: number;
+    currentTab: 'yt' | 'rss';
+}> = ({ viewType, icon: Icon, label, totalUnreadCount, currentTab }) => {
+    const {
+        currentView, handleViewChange, isSidebarCollapsed, isMobileView,
+        expandedViews, onToggleViewExpansion,
+        feedsForPublishedToday, feedsForReadLater, feedsForHistory,
+        unreadCountsForPublishedToday, unreadCountsForReadLater,
+    } = useAppContext();
+
+    const isExpanded = expandedViews.has(viewType);
+
+    const feedsForDisplay = useMemo(() => {
+        if (viewType === 'published-today') return feedsForPublishedToday;
+        if (viewType === 'readLater') return feedsForReadLater;
+        if (viewType === 'history') return feedsForHistory;
+        return [];
+    }, [viewType, feedsForPublishedToday, feedsForReadLater, feedsForHistory]);
+
+    const viewUnreadCounts = useMemo(() => {
+        if (viewType === 'published-today') return unreadCountsForPublishedToday;
+        if (viewType === 'readLater') return unreadCountsForReadLater;
+        return undefined;
+    }, [viewType, unreadCountsForPublishedToday, unreadCountsForReadLater]);
+
+    const handleExpandClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleViewExpansion(viewType);
+    };
+
+    const handleNavClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        handleViewChange(viewType, currentTab);
+    };
+    
+    const navHref = `#/${viewType}/${currentTab}`;
+    
+    const isActive = currentView.type === viewType && (currentView.value === currentTab || (!currentView.value && currentTab === 'yt'));
+
+    const filteredFeedsForDisplay = useMemo(() => {
+        return feedsForDisplay.filter(feed => {
+            const isYouTube = isYouTubeFeed(feed);
+            return currentTab === 'yt' ? isYouTube : !isYouTube;
+        });
+    }, [feedsForDisplay, currentTab]);
+
+    return (
+        <div>
+            <Tooltip text={label} isVisible={isSidebarCollapsed && !isMobileView}>
+                <a
+                    href={navHref}
+                    onClick={handleNavClick}
+                    className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-colors ${isActive ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'}`}
+                >
+                    <Icon className="w-5 h-5" />
+                    {!isSidebarCollapsed && (
+                        <>
+                            <span className="ml-3 flex-1 truncate">{label}</span>
+                            {viewType !== 'history' && totalUnreadCount > 0 && (
+                                <span className="ml-2 text-xs font-semibold bg-gray-600 text-gray-200 rounded-full px-2 py-0.5">
+                                    {totalUnreadCount}
+                                </span>
+                            )}
+                            {filteredFeedsForDisplay.length > 0 && (
+                                <button
+                                    onClick={handleExpandClick}
+                                    className="p-1 ml-1 rounded-full hover:bg-gray-600"
+                                    aria-expanded={isExpanded}
+                                >
+                                    <ChevronRightIcon className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                </button>
+                            )}
+                        </>
+                    )}
+                </a>
+            </Tooltip>
+            {isExpanded && !isSidebarCollapsed && filteredFeedsForDisplay.length > 0 && (
+                <div className="pl-4 pt-1">
+                    <FeedsList feeds={filteredFeedsForDisplay} typeFilter={() => true} viewUnreadCounts={viewUnreadCounts} />
+                </div>
+            )}
+        </div>
+    );
+};
+
 
 export const Sidebar: React.FC = () => {
     const {
-        sortedFeeds, allTags, unreadCounts, selectedFeedId, currentView, handleSelectFeed,
-        handleViewChange,
-        handleOpenClearDataModal, handleMarkAllInAllFeedsAsRead,
-        isSidebarCollapsed, onToggleSidebar, isViewsCollapsed, onToggleViewsCollapse,
+        sortedFeeds, currentView,
+        isSidebarCollapsed, onToggleSidebar, sidebarTab, handleSetSidebarTab,
+        sidebarFeedsView, handleSetSidebarFeedsView,
+        isViewsCollapsed, onToggleViewsCollapse,
         isYoutubeFeedsCollapsed, onToggleYoutubeFeedsCollapse, isRssFeedsCollapsed, onToggleRssFeedsCollapse,
         isRedditFeedsCollapsed, onToggleRedditFeedsCollapse, 
         isYoutubePlaylistsCollapsed, onToggleYoutubePlaylistsCollapse,
-        isTagsCollapsed, onToggleTagsCollapse, onToggleTagExpansion, expandedTags, feedsByTag,
-        isFavoritesCollapsed, onToggleFavoritesCollapse, favoriteFeeds, unreadFavoritesCount,
-        handleRefreshAllFeeds, handleRefreshFavorites, isRefreshingAll,
-        handleSearch, handleClearSearch,
-        handleOpenBulkEdit,
-        setAddFeedModalOpen, 
-        setIsExportModalOpen,
-        setIsImportTextModalOpen,
-        unreadTagCounts,
-        setIsAiSettingsModalOpen,
-        startDemo,
-        setIsImportYouTubeModalOpen,
-        setIsBundledChannelsModalOpen,
+        isYoutubeTagsCollapsed, onToggleYoutubeTagsCollapse, isRssTagsCollapsed, onToggleRssTagsCollapse,
+        handleSearch,
+        handleClearSearch,
+        youtubeTags, rssTags,
+        youtubeUnreadTagCounts, rssUnreadTagCounts,
+        unreadPublishedTodayYtCount, unreadPublishedTodayRssCount,
+        unreadReadLaterYtCount, unreadReadLaterRssCount,
+        unreadAiSummaryYtCount,
+        historyYtCount, historyRssCount,
+        unreadFavoritesYtCount, unreadFavoritesRssCount,
+        enableRssAndReddit,
+        isMobileView,
+        noteFolders,
+        isNotesCollapsed,
+        onToggleNotesCollapse,
+        handleAddNoteFolder,
+        // FIX: Add missing property `handleOpenRefreshOptionsModal` to destructuring.
+        handleOpenRefreshOptionsModal, isRefreshingAll,
+        setAddFeedModalOpen, setIsImportYouTubeModalOpen, setIsBundledChannelsModalOpen,
+        handleMarkAllInAllFeedsAsRead,
+        setIsImportTextModalOpen, setIsSyncDataModalOpen, setIsExportModalOpen, setIsAiSettingsModalOpen,
+        setIsTrendingKeywordsModalOpen,
+        // FIX: Add missing property `favoriteFeeds` to destructuring.
+        favoriteFeeds,
     } = useAppContext();
-
-    const [isActionsMenuOpen, setActionsMenuOpen] = useState(false);
-    const [isAdvancedMenuCollapsed, setAdvancedMenuCollapsed] = useState(true);
-    const actionsMenuRef = useRef<HTMLDivElement>(null);
-    const [feedIconErrors, setFeedIconErrors] = useState<Set<string>>(new Set());
-
-    const createMenuAction = (action: (() => void) | (() => Promise<void>)) => {
-        return () => {
-            action();
-            setActionsMenuOpen(false);
-        };
-    };
     
-    useEffect(() => {
-        if (isSidebarCollapsed) {
-            setActionsMenuOpen(false);
-        }
-    }, [isSidebarCollapsed]);
-
-    useEffect(() => {
-        // Reset errors when the list of feeds changes to allow for retries on refresh
-        setFeedIconErrors(new Set());
-    }, [sortedFeeds]);
-
-    const handleIconError = (feedId: string) => {
-        setFeedIconErrors(prev => new Set(prev).add(feedId));
-    };
+    const [isActionsPopoverOpen, setIsActionsPopoverOpen] = useState(false);
+    const popoverRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target as Node)) {
-                setActionsMenuOpen(false);
+            if (
+                popoverRef.current && !popoverRef.current.contains(event.target as Node) &&
+                buttonRef.current && !buttonRef.current.contains(event.target as Node)
+            ) {
+                setIsActionsPopoverOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const navButtonClass = (viewType: string, value?: string) => {
-        const isActive = currentView.type === viewType && (value ? currentView.value === value : true);
-        return `flex items-center w-full py-1 mb-1 rounded-md text-sm font-medium transition-colors duration-150 ${isSidebarCollapsed ? 'px-2 justify-center' : 'px-3'} ${
-            isActive ? 'bg-indigo-500/20 text-indigo-400' : 'text-gray-300 hover:bg-gray-700 hover:text-gray-100'
-        }`;
-    }
-    const menuButtonClass = "w-full flex items-center px-3 py-2 text-sm text-gray-200 hover:bg-gray-600 rounded-md disabled:opacity-50 disabled:cursor-not-allowed";
-    
-    const isRedditUrl = (url: string) => url.includes('reddit.com');
-
-    const youtubePlaylistFeeds = useMemo(() => sortedFeeds.filter(isYouTubePlaylist), [sortedFeeds]);
-    const youtubeChannelFeeds = useMemo(() => sortedFeeds.filter(isYouTubeChannel), [sortedFeeds]);
-    const redditFeeds = useMemo(() => sortedFeeds.filter(f => isRedditUrl(f.url)), [sortedFeeds]);
-    const rssFeeds = useMemo(() => sortedFeeds.filter(f => !isYouTubeChannel(f) && !isYouTubePlaylist(f) && !isRedditUrl(f.url)), [sortedFeeds]);
-
-
-    const renderFeedItem = (feed: Feed) => {
-        const isYouTubeChannelFeed = isYouTubeChannel(feed);
-        const isYouTubePlaylistFeed = isYouTubePlaylist(feed);
-        const isRedditFeed = isRedditUrl(feed.url);
-        const isActive = currentView.type === 'feed' && selectedFeedId === feed.id;
-        const isFavorite = !!feed.isFavorite;
-        const hasError = !!feed.error;
-        const unreadCount = unreadCounts[feed.id] || 0;
-
-        return (
-            <li key={feed.id}>
-                <Tooltip text={hasError ? `${feed.title} (${feed.error})` : feed.title} isVisible={isSidebarCollapsed}>
-                    <div onClick={() => handleSelectFeed(feed.id)} className={`flex items-center mb-1 rounded-md text-sm font-medium transition-colors duration-150 cursor-pointer w-full ${isSidebarCollapsed ? 'p-2 justify-center' : 'py-1 px-3'} ${isActive ? 'bg-indigo-500/20' : 'hover:bg-gray-700'}`}>
-                        <div className="relative">
-                            {feed.iconUrl && !feedIconErrors.has(feed.id) ? (
-                                <img src={feed.iconUrl} alt="" className="w-5 h-5 rounded-full flex-shrink-0 bg-gray-700 object-cover" onError={() => handleIconError(feed.id)} />
-                            ) : isRedditFeed ? (
-                                <RedditIcon className="w-5 h-5 flex-shrink-0 text-orange-500" />
-                            ) : isYouTubePlaylistFeed ? (
-                                <YouTubePlaylistIcon className="w-5 h-5 flex-shrink-0 text-red-500" />
-                            ) : isYouTubeChannelFeed ? (
-                                <YouTubeIcon className="w-5 h-5 flex-shrink-0 text-red-600" />
-                            ) : (
-                                <RssIcon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-indigo-400' : ''} ${hasError ? 'text-red-400' : 'text-gray-300'}`} />
-                            )}
-                            {isFavorite && <StarIcon className="absolute -top-1 -right-1 w-3 h-3 text-yellow-400 fill-current"/>}
-                            {isSidebarCollapsed && unreadCount > 0 && <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-indigo-500 rounded-full border-2 border-gray-800" />}
-                        </div>
-                        <span className={`truncate flex-1 text-left whitespace-nowrap ${isSidebarCollapsed ? 'hidden' : 'inline ml-3'} ${isActive ? 'text-indigo-300' : ''} ${hasError ? 'text-red-400' : 'text-gray-200'}`}>{feed.title}</span>
-                        {!isSidebarCollapsed && (hasError ? <AlertTriangleIcon className="w-5 h-5 ml-auto text-red-500 flex-shrink-0" /> : unreadCount > 0 && <span className="ml-auto flex items-center justify-center bg-indigo-600 text-white text-xs font-bold rounded-full px-2 py-0.5 min-w-[20px] flex-shrink-0">{unreadCount}</span>)}
-                    </div>
-                </Tooltip>
-            </li>
-        );
+    const handleAddNewFolderClick = () => {
+        const name = prompt("Enter new folder name:");
+        if (name && name.trim()) {
+            handleAddNoteFolder(name.trim());
+        }
     };
 
+    const SidebarSection: React.FC<{ title: string, isCollapsed: boolean, onToggle: () => void, children: React.ReactNode }> = ({ title, isCollapsed, onToggle, children }) => (
+        <div>
+            {!isSidebarCollapsed && (
+                <button onClick={onToggle} className="flex items-center justify-between w-full text-xs font-bold text-gray-500 uppercase tracking-wider px-3 py-2 hover:text-gray-300">
+                    <span>{title}</span>
+                    <ChevronRightIcon className={`w-4 h-4 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`} />
+                </button>
+            )}
+            <div className={`transition-all duration-300 ${isCollapsed && !isSidebarCollapsed ? 'hidden' : ''}`}>
+                {children}
+            </div>
+        </div>
+    );
+    
+    const TagsList: React.FC<{ tags: string[], unreadTagCounts: Record<string, number>, tagType: 'youtube' | 'rss' }> = ({ tags, unreadTagCounts, tagType }) => {
+        const unreadFavs = tagType === 'youtube' ? unreadFavoritesYtCount : unreadFavoritesRssCount;
+        
+        return (
+            <>
+                <TagWithFeeds
+                    key={`${tagType}-__FAVORITES__`}
+                    tag="__FAVORITES__"
+                    unreadCount={unreadFavs}
+                    tagType={tagType}
+                />
+                {tags.map(tag => (
+                    <TagWithFeeds
+                        key={`${tagType}-${tag}`}
+                        tag={tag}
+                        unreadCount={unreadTagCounts[tag] || 0}
+                        tagType={tagType}
+                    />
+                ))}
+            </>
+        );
+    };
+    
+    const ytFeeds = useMemo(() => sortedFeeds.filter(isYouTubeFeed), [sortedFeeds]);
+    const nonYtFeeds = useMemo(() => sortedFeeds.filter(feed => !isYouTubeFeed(feed)), [sortedFeeds]);
+    
+    const redditFeeds = useMemo(() => nonYtFeeds.filter(feed => feed.url.toLowerCase().includes('reddit.com')), [nonYtFeeds]);
+    const rssFeeds = useMemo(() => nonYtFeeds.filter(feed => !feed.url.toLowerCase().includes('reddit.com')), [nonYtFeeds]);
+    
+    const createMenuAction = (action: () => void | Promise<void>) => () => {
+        action();
+        setIsActionsPopoverOpen(false);
+    };
 
     return (
-        <aside className={`flex-shrink-0 bg-gray-800 flex flex-col border-r border-gray-700 transition-all duration-300 ${isSidebarCollapsed ? 'w-16' : 'w-72'}`}>
-            <div className={`px-4 pt-4 mb-4 ${isSidebarCollapsed ? 'hidden' : 'block'}`}>
-                <SearchInput onSearch={handleSearch} onClear={handleClearSearch} />
+        <aside className={`bg-gray-800 text-gray-300 flex flex-col transition-all duration-300 ease-in-out z-30 ${
+            isMobileView 
+            ? `fixed h-full ${isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0 w-64 shadow-xl'}` 
+            : `flex-shrink-0 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`
+        }`}>
+            <div className="flex items-center justify-between h-16 px-4 border-b border-gray-700 flex-shrink-0">
+                {!isSidebarCollapsed && (
+                     <div className="flex items-center gap-2">
+                         <img src="/media-feeder-icon.svg" alt="Media-Feeder logo" className="w-9 h-9" />
+                         <span className="font-bold text-xl text-white">Media-Feeder</span>
+                     </div>
+                )}
+                <button onClick={onToggleSidebar} className="p-2 -mr-2 rounded-full hover:bg-gray-700">
+                    <ChevronDoubleLeftIcon className={`w-5 h-5 transition-transform ${isSidebarCollapsed ? 'rotate-180' : ''}`} />
+                </button>
+            </div>
+
+            <div className={`p-3 flex-shrink-0 ${isSidebarCollapsed ? 'hidden' : ''}`}>
+                <SearchInput onSearch={handleSearch} onClear={handleClearSearch} initialValue={currentView.type === 'search' ? currentView.value : ''} />
             </div>
             
-            <nav className={`flex-1 flex flex-col overflow-y-auto min-h-0 px-2`}>
-                <div>
-                    <button onClick={onToggleViewsCollapse} disabled={isSidebarCollapsed} className={`w-full flex items-center justify-between mb-1 rounded-md transition-colors ${!isSidebarCollapsed && 'hover:bg-gray-700/50'} ${isSidebarCollapsed ? 'px-2' : 'px-3'}`}>
-                        <h2 className={`text-sm font-semibold text-gray-500 uppercase tracking-wider ${isSidebarCollapsed ? 'text-center w-full' : ''}`}>{isSidebarCollapsed ? 'V' : 'Views'}</h2>
-                        {!isSidebarCollapsed && <ChevronRightIcon className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${!isViewsCollapsed ? 'rotate-90' : ''}`} />}
-                    </button>
-                    {!isSidebarCollapsed && !isViewsCollapsed && (
-                        <div>
-                            <Tooltip text="All Subscriptions" isVisible={isSidebarCollapsed}><button onClick={() => handleViewChange('all-subscriptions')} className={navButtonClass('all-subscriptions')}><GridViewIcon className="w-5 h-5 flex-shrink-0" /><span className={`ml-3 whitespace-nowrap ${isSidebarCollapsed ? 'hidden' : 'inline'}`}>All Subscriptions</span></button></Tooltip>
-                            <Tooltip text="Published Today" isVisible={isSidebarCollapsed}><button onClick={() => handleViewChange('published-today')} className={navButtonClass('published-today')}><ClockIcon className="w-5 h-5 flex-shrink-0" /><span className={`ml-3 whitespace-nowrap ${isSidebarCollapsed ? 'hidden' : 'inline'}`}>Published Today</span></button></Tooltip>
-                            <Tooltip text="Read Later" isVisible={isSidebarCollapsed}><button onClick={() => handleViewChange('readLater')} className={navButtonClass('readLater')}><BookmarkIcon className="w-5 h-5 flex-shrink-0" /><span className={`ml-3 whitespace-nowrap ${isSidebarCollapsed ? 'hidden' : 'inline'}`}>Read Later</span></button></Tooltip>
-                            <Tooltip text="History" isVisible={isSidebarCollapsed}><button onClick={() => handleViewChange('history')} className={navButtonClass('history')}><HistoryIcon className="w-5 h-5 flex-shrink-0" /><span className={`ml-3 whitespace-nowrap ${isSidebarCollapsed ? 'hidden' : 'inline'}`}>History</span></button></Tooltip>
-                        </div>
-                    )}
-                </div>
-
-                <div className={`flex-1 overflow-y-auto min-h-0 ${isSidebarCollapsed ? 'hidden' : ''}`}>
-                    <div className="mt-6">
-                        <button onClick={onToggleTagsCollapse} disabled={isSidebarCollapsed} className={`w-full flex items-center justify-between mb-1 rounded-md transition-colors ${!isSidebarCollapsed && 'hover:bg-gray-700/50'} ${isSidebarCollapsed ? 'px-2' : 'px-3'}`}>
-                            <h2 className={`text-sm font-semibold text-gray-500 uppercase tracking-wider ${isSidebarCollapsed ? 'text-center w-full' : ''}`}>{isSidebarCollapsed ? 'T' : 'Tags'}</h2>
-                            {!isSidebarCollapsed && <ChevronRightIcon className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${!isTagsCollapsed ? 'rotate-90' : ''}`} />}
+            {!isSidebarCollapsed && (
+                <div className="px-3 pb-2 flex justify-end items-center gap-1">
+                    <Tooltip text="List View" isVisible={!isMobileView}>
+                        <button onClick={() => handleSetSidebarFeedsView('list')} className={`p-1.5 rounded-md ${sidebarFeedsView === 'list' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:bg-gray-700'}`}>
+                            <ListIcon className="w-4 h-4" />
                         </button>
-                        {!isSidebarCollapsed && !isTagsCollapsed && (
-                            <div className="space-y-1">
-                                <div>
-                                    <div
-                                        onClick={() => handleViewChange('favorites')}
-                                        className={`group relative flex items-center w-full rounded-md cursor-pointer transition-colors duration-150 ${currentView.type === 'favorites' ? 'bg-indigo-500/20' : 'hover:bg-gray-700'}`}
-                                    >
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onToggleFavoritesCollapse(); }}
-                                            className={`p-2 text-gray-400 hover:text-white ${currentView.type === 'favorites' ? 'text-indigo-400' : ''}`}
-                                            aria-label={isFavoritesCollapsed ? "Expand Favorites" : "Collapse Favorites"}
-                                        >
-                                            <ChevronRightIcon className={`w-4 h-4 transition-transform duration-200 ${!isFavoritesCollapsed ? 'rotate-90' : ''}`} />
-                                        </button>
-                                        <div className="flex items-center flex-1 min-w-0 py-1 pr-3">
-                                            <StarIcon className={`w-5 h-5 flex-shrink-0 ${currentView.type === 'favorites' ? 'text-indigo-400' : 'text-gray-300'}`} />
-                                            <span className={`truncate ml-2 text-sm font-medium ${currentView.type === 'favorites' ? 'text-indigo-300' : 'text-gray-200'}`}>Favorites</span>
-                                            {unreadFavoritesCount > 0 && (
-                                                <span className="ml-auto flex items-center justify-center bg-indigo-600 text-white text-xs font-bold rounded-full px-2 py-0.5 min-w-[20px] flex-shrink-0">{unreadFavoritesCount}</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    {!isFavoritesCollapsed && (
-                                        <ul className="pl-6 pr-2 pt-1 pb-1 space-y-1">
-                                            {favoriteFeeds.length > 0
-                                                ? favoriteFeeds.map(renderFeedItem)
-                                                : <li className="px-3 py-1 text-xs text-gray-500 italic">No favorited feeds.</li>
-                                            }
-                                        </ul>
-                                    )}
-                                </div>
-                                {allTags.map(tag => {
-                                    const isExpanded = expandedTags.has(tag);
-                                    const unreadCount = unreadTagCounts[tag] || 0;
-                                    const feedsForTag = feedsByTag.get(tag) || [];
-
-                                    return (
-                                        <div key={tag}>
-                                            <div
-                                                onClick={() => handleViewChange('tag', tag)}
-                                                className={`group relative flex items-center w-full rounded-md cursor-pointer transition-colors duration-150 ${currentView.type === 'tag' && currentView.value === tag ? 'bg-indigo-500/20' : 'hover:bg-gray-700'}`}
-                                            >
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); onToggleTagExpansion(tag); }}
-                                                    className={`p-2 text-gray-400 hover:text-white ${currentView.type === 'tag' && currentView.value === tag ? 'text-indigo-400' : ''}`}
-                                                    aria-label={isExpanded ? `Collapse ${tag}` : `Expand ${tag}`}
-                                                >
-                                                    <ChevronRightIcon className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
-                                                </button>
-                                                <div className="flex items-center flex-1 min-w-0 py-1 pr-3">
-                                                    <TagIcon className={`w-5 h-5 flex-shrink-0 ${currentView.type === 'tag' && currentView.value === tag ? 'text-indigo-400' : 'text-gray-300'}`} />
-                                                    <span className={`truncate ml-2 text-sm font-medium ${currentView.type === 'tag' && currentView.value === tag ? 'text-indigo-300' : 'text-gray-200'}`}>#{tag}</span>
-                                                    {unreadCount > 0 && (
-                                                        <span className="ml-auto flex items-center justify-center bg-indigo-600 text-white text-xs font-bold rounded-full px-2 py-0.5 min-w-[20px] flex-shrink-0">{unreadCount}</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            {isExpanded && (
-                                                <ul className="pl-6 pr-2 pt-1 pb-1 space-y-1">
-                                                    {feedsForTag.length > 0
-                                                        ? feedsForTag.map(renderFeedItem)
-                                                        : <li className="px-3 py-1 text-xs text-gray-500 italic">No feeds with this tag.</li>
-                                                    }
-                                                </ul>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                    
-                    {youtubeChannelFeeds.length > 0 && (
-                        <div className="mt-6">
-                            <button onClick={onToggleYoutubeFeedsCollapse} disabled={isSidebarCollapsed} className={`w-full flex items-center justify-between mb-1 rounded-md transition-colors ${!isSidebarCollapsed && 'hover:bg-gray-700/50'} ${isSidebarCollapsed ? 'px-2' : 'px-3'}`}>
-                                <h2 className={`text-sm font-semibold text-gray-500 uppercase tracking-wider ${isSidebarCollapsed ? 'text-center w-full' : ''}`}>{isSidebarCollapsed ? 'YTC' : 'YT Channels'}</h2>
-                                {!isSidebarCollapsed && <ChevronRightIcon className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${!isYoutubeFeedsCollapsed ? 'rotate-90' : ''}`} />}
-                            </button>
-                            {!isSidebarCollapsed && !isYoutubeFeedsCollapsed && (
-                                <ul>
-                                    {youtubeChannelFeeds.map(renderFeedItem)}
-                                </ul>
-                            )}
-                        </div>
-                    )}
-
-                    {youtubePlaylistFeeds.length > 0 && (
-                        <div className="mt-6">
-                            <button onClick={onToggleYoutubePlaylistsCollapse} disabled={isSidebarCollapsed} className={`w-full flex items-center justify-between mb-1 rounded-md transition-colors ${!isSidebarCollapsed && 'hover:bg-gray-700/50'} ${isSidebarCollapsed ? 'px-2' : 'px-3'}`}>
-                                <h2 className={`text-sm font-semibold text-gray-500 uppercase tracking-wider ${isSidebarCollapsed ? 'text-center w-full' : ''}`}>{isSidebarCollapsed ? 'YLP' : 'YT Playlists'}</h2>
-                                {!isSidebarCollapsed && <ChevronRightIcon className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${!isYoutubePlaylistsCollapsed ? 'rotate-90' : ''}`} />}
-                            </button>
-                            {!isSidebarCollapsed && !isYoutubePlaylistsCollapsed && (
-                                <ul>
-                                    {youtubePlaylistFeeds.map(renderFeedItem)}
-                                </ul>
-                            )}
-                        </div>
-                    )}
-                    
-                    {redditFeeds.length > 0 && (
-                        <div className="mt-6">
-                            <button onClick={onToggleRedditFeedsCollapse} disabled={isSidebarCollapsed} className={`w-full flex items-center justify-between mb-1 rounded-md transition-colors ${!isSidebarCollapsed && 'hover:bg-gray-700/50'} ${isSidebarCollapsed ? 'px-2' : 'px-3'}`}>
-                                <h2 className={`text-sm font-semibold text-gray-500 uppercase tracking-wider ${isSidebarCollapsed ? 'text-center w-full' : ''}`}>{isSidebarCollapsed ? 'RD' : 'Reddit'}</h2>
-                                {!isSidebarCollapsed && <ChevronRightIcon className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${!isRedditFeedsCollapsed ? 'rotate-90' : ''}`} />}
-                            </button>
-                            {!isSidebarCollapsed && !isRedditFeedsCollapsed && (
-                                <ul>
-                                    {redditFeeds.map(renderFeedItem)}
-                                </ul>
-                            )}
-                        </div>
-                    )}
-
-                    {rssFeeds.length > 0 && (
-                        <div className="mt-6">
-                            <button onClick={onToggleRssFeedsCollapse} disabled={isSidebarCollapsed} className={`w-full flex items-center justify-between mb-1 rounded-md transition-colors ${!isSidebarCollapsed && 'hover:bg-gray-700/50'} ${isSidebarCollapsed ? 'px-2' : 'px-3'}`}>
-                                <h2 className={`text-sm font-semibold text-gray-500 uppercase tracking-wider ${isSidebarCollapsed ? 'text-center w-full' : ''}`}>{isSidebarCollapsed ? 'RSS' : 'RSS Feeds'}</h2>
-                                {!isSidebarCollapsed && <ChevronRightIcon className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${!isRssFeedsCollapsed ? 'rotate-90' : ''}`} />}
-                            </button>
-                            {!isSidebarCollapsed && !isRssFeedsCollapsed && (
-                                <ul>
-                                    {rssFeeds.map(renderFeedItem)}
-                                </ul>
-                            )}
-                        </div>
-                    )}
+                    </Tooltip>
+                    <Tooltip text="Icon View" isVisible={!isMobileView}>
+                        <button onClick={() => handleSetSidebarFeedsView('icons')} className={`p-1.5 rounded-md ${sidebarFeedsView === 'icons' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:bg-gray-700'}`}>
+                            <GridViewIcon className="w-4 h-4" />
+                        </button>
+                    </Tooltip>
                 </div>
+            )}
 
+            {!isSidebarCollapsed && enableRssAndReddit && !isMobileView && (
+                 <div className="flex-shrink-0 px-3 py-2 flex items-center gap-1 border-b border-gray-700">
+                    <button
+                        onClick={() => handleSetSidebarTab('yt')}
+                        className={`flex-1 text-center text-xs font-semibold px-2 py-1 rounded-md transition-colors ${sidebarTab === 'yt' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-600 hover:text-white'}`}
+                    >
+                        YouTube
+                    </button>
+                    <button
+                        onClick={() => handleSetSidebarTab('rss')}
+                        className={`flex-1 text-center text-xs font-semibold px-2 py-1 rounded-md transition-colors ${sidebarTab === 'rss' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-600 hover:text-white'}`}
+                    >
+                        RSS & Other
+                    </button>
+                </div>
+            )}
+
+            <nav className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1 no-scrollbar">
+                <SidebarSection title="Views" isCollapsed={isViewsCollapsed} onToggle={onToggleViewsCollapse}>
+                    <NavItem type="all-subscriptions" icon={GridViewIcon} label="All Subscriptions" currentTab={sidebarTab} isTabbed={true} />
+                    <ViewWithFeeds
+                        viewType="published-today"
+                        icon={ClockIcon}
+                        label="Published Today"
+                        totalUnreadCount={sidebarTab === 'yt' ? unreadPublishedTodayYtCount : unreadPublishedTodayRssCount}
+                        currentTab={sidebarTab}
+                    />
+                    <NavItem
+                        type="readLater"
+                        icon={BookmarkIcon}
+                        label="Read Later"
+                        count={sidebarTab === 'yt' ? unreadReadLaterYtCount : unreadReadLaterRssCount}
+                        isTabbed={true}
+                        currentTab={sidebarTab}
+                    />
+                    <ViewWithFeeds
+                        viewType="history"
+                        icon={HistoryIcon}
+                        label="History"
+                        totalUnreadCount={sidebarTab === 'yt' ? historyYtCount : historyRssCount}
+                        currentTab={sidebarTab}
+                    />
+                    {sidebarTab === 'yt' && (
+                        <NavItem
+                            type="ai-summary-yt"
+                            icon={AiSummaryIcon}
+                            label="YT with AI Summary"
+                            count={unreadAiSummaryYtCount}
+                        />
+                    )}
+                </SidebarSection>
+                
+                {sidebarTab === 'yt' && (youtubeTags.length > 0 || favoriteFeeds.some(isYouTubeFeed)) && (
+                    <SidebarSection title="YouTube Tags" isCollapsed={isYoutubeTagsCollapsed} onToggle={onToggleYoutubeTagsCollapse}>
+                        <TagsList tags={youtubeTags} unreadTagCounts={youtubeUnreadTagCounts} tagType="youtube" />
+                    </SidebarSection>
+                )}
+                {sidebarTab === 'rss' && (rssTags.length > 0 || favoriteFeeds.some(f => !isYouTubeFeed(f))) && (
+                    <SidebarSection title="RSS Tags" isCollapsed={isRssTagsCollapsed} onToggle={onToggleRssTagsCollapse}>
+                       <TagsList tags={rssTags} unreadTagCounts={rssUnreadTagCounts} tagType="rss" />
+                    </SidebarSection>
+                )}
+                
+                {sidebarTab === 'yt' ? (
+                    <>
+                         <SidebarSection title="Channels" isCollapsed={isYoutubeFeedsCollapsed} onToggle={onToggleYoutubeFeedsCollapse}>
+                            <FeedsList feeds={ytFeeds} typeFilter={isYouTubeChannel} />
+                        </SidebarSection>
+                        <SidebarSection title="Playlists" isCollapsed={isYoutubePlaylistsCollapsed} onToggle={onToggleYoutubePlaylistsCollapse}>
+                            <FeedsList feeds={ytFeeds} typeFilter={isYouTubePlaylist} />
+                        </SidebarSection>
+                    </>
+                ) : (
+                    <>
+                        <SidebarSection title="Notes" isCollapsed={isNotesCollapsed} onToggle={onToggleNotesCollapse}>
+                            <div className="space-y-1">
+                                {noteFolders.map(folder => (
+                                    <NavItem
+                                        key={folder.id}
+                                        type="note-folder"
+                                        value={folder.id}
+                                        icon={FolderIcon}
+                                        label={folder.name}
+                                    />
+                                ))}
+                            </div>
+                            {!isSidebarCollapsed && (
+                                <div className="p-2">
+                                    <button onClick={handleAddNewFolderClick} className="w-full flex items-center justify-center text-xs text-gray-400 hover:text-white bg-gray-700/50 hover:bg-gray-700 rounded-md py-1.5">
+                                        <PlusIcon className="w-4 h-4 mr-1" /> New Folder
+                                    </button>
+                                </div>
+                            )}
+                        </SidebarSection>
+                        {enableRssAndReddit && (
+                            <>
+                                <SidebarSection title="Reddit Feeds" isCollapsed={isRedditFeedsCollapsed} onToggle={onToggleRedditFeedsCollapse}>
+                                    <FeedsList feeds={redditFeeds} typeFilter={() => true} />
+                                </SidebarSection>
+                                <SidebarSection title="Other RSS Feeds" isCollapsed={isRssFeedsCollapsed} onToggle={onToggleRssFeedsCollapse}>
+                                    <FeedsList feeds={rssFeeds} typeFilter={() => true} />
+                                </SidebarSection>
+                            </>
+                        )}
+                    </>
+                )}
             </nav>
 
-            <div className="p-2 border-t border-gray-700 mt-auto">
-                <div className={`relative ${isSidebarCollapsed ? 'hidden' : ''}`} ref={actionsMenuRef}>
-                    <button id="actions-menu-button" onClick={() => setActionsMenuOpen(prev => !prev)} className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-md">
-                        <div className="flex items-center">
-                            <SettingsIcon className="w-5 h-5" />
-                            <span className="ml-3">Actions & Settings</span>
-                        </div>
-                        <ChevronRightIcon className={`w-4 h-4 transition-transform duration-200 ${isActionsMenuOpen ? 'rotate-90' : ''}`} />
-                    </button>
-                    {isActionsMenuOpen && (
-                        <div className="absolute bottom-full mb-2 w-full bg-gray-900 shadow-lg rounded-md p-2 border border-gray-700 z-20">
-                            <button onClick={createMenuAction(handleRefreshAllFeeds)} disabled={isRefreshingAll} className={menuButtonClass}><RefreshIcon className={`w-4 h-4 mr-2 ${isRefreshingAll ? 'animate-spin' : ''}`}/> Refresh All Feeds</button>
-                            <button onClick={createMenuAction(handleRefreshFavorites)} disabled={isRefreshingAll || favoriteFeeds.length === 0} className={menuButtonClass}><RefreshIcon className={`w-4 h-4 mr-2 ${isRefreshingAll ? 'animate-spin' : ''}`}/> Refresh Favorites</button>
-                            <div className="my-1 border-t border-gray-700"></div>
-                            <button onClick={createMenuAction(() => setAddFeedModalOpen(true))} className={menuButtonClass}><PlusIcon className="w-4 h-4 mr-2"/> Follow New Source</button>
-                            <button onClick={createMenuAction(() => setIsImportYouTubeModalOpen(true))} className={menuButtonClass}><YouTubeIcon className="w-4 h-4 mr-2"/> Import from YouTube</button>
-                            <button onClick={createMenuAction(() => setIsBundledChannelsModalOpen(true))} className={menuButtonClass}><PackageIcon className="w-4 h-4 mr-2"/> Add Channel Bundles</button>
-                            <div className="my-1 border-t border-gray-700"></div>
-                            <button onClick={createMenuAction(handleMarkAllInAllFeedsAsRead)} className={menuButtonClass}><CheckCircleIcon className="w-4 h-4 mr-2"/> Mark Everything as Read</button>
-                            <div className="my-1 border-t border-gray-700"></div>
-                             <button onClick={() => setAdvancedMenuCollapsed(p => !p)} className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-400 hover:bg-gray-600 rounded-md">
-                                <span>Advanced</span>
-                                <ChevronRightIcon className={`w-4 h-4 transition-transform duration-200 ${!isAdvancedMenuCollapsed ? 'rotate-90' : ''}`} />
-                            </button>
-                            {!isAdvancedMenuCollapsed && (
-                                <div className="pl-2 pt-1">
-                                    <div className="my-1 border-t border-gray-700"></div>
-                                    <button onClick={createMenuAction(startDemo)} className="w-full flex items-center px-3 py-2 text-sm text-indigo-400 hover:bg-gray-600 rounded-md"><SparklesIcon className="w-4 h-4 mr-2"/> Run Demo</button>
-                                    <div className="my-1 border-t border-gray-700"></div>
-                                    <button onClick={createMenuAction(() => setIsAiSettingsModalOpen(true))} className={menuButtonClass}><SettingsIcon className="w-4 h-4 mr-2"/> Settings</button>
-                                    <div className="my-1 border-t border-gray-700"></div>
-                                    <button onClick={createMenuAction(handleOpenBulkEdit)} className={menuButtonClass}><TagsIcon className="w-4 h-4 mr-2"/> Bulk Edit Tags</button>
-                                    <div className="my-1 border-t border-gray-700"></div>
-                                    <button onClick={createMenuAction(() => setIsImportTextModalOpen(true))} className={menuButtonClass}><ImportIcon className="w-4 h-4 mr-2"/> Import Data</button>
-                                    <button onClick={createMenuAction(() => setIsExportModalOpen(true))} className={menuButtonClass}><ExportIcon className="w-4 h-4 mr-2"/> Export Data</button>
-                                    <div className="my-1 border-t border-gray-700"></div>
-                                    <button onClick={createMenuAction(() => handleViewChange('about'))} className={menuButtonClass}><InfoIcon className="w-4 h-4 mr-2"/> About</button>
-                                    <button onClick={createMenuAction(() => handleViewChange('privacy-policy'))} className={menuButtonClass}><InfoIcon className="w-4 h-4 mr-2"/> Privacy Policy</button>
-                                    <div className="my-1 border-t border-gray-700"></div>
-                                    <button onClick={createMenuAction(handleOpenClearDataModal)} className="w-full flex items-center px-3 py-2 text-sm text-red-400 hover:bg-red-500/20 rounded-md"><TrashIcon className="w-4 h-4 mr-2"/> Clear All Data</button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-
-                <div className={`pt-2 w-full cursor-pointer ${isSidebarCollapsed ? 'hidden' : 'flex justify-center'}`} onClick={onToggleSidebar}>
-                    <Tooltip text="Collapse Sidebar" isVisible={!isSidebarCollapsed}>
-                        <ChevronDoubleLeftIcon className="w-5 h-5 text-gray-500 hover:text-white" />
-                    </Tooltip>
-                </div>
-                <div className={`py-2 w-full cursor-pointer ${!isSidebarCollapsed ? 'hidden' : 'flex justify-center'}`} onClick={onToggleSidebar}>
-                    <Tooltip text="Expand Sidebar" isVisible={isSidebarCollapsed}>
-                        <ChevronRightIcon className="w-5 h-5 text-gray-500 hover:text-white" />
-                    </Tooltip>
-                </div>
+            <div className="p-3 border-t border-gray-700 flex-shrink-0 relative">
+                <button
+                    id="actions-menu-button"
+                    ref={buttonRef}
+                    onClick={() => setIsActionsPopoverOpen(prev => !prev)}
+                    className="w-full flex items-center justify-center p-3 text-sm rounded-md transition-colors text-gray-200 bg-gray-700/50 hover:bg-gray-700"
+                >
+                    <SettingsIcon className="w-5 h-5" />
+                    {!isSidebarCollapsed && <span className="ml-3">Actions & Settings</span>}
+                </button>
+                {isActionsPopoverOpen && !isMobileView && (
+                    <div ref={popoverRef} className="absolute bottom-full left-0 w-full mb-2 p-2 bg-gray-700 rounded-lg shadow-lg z-20">
+                        <MenuButton onClick={createMenuAction(() => handleOpenRefreshOptionsModal())} icon={RefreshIcon} label="Refresh Feeds..." disabled={isRefreshingAll} />
+                        <MenuButton onClick={createMenuAction(() => setIsSyncDataModalOpen(true))} icon={SyncIcon} label="Sync Data" />
+                        <MenuButton onClick={createMenuAction(handleMarkAllInAllFeedsAsRead)} icon={CheckCircleIcon} label="Mark All Read" />
+                        <div className="my-1 border-t border-gray-600"></div>
+                        <MenuButton onClick={createMenuAction(() => setAddFeedModalOpen(true))} icon={PlusIcon} label="Follow New Source" />
+                        <MenuButton onClick={createMenuAction(() => setIsImportTextModalOpen(true))} icon={ImportIcon} label="Import Data" />
+                        <MenuButton onClick={createMenuAction(() => setIsExportModalOpen(true))} icon={ExportIcon} label="Export Data" />
+                        <MenuButton onClick={createMenuAction(() => setIsImportYouTubeModalOpen(true))} icon={YouTubeIcon} label="Import from YouTube" />
+                        <MenuButton onClick={createMenuAction(() => setIsBundledChannelsModalOpen(true))} icon={PackageIcon} label="Add Channel Bundles" />
+                        <div className="my-1 border-t border-gray-600"></div>
+                        <MenuButton onClick={createMenuAction(() => setIsTrendingKeywordsModalOpen(true))} icon={TrendingUpIcon} label="Trending Keywords" />
+                        <div className="my-1 border-t border-gray-600"></div>
+                        <MenuButton onClick={createMenuAction(() => setIsAiSettingsModalOpen(true))} icon={SettingsIcon} label="Settings" />
+                    </div>
+                )}
             </div>
         </aside>
     );

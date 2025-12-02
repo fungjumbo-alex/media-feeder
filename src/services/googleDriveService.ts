@@ -1,4 +1,3 @@
-
 import type { SyncData } from '../types';
 
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';

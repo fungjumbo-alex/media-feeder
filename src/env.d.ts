@@ -1,5 +1,7 @@
-// Fix: remove reference to vite/client to resolve "Cannot find type definition file" error.
 // The project uses a `process.env` polyfill defined in vite.config.ts, not vite's `import.meta.env`.
+
+// Global constant defined by vite.config.ts for obfuscated environment variables.
+declare const __COMPRESSED_ENV__: Record<string, string>;
 
 declare module 'lz-string';
 

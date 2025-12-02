@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { XIcon, TagsIcon, RssIcon, YouTubeIcon, StarIcon, TrashIcon } from './icons';
@@ -155,7 +156,7 @@ export const BulkEditTagsModal: React.FC = () => {
                             </div>
                             <div className="flex-grow overflow-y-auto p-2">
                                 {filteredFeeds.length > 0 ? filteredFeeds.map(feed => {
-                                    const isYouTubeFeed = feed.url.includes('youtube.com');
+                                    const isYouTubeFeed = feed.url.toLowerCase().includes('youtube.com');
                                     return (
                                         <div key={feed.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-700/50">
                                             <input id={`feed-${feed.id}`} type="checkbox" checked={selectedFeedIds.has(feed.id)} onChange={() => toggleFeedSelection(feed.id)} className="h-4 w-4 rounded border-gray-500 bg-gray-700 text-indigo-600 focus:ring-indigo-500 flex-shrink-0" />

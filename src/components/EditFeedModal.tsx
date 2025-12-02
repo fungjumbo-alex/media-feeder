@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { XIcon } from './icons';
@@ -6,7 +5,7 @@ import { XIcon } from './icons';
 export const EditFeedModal: React.FC = () => {
     const { feedToEdit, setFeedToEdit, handleSaveFeedTitle, handleSaveFeedMaxArticles, setToast } = useAppContext();
     const [title, setTitle] = useState('');
-    const [maxArticles, setMaxArticles] = useState(5);
+    const [maxArticles, setMaxArticles] = useState<number | ''>(50);
 
     const isOpen = !!feedToEdit;
     const feed = feedToEdit;
@@ -15,7 +14,7 @@ export const EditFeedModal: React.FC = () => {
     useEffect(() => {
         if (feed && isOpen) {
             setTitle(feed.title);
-            setMaxArticles(feed.maxArticles || 5);
+            setMaxArticles(feed.maxArticles || (feed.url.includes('youtube.com') ? 5 : 10));
         }
     }, [feed, isOpen]);
 
@@ -27,12 +26,9 @@ export const EditFeedModal: React.FC = () => {
     }, [isOpen, onClose]);
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value);
-
     const handleMaxArticlesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = parseInt(e.target.value, 10);
-        if (!isNaN(value) && value > 0) {
-            setMaxArticles(value);
-        }
+        const val = e.target.value;
+        setMaxArticles(val === '' ? '' : parseInt(val, 10));
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -44,9 +40,11 @@ export const EditFeedModal: React.FC = () => {
             handleSaveFeedTitle(feed.id, title.trim());
             changed = true;
         }
-
-        if (maxArticles !== (feed.maxArticles || 5)) {
-            handleSaveFeedMaxArticles(feed.id, maxArticles);
+        
+        const defaultMax = feed.url.includes('youtube.com') ? 5 : 10;
+        const newMax = maxArticles === '' ? defaultMax : maxArticles;
+        if (newMax !== (feed.maxArticles || defaultMax)) {
+            handleSaveFeedMaxArticles(feed.id, newMax);
             changed = true;
         }
 
@@ -61,7 +59,7 @@ export const EditFeedModal: React.FC = () => {
         if (!isOpen) {
             setTimeout(() => {
                 setTitle('');
-                setMaxArticles(5);
+                setMaxArticles(50);
             }, 200);
         }
     }, [isOpen]);
@@ -75,14 +73,16 @@ export const EditFeedModal: React.FC = () => {
                 <h2 className="text-xl font-bold text-white mb-2">Edit Feed</h2>
                 <p className="text-gray-400 mb-6 truncate" title={feed.title}>Current: <span className="font-semibold text-gray-300">{feed.title}</span></p>
                 <form onSubmit={handleSubmit}>
-                    <div className="mb-4">
-                        <label htmlFor="feed-title-edit" className="text-sm font-medium text-gray-400">Title</label>
-                        <input id="feed-title-edit" type="text" value={title} onChange={handleTitleChange} placeholder="Enter a new title" className="w-full bg-gray-900 border border-gray-700 text-white rounded-md p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition mt-1" required autoFocus />
-                    </div>
-                    <div>
-                        <label htmlFor="feed-max-articles" className="text-sm font-medium text-gray-400">Latest Articles to Download</label>
-                        <input id="feed-max-articles" type="number" value={maxArticles} onChange={handleMaxArticlesChange} min="1" className="w-full bg-gray-900 border border-gray-700 text-white rounded-md p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition mt-1" />
-                        <p className="text-xs text-gray-500 mt-1">Number of recent articles to fetch per refresh. Default is 5.</p>
+                    <div className="space-y-4">
+                        <div>
+                            <label htmlFor="feed-title-edit" className="text-sm font-medium text-gray-400">Title</label>
+                            <input id="feed-title-edit" type="text" value={title} onChange={handleTitleChange} placeholder="Enter a new title" className="w-full bg-gray-900 border border-gray-700 text-white rounded-md p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition mt-1" required autoFocus />
+                        </div>
+                        <div>
+                            <label htmlFor="feed-max-articles-edit" className="text-sm font-medium text-gray-400">Max Articles to Fetch</label>
+                            <input id="feed-max-articles-edit" type="number" value={maxArticles} onChange={handleMaxArticlesChange} min="1" placeholder="e.g., 25" className="w-full bg-gray-900 border border-gray-700 text-white rounded-md p-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition mt-1" />
+                            <p className="text-xs text-gray-500 mt-1">Number of latest articles to get when refreshing this feed.</p>
+                        </div>
                     </div>
 
                     <div className="mt-6 flex justify-end space-x-4">

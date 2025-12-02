@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../contexts/AppContext';
 import { XIcon, TagIcon } from './icons';
@@ -16,7 +17,8 @@ export const EditTagsModal: React.FC = () => {
     useEffect(() => {
         if (feed && isOpen) {
             setNewTagInput('');
-            setSelectedTags(new Set((feed.tags as string[] | undefined) || []));
+            // FIX: Explicitly cast `feed.tags` to `string[]` to ensure correct type for Set constructor.
+            setSelectedTags(new Set((feed.tags as string[]) || []));
         }
     }, [feed, isOpen]);
 

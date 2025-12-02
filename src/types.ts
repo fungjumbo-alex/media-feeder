@@ -1,4 +1,3 @@
-
 export type FeedType = 'youtube' | 'rss';
 export type ProxyAttemptCallback = (proxyName: string, status: 'success' | 'failure', feedType: FeedType) => void;
 export type ProxyStats = Record<string, {
@@ -43,6 +42,7 @@ export interface Article {
     comments?: YouTubeComment[];
     tags?: string[];
     order?: number;
+    isReddit?: boolean;
 }
 
 export interface Feed {
@@ -66,10 +66,30 @@ export interface WebSource {
     description?: string;
 }
 
-export interface HistoryDigest {
-    synthesis: string;
+export interface DetailedDigestItem {
+    title: string;
+    link: string | null;
+    summary: string | StructuredVideoSummary;
     sources?: WebSource[];
 }
+export type DetailedDigest = DetailedDigestItem[];
+
+export interface ThematicDigestGroup {
+    themeTitle: string;
+    themeSummary: string;
+    keywords: string[];
+    articles: {
+        id: string;
+        feedId: string;
+        title: string;
+        link: string | null;
+    }[];
+}
+export interface ThematicDigest {
+    digestTitle: string;
+    themedGroups: ThematicDigestGroup[];
+}
+
 
 export interface RecommendedFeed {
     title: string;
@@ -111,6 +131,24 @@ export interface CaptionChoice {
 export const ZOOM_LEVELS = ['sm', 'md', 'lg', 'xl'] as const;
 export type GridZoomLevel = typeof ZOOM_LEVELS[number];
 export type AutoplayMode = 'off' | 'on' | 'random' | 'repeat';
+export type SidebarFeedsView = 'list' | 'icons';
+export type ArticleViewMode = 'grid' | 'list' | 'reader';
+
+export interface Note {
+    id: string;
+    title: string;
+    content: string;
+    folderId: string;
+    sourceArticleIds: { feedId: string, articleId: string }[];
+    createdAt: number;
+    updatedAt: number;
+}
+
+export interface NoteFolder {
+    id: string;
+    name: string;
+    createdAt: number;
+}
 
 export interface SyncData {
     feeds: Omit<Feed, 'id' | 'items' | 'error'>[];
@@ -122,11 +160,42 @@ export interface SyncData {
     articleZoomLevel?: GridZoomLevel;
     autoplayMode?: AutoplayMode;
     articleTags?: [string, string[]][];
-    readLaterOrder?: string[];
+    readLaterOrderYt?: string[];
+    readLaterOrderRss?: string[];
     tagOrders?: Record<string, string[]>;
-    favoritesOrder?: string[];
+    favoritesOrderYt?: string[];
+    favoritesOrderRss?: string[];
+    notes?: Note[];
+    noteFolders?: NoteFolder[];
 }
 
 export interface UserProfile {
     email: string;
 }
+
+export const TRANSLATION_LANGUAGES = [
+    { code: 'original', name: 'Original Language' },
+    { code: 'English', name: 'English' },
+    { code: 'Simplified Chinese', name: '简体中文 (Simplified)' },
+    { code: 'Traditional Chinese', name: '繁體中文 (Traditional)' },
+    { code: 'Spanish', name: 'Español (Spanish)' },
+    { code: 'French', name: 'Français (French)' },
+    { code: 'German', name: 'Deutsch (German)' },
+    { code: 'Italian', name: 'Italiano (Italian)' },
+    { code: 'Portuguese', name: 'Português (Portuguese)' },
+    { code: 'Russian', name: 'Русский (Russian)' },
+    { code: 'Japanese', name: '日本語 (Japanese)' },
+    { code: 'Korean', name: '한국어 (Korean)' },
+    { code: 'Arabic', name: 'العربية (Arabic)' },
+    { code: 'Hindi', name: 'हिन्दी (Hindi)' },
+    { code: 'Indonesian', name: 'Bahasa Indonesia (Indonesian)' },
+    { code: 'Vietnamese', name: 'Tiếng Việt (Vietnamese)' },
+    { code: 'Turkish', name: 'Türkçe (Turkish)' },
+    { code: 'Polish', name: 'Polski (Polish)' },
+    { code: 'Dutch', name: 'Nederlands (Dutch)' },
+    { code: 'Swedish', name: 'Svenska (Swedish)' },
+    { code: 'Thai', name: 'ไทย (Thai)' },
+    { code: 'Bengali', name: 'বাংলা (Bengali)' },
+    { code: 'Hebrew', name: 'עברית (Hebrew)' },
+    { code: 'Ukrainian', name: 'Українська (Ukrainian)' },
+] as const;

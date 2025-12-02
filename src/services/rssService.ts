@@ -19,84 +19,66 @@ const fetchYouTubeRssViaInvidious = async (
         playlistId = urlObject.searchParams.get('list');
     } catch (e) { /* ignore, will fallback to HTML fetch */ }
 
-    // Logic separation: handle playlists differently from other YouTube URLs.
-    if (playlistId) {
-        // For playlists, we don't fetch HTML. We go straight to Invidious.
-        // We won't get a custom icon this way, but playlist pages don't have one anyway.
-        // The channel ID is not in the URL, so we can't pre-fetch the channel page.
-    } else {
-        // For ANY non-playlist URL (channel, video, @handle), always fetch the HTML first to get the best icon and canonical ID.
-        const htmlContent = await fetchViaProxy(youtubeUrl, 'youtube', onProxyAttempt, disabledProxies, proxyStats);
-        const htmlDoc = parser.parseFromString(htmlContent, 'text/html');
-        
-        // --- Robust Icon Extraction ---
-        // New Method: Parse ytInitialData for the high-quality avatar
-        const initialDataScript = Array.from(htmlDoc.querySelectorAll('script')).find(
-            script => script.textContent?.includes('var ytInitialData =')
-        );
-        if (initialDataScript?.textContent) {
-            const match = initialDataScript.textContent.match(/var ytInitialData = (\{.*?\});/s);
-            if (match?.[1]) {
-                try {
-                    const initialData = JSON.parse(match[1]);
-                    // Path for channel pages and @handle pages
-                    const avatarThumbnails = 
-                        initialData?.header?.c4TabbedHeaderRenderer?.avatar?.thumbnails ||
-                        initialData?.metadata?.channelMetadataRenderer?.avatar?.thumbnails;
-                    
-                    if (avatarThumbnails && avatarThumbnails.length > 0) {
-                        // Get the highest resolution available, typically the last one
-                        pageIconUrl = avatarThumbnails[avatarThumbnails.length - 1].url;
-                    }
-                } catch (e) {
-                    console.warn("Failed to parse ytInitialData for icon", e);
+    // For ANY YouTube URL (channel, video, playlist), always fetch the HTML first to get the best icon and canonical ID.
+    const htmlContent = await fetchViaProxy(youtubeUrl, 'youtube', onProxyAttempt, disabledProxies, proxyStats);
+    const htmlDoc = parser.parseFromString(htmlContent, 'text/html');
+    
+    // --- Robust Icon Extraction ---
+    const initialDataScript = Array.from(htmlDoc.querySelectorAll('script')).find(
+        script => script.textContent?.includes('var ytInitialData =')
+    );
+    if (initialDataScript?.textContent) {
+        const match = initialDataScript.textContent.match(/var ytInitialData = (\{.*?\});/s);
+        if (match?.[1]) {
+            try {
+                const initialData = JSON.parse(match[1]);
+                const avatarThumbnails = 
+                    initialData?.header?.c4TabbedHeaderRenderer?.avatar?.thumbnails ||
+                    initialData?.metadata?.channelMetadataRenderer?.avatar?.thumbnails ||
+                    initialData?.sidebar?.playlistSidebarRenderer?.items?.[0]?.playlistSidebarPrimaryInfoRenderer?.thumbnailRenderer?.playlistVideoThumbnailRenderer?.thumbnail?.thumbnails;
+                
+                if (avatarThumbnails && avatarThumbnails.length > 0) {
+                    pageIconUrl = avatarThumbnails[avatarThumbnails.length - 1].url;
                 }
-            }
+            } catch (e) { console.warn("Failed to parse ytInitialData for icon", e); }
         }
-        
-        // Fallback: Use og:image if the new method fails
-        if (!pageIconUrl) {
-            const ogImageEl = htmlDoc.querySelector('meta[property="og:image"]');
-            if (ogImageEl?.getAttribute('content')) {
-                pageIconUrl = ogImageEl.getAttribute('content');
-            }
+    }
+    
+    if (!pageIconUrl) {
+        const ogImageEl = htmlDoc.querySelector('meta[property="og:image"]');
+        if (ogImageEl?.getAttribute('content')) pageIconUrl = ogImageEl.getAttribute('content');
+    }
+    
+    // --- Robust Channel ID Extraction ---
+    const canonicalLink = htmlDoc.querySelector('link[rel="canonical"]');
+    if (canonicalLink) {
+        const canonicalUrl = canonicalLink.getAttribute('href');
+        if (canonicalUrl) {
+            const match = canonicalUrl.match(/\/channel\/(UC[\w-]{22})/);
+            if (match && match[1]) channelId = match[1];
         }
-        
-        // --- Robust Channel ID Extraction ---
-        // Method 1: Canonical URL
-        const canonicalLink = htmlDoc.querySelector('link[rel="canonical"]');
-        if (canonicalLink) {
-            const canonicalUrl = canonicalLink.getAttribute('href');
-            if (canonicalUrl) {
-                const match = canonicalUrl.match(/\/channel\/(UC[\w-]{22})/);
-                if (match && match[1]) {
-                    channelId = match[1];
-                }
-            }
-        }
-        
-        // Method 2: Meta tag
-        if (!channelId) {
-            const metaTag = htmlDoc.querySelector('meta[itemprop="channelId"]');
-            if (metaTag) channelId = metaTag.getAttribute('content');
-        }
-        
-        // Method 3: Brute-force regex on the whole HTML
-        if (!channelId) {
-            const channelIdMatch = htmlContent.match(/"channelId":"(UC[\w-]{22})"/);
-            if (channelIdMatch?.[1]) channelId = channelIdMatch[1];
-        }
-
-        if (!channelId) throw new Error("Could not discover a Channel ID from the provided YouTube URL.");
+    }
+    
+    if (!channelId) {
+        const metaTag = htmlDoc.querySelector('meta[itemprop="channelId"]');
+        if (metaTag) channelId = metaTag.getAttribute('content');
+    }
+    
+    if (!channelId) {
+        const channelIdMatch = htmlContent.match(/"channelId":"(UC[\w-]{22})"/);
+        if (channelIdMatch?.[1]) channelId = channelIdMatch[1];
     }
 
-    // Now fetch feed from Invidious using the discovered ID
+    if (!channelId && !playlistId) {
+        throw new Error("Could not discover a Channel or Playlist ID from the provided YouTube URL.");
+    }
+
+    // Now fetch feed from Invidious
     let lastError: unknown = null;
     for (const instance of INVIDIOUS_INSTANCES) {
         try {
             const invidiousFeedUrl = playlistId 
                 ? `${instance}/feed/playlist/${playlistId}`
-                // If channelId is null here, it must be a playlist.
                 : `${instance}/feed/channel/${channelId!}`;
             
             const content = await fetchViaProxy(invidiousFeedUrl, 'youtube', onProxyAttempt, disabledProxies, proxyStats);
@@ -107,11 +89,7 @@ const fetchYouTubeRssViaInvidious = async (
                 }
                 throw new Error("Invidious instance returned non-XML content.");
             }
-        } catch (error) {
-            lastError = error;
-            const message = error instanceof Error ? error.message : String(error);
-            console.warn(`[DEBUG] Invidious instance ${instance} failed to provide a feed: ${message}. Trying next instance.`);
-        }
+        } catch (error) { lastError = error; }
     }
     const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
     throw new Error(`All Invidious instances failed to provide a feed. Last error: ${errorMessage}`);
@@ -124,10 +102,6 @@ const getBilibiliRssHubPath = (bilibiliUrl: string): string | null => {
         const hostname = urlObject.hostname;
         const pathname = urlObject.pathname;
 
-        // User profile pages
-        // Handles formats like:
-        // - https://space.bilibili.com/USER_ID
-        // - https://www.bilibili.com/space/USER_ID
         if (hostname.includes('bilibili.com') && (hostname === 'space.bilibili.com' || pathname.startsWith('/space/'))) {
             const userIdMatch = pathname.match(/(\d+)/);
             if (userIdMatch && userIdMatch[1]) {
@@ -135,7 +109,6 @@ const getBilibiliRssHubPath = (bilibiliUrl: string): string | null => {
             }
         }
         
-        // Category pages
         const categoryMatch = pathname.match(/^\/(?:c|v\/popular)\/([a-zA-Z]+)/);
         if (categoryMatch && categoryMatch[1]) {
             const categoryName = categoryMatch[1].toLowerCase();
@@ -147,7 +120,6 @@ const getBilibiliRssHubPath = (bilibiliUrl: string): string | null => {
             if (categoryMap[categoryName]) return `/bilibili/partion/${categoryMap[categoryName]}`;
         }
         
-        // Partition pages (numeric categories)
         const partitionMatch = pathname.match(/\/v\/popular\/partition\/(\d+)/);
         if (partitionMatch && partitionMatch[1]) {
             return `/bilibili/partion/${partitionMatch[1]}`;
@@ -189,8 +161,6 @@ const fetchBilibiliRssViaRssHub = async (
 
         } catch (error) {
             lastError = error;
-            const message = error instanceof Error ? error.message : String(error);
-            console.warn(`[DEBUG] RSSHub instance ${instance} failed: ${message}. Trying next instance.`);
         }
     }
 
@@ -204,10 +174,6 @@ const getBilibiliCanonicalUrl = (bilibiliUrl: string): string | null => {
         const hostname = urlObject.hostname;
         const pathname = urlObject.pathname;
 
-        // User profile pages
-        // Handles formats like:
-        // - https://space.bilibili.com/USER_ID
-        // - https://www.bilibili.com/space/USER_ID
         if (hostname.includes('bilibili.com') && (hostname === 'space.bilibili.com' || pathname.startsWith('/space/'))) {
             const userIdMatch = pathname.match(/(\d+)/);
             if (userIdMatch && userIdMatch[1]) {
@@ -215,7 +181,6 @@ const getBilibiliCanonicalUrl = (bilibiliUrl: string): string | null => {
             }
         }
         
-        // Could add more normalization for other Bilibili URL types here in the future
     } catch (e) {
         console.warn("Could not parse Bilibili URL for canonicalization.", e);
     }
@@ -239,12 +204,23 @@ const findElement = (element: Document | Element, tags: string[]): Element | nul
 
 const findText = (element: Document | Element, tags: string[]): string | null => {
     const el = findElement(element, tags);
-    return el?.textContent?.trim() || null;
+    const rawText = el?.textContent?.trim() || null;
+    if (!rawText) return null;
+    return rawText.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
 };
 
 const findHtml = (element: Element, tags: string[]): string => {
     const el = findElement(element, tags);
-    return (el as any)?.innerHTML || el?.textContent || '';
+    if (!el) return '';
+
+    const serializer = new XMLSerializer();
+    let innerContent = '';
+    for (const child of Array.from(el.childNodes)) {
+        innerContent += serializer.serializeToString(child);
+    }
+    
+    const rawHtml = innerContent.trim() || el.textContent || '';
+    return rawHtml.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
 };
 
 const findAttr = (element: Element, tags: string[], attr: string): string | null => {
@@ -284,7 +260,6 @@ const getImage = (item: Element, htmlContent: string): string | null => {
         try {
             const contentDoc = new DOMParser().parseFromString(htmlContent, 'text/html');
             const img = contentDoc.querySelector('img');
-            // Ignore tiny data URIs which are likely tracking pixels or spacers
             if (img && img.src && (!img.src.startsWith('data:image/') || img.src.length > 200)) {
                 return img.dataset.src || img.src;
             }
@@ -295,16 +270,17 @@ const getImage = (item: Element, htmlContent: string): string | null => {
     return null;
 }
 
-const decodeHtmlEntities = (text: string): string => {
+const decodeHtmlEntities = (text: string | null): string => {
+    if (!text) return '';
     try {
         const textarea = document.createElement('textarea');
         let currentText = text;
-        // Keep decoding until the string stops changing to handle multiple layers of encoding
+        // Loop to handle multiple layers of encoding (e.g., &amp;lt;p&amp;gt;)
         while (true) {
             textarea.innerHTML = currentText;
             const decodedText = textarea.value;
             if (decodedText === currentText) {
-                break; // No more entities to decode
+                break;
             }
             currentText = decodedText;
         }
@@ -321,25 +297,22 @@ export const fetchAndParseRss = async (
     onProxyAttempt?: ProxyAttemptCallback,
     disabledProxies?: Set<string>,
     proxyStats?: ProxyStats,
-    maxArticles?: number,
+    maxArticles?: number
 ): Promise<Feed> => {
     if (!url) throw new Error('URL cannot be empty.');
     if (/youtube\.com\/feed\/(subscriptions|history)/.test(url)) {
         throw new Error("This looks like a personal YouTube page (e.g., Subscriptions or History). Public channel or playlist links are supported.");
     }
 
-    const numArticles = maxArticles ?? 5;
+    const numArticles = maxArticles ?? 10000;
     let fetchUrl = url;
     
-    // Normalize and sanitize YouTube URLs.
     if (fetchUrl.includes('youtube.com') || fetchUrl.includes('youtu.be')) {
         fetchUrl = fetchUrl.replace('m.youtube.com', 'www.youtube.com');
         try {
             const urlObject = new URL(fetchUrl);
             const playlistId = urlObject.searchParams.get('list');
             
-            // Only sanitize to a video URL if it's a video link *without* a playlist parameter.
-            // If a 'list' parameter exists, we must preserve it to correctly identify the playlist.
             if (!playlistId) {
                 let videoId: string | null = null;
                 if (urlObject.hostname === 'youtu.be') {
@@ -361,7 +334,6 @@ export const fetchAndParseRss = async (
     const isYouTube = fetchUrl.includes('youtube.com');
     const feedType: FeedType = isYouTube ? 'youtube' : 'rss';
 
-    // Special handling for Reddit URLs to directly access the .rss feed
     if (/reddit\.com\/r\//.test(fetchUrl) && !fetchUrl.endsWith('.rss')) {
         try {
             const urlObject = new URL(fetchUrl);
@@ -391,7 +363,16 @@ export const fetchAndParseRss = async (
         discoveredChannelId = ytChannelId;
         doc = parser.parseFromString(content, 'application/xml');
     } else {
-        content = await fetchViaProxy(fetchUrl, feedType, onProxyAttempt, disabledProxies, proxyStats);
+        const responseText = await fetchViaProxy(fetchUrl, feedType, onProxyAttempt, disabledProxies, proxyStats);
+        
+        if (
+            (responseText.includes('<title>corsproxy.io</title>') && responseText.includes('Could not connect to the origin.')) ||
+            (responseText.includes('<title>cors.eu.org</title>') && responseText.includes('Failed to connect'))
+        ) {
+             throw new Error('Failed to fetch content. The origin server may be down or blocking the proxy.');
+        }
+
+        content = responseText;
         doc = parser.parseFromString(content, 'application/xml');
     }
 
@@ -432,17 +413,14 @@ export const fetchAndParseRss = async (
         }
     }
     
-    // Attempt to determine the canonical ID for the feed.
     let canonicalId: string;
     const isPlaylistUrl = isYouTube && (url.includes('playlist?list=') || url.includes('list='));
 
     if (isYouTube) {
         if (isPlaylistUrl) {
-            // For playlists, the canonical ID is the playlist URL itself.
             const playlistId = new URL(url).searchParams.get('list');
             canonicalId = `https://www.youtube.com/playlist?list=${playlistId}`;
         } else if (discoveredChannelId) {
-            // For channels, always use the discovered channel ID.
             const originalUrl = new URL(url);
             const handle = originalUrl.pathname.startsWith('/@') ? originalUrl.pathname.split('/')[1] : null;
             if (handle && !handle.startsWith('UC')) {
@@ -451,36 +429,98 @@ export const fetchAndParseRss = async (
                  canonicalId = `https://www.youtube.com/channel/${discoveredChannelId}/home`;
             }
         } else {
-            // Fallback for YouTube URLs that are not channels or playlists (should be rare)
             canonicalId = effectiveUrl;
         }
     } else if (isBilibiliUrl) {
         canonicalId = getBilibiliCanonicalUrl(url) || url;
     } else {
-        // For standard RSS, use the feed's self-reported link if it's a valid URL, otherwise fall back to the effective URL.
-        const feedLink = findText(doc, ['link']);
-        let isValidFeedLink = false;
-        if (feedLink) {
-            try { new URL(feedLink); isValidFeedLink = true; } catch (e) { isValidFeedLink = false; }
+        const atomSelfLinkEl = Array.from(doc.querySelectorAll('link[rel="self"], atom\\:link[rel="self"]')).find(link => link.getAttribute('rel') === 'self');
+        const selfHref = atomSelfLinkEl?.getAttribute('href');
+
+        if (selfHref) {
+            try {
+                // Resolve relative URL against the effective URL of the feed
+                canonicalId = new URL(selfHref, effectiveUrl).href;
+            } catch (e) {
+                // Fallback if selfHref is invalid
+                canonicalId = effectiveUrl;
+            }
+        } else {
+            // If no self link, the effective URL we fetched is the best source of truth.
+            canonicalId = effectiveUrl;
         }
-        canonicalId = isValidFeedLink ? feedLink! : effectiveUrl;
     }
 
-    const feedTitle = decodeHtmlEntities(findText(doc, ['title']) || defaultTitle || url);
-    const feedDescription = findText(doc, ['description', 'subtitle']);
-    let feedIcon = findText(doc, ['icon', 'logo']);
+    const channelEl = doc.querySelector('channel, feed');
+    
+    let channelTitleText: string | null = null;
+    if (channelEl) {
+        const titleNode = Array.from(channelEl.children).find(child => child.tagName.toLowerCase().split(':').pop() === 'title');
+        if (titleNode && titleNode.textContent) {
+            channelTitleText = titleNode.textContent.trim().replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
+        }
+    }
+    
+    const feedTitle = decodeHtmlEntities(channelTitleText || findText(channelEl || doc, ['title']) || defaultTitle || url);
+    const feedDescription = findText(channelEl || doc, ['description', 'subtitle']);
+    let feedIcon = findText(channelEl || doc, ['icon', 'logo']);
 
-    // Specific workaround for Reddit's outdated icon URL in their RSS feeds.
+
     if (feedIcon === 'https://www.redditstatic.com/icon.png') {
         feedIcon = 'https://www.redditstatic.com/desktop2x/img/favicon/favicon-32x32.png';
     }
     
     const baseArticles = Array.from(doc.querySelectorAll('item, entry')).slice(0, numArticles).map((item): Article => {
         const title = decodeHtmlEntities(findText(item, ['title']) || 'Untitled');
-        const mediaDescription = findHtml(item, ['media:description']);
-        const description = decodeHtmlEntities(findHtml(item, ['description', 'summary']));
-        const contentEncoded = decodeHtmlEntities(findHtml(item, ['content:encoded', 'content']));
-        let content = mediaDescription || contentEncoded || description;
+
+        let content = '';
+        let descriptionForCard = '';
+        let imageUrl: string | null = null;
+
+        const rawContentHtml = findHtml(item, ['content:encoded', 'content']);
+        const rawDescriptionHtml = findHtml(item, ['description', 'summary']);
+        const mediaDescriptionHtml = isYouTube ? findHtml(item, ['media:description']) : null;
+
+        // Determine main content: prefer content:encoded, then media:description, then description.
+        let potentialContent: string | null = null;
+        if (isYouTube && mediaDescriptionHtml) {
+            potentialContent = mediaDescriptionHtml.replace(/\n/g, '<br />');
+        } else {
+            potentialContent = rawContentHtml || rawDescriptionHtml;
+        }
+
+        // Decode HTML entities only if content appears to be encoded (has &lt; but not <).
+        // This handles feeds that entity-encode their HTML without setting a `type="html"` attribute.
+        if (potentialContent && !potentialContent.includes('<') && potentialContent.includes('&lt;')) {
+            content = decodeHtmlEntities(potentialContent);
+        } else {
+            content = potentialContent || '';
+        }
+
+        // Final cleanup for body tags that sometimes appear in feeds
+        if (content && content.trim().toLowerCase().includes('<body')) {
+            const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+            if (bodyMatch && bodyMatch[1]) {
+                content = bodyMatch[1];
+            }
+        }
+
+        // For the card description, we always want plain text.
+        // Use description first, as it's often a summary. If not, create from content.
+        let textForDescription = findText(item, ['description', 'summary']);
+        if (!textForDescription && content) {
+            try {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = content;
+                textForDescription = tempDiv.textContent || tempDiv.innerText;
+            } catch (e) {
+                console.warn("Could not parse content for description fallback", e);
+                textForDescription = '';
+            }
+        }
+        descriptionForCard = decodeHtmlEntities(textForDescription || '');
+        
+        imageUrl = getImage(item, content);
         
         let link = findAttr(item, ['link'], 'href') || findText(item, ['link']);
         const pubDate = findText(item, ['pubDate', 'published', 'updated']);
@@ -490,8 +530,6 @@ export const fetchAndParseRss = async (
         }
 
         let id = findText(item, ['guid', 'id']) || link || `${feedTitle}-${title}-${pubDate}`;
-        const imageUrl = getImage(item, content);
-
         const { height: videoHeight, width: videoWidth, duration: videoDuration } = findMediaContentAttrs(item);
         const mediaStatistics = findElement(item, ['media:statistics']);
         const views = mediaStatistics?.getAttribute('views');
@@ -511,16 +549,14 @@ export const fetchAndParseRss = async (
                     }
                 }
             }
-            // For YouTube videos, the description from Invidious is the full content.
-            // If it's empty, set to a single space to prevent on-demand fetching.
-            if (!content.trim()) {
+            if (!content?.trim()) {
                 content = ' ';
             }
         }
         
         return {
             feedId: canonicalId,
-            id, title, link, description, pubDate, pubDateTimestamp, imageUrl, content, feedTitle,
+            id, title, link, description: descriptionForCard || '', pubDate, pubDateTimestamp, imageUrl, content: content || '', feedTitle,
             isVideo: (isYouTube || isBilibiliUrl) || (videoHeight !== undefined && videoWidth !== undefined),
             hasIframe: isBilibiliUrl,
             views: views ? parseInt(views, 10) : null,
@@ -528,41 +564,20 @@ export const fetchAndParseRss = async (
         };
     });
     
-    // A critical validation step to ensure that when adding a recommended feed, we get the right one.
-    // If a defaultTitle is provided (from a recommendation), and the fetched title doesn't match,
-    // it indicates the proxy/service might have resolved to the wrong channel.
-    if (defaultTitle && defaultTitle !== feedTitle && Math.abs(defaultTitle.length - feedTitle.length) > 5) {
-        // Simple length check helps avoid false positives from minor title variations (e.g., " vs. ')
-        throw new Error(`Title mismatch: Expected something like "${defaultTitle}", but got "${feedTitle}". The content provider may have returned an incorrect feed. Please try another proxy or service if this persists.`);
-    }
-
     let feedChannelUrl: string | undefined = undefined;
-    if (isPlaylistUrl) {
-        const authorEl = findElement(doc, ['author']);
-        if (authorEl) {
-            const authorUri = findText(authorEl, ['uri']);
-            if (authorUri) {
-                try {
-                    // Invidious links are relative to the instance
-                    const urlObject = new URL(authorUri, effectiveUrl);
-                    if (urlObject.pathname.startsWith('/channel/')) {
-                        const channelId = urlObject.pathname.split('/channel/')[1];
-                        feedChannelUrl = `https://www.youtube.com/channel/${channelId}`;
-                    }
-                } catch (e) { console.warn('Could not parse author uri for playlist channel link', e); }
-            }
-        }
+    if (isYouTube && discoveredChannelId) {
+        feedChannelUrl = `https://www.youtube.com/channel/${discoveredChannelId}`;
     }
 
     return {
         id: canonicalId,
-        url: canonicalId, // Always store the canonical URL for reliable refreshing.
+        url: canonicalId,
         title: feedTitle,
         description: feedDescription || undefined,
         items: baseArticles,
         iconUrl: pageIconUrl || feedIcon,
-        maxArticles: numArticles,
         isPlaylist: isPlaylistUrl,
         channelUrl: feedChannelUrl,
+        maxArticles: numArticles,
     };
 };
