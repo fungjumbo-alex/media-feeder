@@ -624,7 +624,6 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }, [handleLikeVideo]);
 
     const silentRefreshRetryCountRef = useRef(0);
-    const maxSilentRefreshRetries = 3;
 
     useEffect(() => {
         const checkGsi = setInterval(() => {
