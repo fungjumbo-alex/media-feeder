@@ -648,23 +648,15 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                                 setToast({ message: `Sign-in failed: ${tokenResponse.error_description || tokenResponse.error}`, type: 'error' });
                             }
 
-                            // Handle silent refresh failures with retry
-                            if (isSilentAuthRef.current && silentRefreshRetryCountRef.current < maxSilentRefreshRetries) {
-                                silentRefreshRetryCountRef.current++;
-                                const retryDelay = Math.min(1000 * Math.pow(2, silentRefreshRetryCountRef.current - 1), 10000);
-                                console.warn(`Silent refresh failed (attempt ${silentRefreshRetryCountRef.current}/${maxSilentRefreshRetries}). Retrying in ${retryDelay}ms...`);
-
-                                setTimeout(() => {
-                                    handleGoogleSignIn({ isSilent: true });
-                                }, retryDelay);
-                            } else if (isSilentAuthRef.current) {
-                                // All retries exhausted
-                                console.error('Silent refresh failed after all retries. User will need to sign in manually.');
+                            // Handle silent refresh failures - don't retry, just fail silently
+                            if (isSilentAuthRef.current) {
+                                // Silent refresh failed - clear auth state without showing popup
                                 setAccessToken(null);
                                 setUserProfile(null);
                                 localStorage.removeItem('gapi_access_token');
                                 localStorage.removeItem('gapi_access_token_expires_at');
                                 localStorage.removeItem('gapi_user_profile');
+                                silentRefreshRetryCountRef.current = 0;
                             }
 
                             queuedLikeRef.current = null;
