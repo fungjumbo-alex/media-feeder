@@ -45,43 +45,59 @@ import { AppProvider } from './contexts/AppContext';
 // This is a targeted workaround for a benign but noisy message from the Google Sign-In library.
 const originalLog = console.log;
 console.log = (...args) => {
-    if (typeof args[0] === 'string' && args[0].includes('Cross-Origin-Opener-Policy')) {
-        return;
-    }
-    originalLog(...args);
+  if (typeof args[0] === 'string' && args[0].includes('Cross-Origin-Opener-Policy')) {
+    return;
+  }
+  originalLog(...args);
 };
 
 const originalWarn = console.warn;
 console.warn = (...args) => {
-    // This is a targeted workaround for a benign but noisy deprecation warning from a CSS dependency.
-    if (typeof args[0] === 'string' && args[0].includes('-ms-high-contrast')) {
-        return;
-    }
-    originalWarn(...args);
+  // This is a targeted workaround for a benign but noisy deprecation warning from a CSS dependency.
+  if (typeof args[0] === 'string' && args[0].includes('-ms-high-contrast')) {
+    return;
+  }
+  originalWarn(...args);
 };
 
 // Intercept console.error to catch specific, actionable GSI errors and notify the user.
 const originalError = console.error;
 console.error = (...args) => {
-    if (typeof args[0] === 'string' && args[0].includes('[GSI_LOGGER]: The given origin is not allowed')) {
-        // This specific error means the Google Cloud project's OAuth settings are misconfigured.
-        // We dispatch a custom event so the UI can show a helpful, specific error toast.
-        window.dispatchEvent(new CustomEvent('gsi_auth_error', {
-            detail: {
-                message: "Sign-in failed: This app's URL is not authorized. Please add your URL (origin) to the 'Authorized JavaScript origins' list in your Google Cloud project's OAuth settings."
-            }
-        }));
-    }
-    originalError(...args);
+  const errorStr = typeof args[0] === 'string' ? args[0] : '';
+
+  // GSI auth error - show helpful message
+  if (errorStr.includes('[GSI_LOGGER]: The given origin is not allowed')) {
+    window.dispatchEvent(new CustomEvent('gsi_auth_error', {
+      detail: {
+        message: "Sign-in failed: This app's URL is not authorized. Please add your URL (origin) to the 'Authorized JavaScript origins' list in your Google Cloud project's OAuth settings."
+      }
+    }));
+  }
+
+  // Suppress non-critical third-party errors
+  const suppressedPatterns = [
+    'Failed to execute \'postMessage\' on \'DOMWindow\'', // YouTube iframe API
+    'getVideoUrl is not a function', // YouTube player API
+    'Trustpilot', // Trustpilot browser extension
+    'browserextension.trustpilot.com', // Trustpilot extension
+    '<polyline> attribute points', // React DOM warnings (already fixed)
+    'Violation', // Performance violations (informational only)
+  ];
+
+  if (suppressedPatterns.some(pattern => errorStr.includes(pattern))) {
+    return; // Suppress these errors
+  }
+
+  originalError(...args);
 };
 
 // Add a global handler for unhandled promise rejections to catch specific, benign errors.
 window.addEventListener('unhandledrejection', (event) => {
-    // This error often originates from third-party scripts (like GSI) in an extension-like environment.
-    // It's benign and can be safely ignored to prevent console noise.
-    if (event.reason && typeof event.reason.message === 'string' && event.reason.message.includes('Receiving end does not exist')) {
-        event.preventDefault();
-    }
+  // This error often originates from third-party scripts (like GSI) in an extension-like environment.
+  // It's benign and can be safely ignored to prevent console noise.
+  if (event.reason && typeof event.reason.message === 'string' && event.reason.message.includes('Receiving end does not exist')) {
+    event.preventDefault();
+  }
 });
 
 const rootElement = document.getElementById('root');
