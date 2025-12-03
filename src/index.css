@@ -3,66 +3,88 @@
 @tailwind utilities;
 
 @layer utilities {
-    .highlight-on-target:target {
-      @apply bg-indigo-500/20 rounded-md;
+  .highlight-on-target:target {
+    @apply bg-indigo-500/20 rounded-md;
+  }
+
+  .highlight-source {
+    animation: highlight-animation 1.5s ease-out;
+  }
+
+  @keyframes highlight-animation {
+    0% {
+      @apply bg-transparent;
     }
 
-    .highlight-source {
-      animation: highlight-animation 1.5s ease-out;
+    25% {
+      @apply bg-indigo-500/30;
     }
 
-    @keyframes highlight-animation {
-      0% {
-        @apply bg-transparent;
-      }
-      25% {
-        @apply bg-indigo-500/30;
-      }
-      100% {
-        @apply bg-transparent;
-      }
+    100% {
+      @apply bg-transparent;
     }
+  }
 
-    .wait-cursor, .wait-cursor * {
-        cursor: wait !important;
-    }
+  .wait-cursor,
+  .wait-cursor * {
+    cursor: wait !important;
+  }
 
-    /* Custom screen reader utilities to avoid -ms-high-contrast media query */
-    .sr-only {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border-width: 0;
-    }
+  /* Custom screen reader utilities to avoid -ms-high-contrast media query */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
 
-    .not-sr-only {
-        position: static;
-        width: auto;
-        height: auto;
-        padding: 0;
-        margin: 0;
-        overflow: visible;
-        clip: auto;
-        white-space: normal;
-    }
+  .not-sr-only {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
 
-    .demo-highlight {
-        @apply ring-4 ring-indigo-500 ring-offset-4 ring-offset-gray-800 rounded-md;
-        z-index: 1001;
-        position: relative;
-        transition: all 0.3s ease-in-out;
-    }
+  .demo-highlight {
+    @apply ring-4 ring-indigo-500 ring-offset-4 ring-offset-gray-800 rounded-md;
+    z-index: 1001;
+    position: relative;
+    transition: all 0.3s ease-in-out;
+  }
 
-    .no-scrollbar::-webkit-scrollbar {
-        display: none;
-    }
-    .no-scrollbar {
-        -ms-overflow-style: none;  /* IE and Edge */
-        scrollbar-width: none;  /* Firefox */
-    }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+  }
+
+  /* Keyboard navigation highlight */
+  .keyboard-selected {
+    outline: 3px solid rgb(99, 102, 241) !important;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2) !important;
+    transition:
+      outline 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+
+  /* Make sure the highlight is visible even on hover */
+  .keyboard-selected:hover {
+    outline: 3px solid rgb(99, 102, 241) !important;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.3) !important;
+  }
 }

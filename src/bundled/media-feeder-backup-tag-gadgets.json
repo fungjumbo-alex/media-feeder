@@ -1,4 +1,3 @@
-
 {
   "feeds": [
     {
@@ -9,10 +8,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCD_cg9Tak9SvlPHRsWxUIpA/home",
@@ -22,10 +18,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "CHINESE",
-        "GADGETS"
-      ]
+      "tags": ["CHINESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCrZG5sGryxwgSDQSlHgmZTw/home",
@@ -35,10 +28,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCBJycsmduvYEL83R_U4JriQ/home",
@@ -47,9 +37,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCnt2EB3ZVdRIYY3JmCjavfw/home",
@@ -59,9 +47,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCL5Gf8DjptU9gkXuvcZEKzA/home",
@@ -70,10 +56,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCwT6qe78ElbbWswiDQqJMlw/home",
@@ -83,10 +66,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCCEu0KUno9waR0zWZ8JEptA/home",
@@ -96,10 +76,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UC9v3JGut2Z1PxrXEpGzgEAA/home",
@@ -109,10 +86,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "CHINESE",
-        "GADGETS"
-      ]
+      "tags": ["CHINESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCvUJ6BwgUGWBHuUd0cv546g/home",
@@ -122,11 +96,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "CHINESE",
-        "GADGETS",
-        "TECH"
-      ]
+      "tags": ["CHINESE", "GADGETS", "TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCNoGPh6-xT7afBoudgrx56Q/home",
@@ -136,10 +106,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "GADGETS",
-        "TECH"
-      ]
+      "tags": ["GADGETS", "TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCm5oNp5xqr4CdtU9L7ZrsKg/home",
@@ -149,10 +116,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCBwfrMS785JyWDUBRhOQkjw/home",
@@ -162,10 +126,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCsTcErHg8oDvUnTzoqsYeNw/home",
@@ -175,9 +136,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCMiJRAwDNSNzuYeN2uWa0pA/home",
@@ -187,9 +146,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCXGgrKt94gR6lmN4aN3mYTg/home",
@@ -199,9 +156,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCVYamHliCI9rw1tHR1xbkfw/home",
@@ -211,9 +166,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCey_c7U86mJGz1VJWH5CYPA/home",
@@ -222,9 +175,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCZGVB6g74LXWtkR3fX50ykg/home",
@@ -234,10 +185,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCl9BPXjyEmA0q6IrQvsEazA/home",
@@ -247,9 +195,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UC9_uWZmN_wKPK-iYc1odhRw/home",
@@ -258,12 +204,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "BIKES",
-        "CANTONESE",
-        "GADGETS",
-        "TRAVEL"
-      ]
+      "tags": ["BIKES", "CANTONESE", "GADGETS", "TRAVEL"]
     },
     {
       "url": "https://www.youtube.com/channel/UCWA_EZI4zbFNm17-6UyVG8A/home",
@@ -273,9 +214,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCNAqBC6Z1HkymQ7gkG0pCOg/home",
@@ -285,10 +224,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCQdcRL5X4RFIeLPJ2zkjoVA/home",
@@ -298,10 +234,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "GADGETS",
-        "TECH"
-      ]
+      "tags": ["GADGETS", "TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCE9CPcuMfI6gsz0R9Rd03LA/home",
@@ -311,10 +244,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.reddit.com/r/gadgets/new/",
@@ -323,9 +253,7 @@
       "iconUrl": "https://b.thumbs.redditmedia.com/1Zt9fQJyK-7-lP2R2E7p0e7_axZ8Rlhh3lxMKO_3QIg.png",
       "maxArticles": 50,
       "isPlaylist": false,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCeEqIv7lVwOOLnwxuuhQFuQ",
@@ -334,9 +262,7 @@
       "iconUrl": "https://yt3.googleusercontent.com/t4zMHo4jS7G-YagADK6iDqISpAQ68VK1Pf6GAdnJEsWjCeY-mZZ6JlzWcBjkhuoyOTSBV1-o0Z4=s900-c-k-c0x00ffffff-no-rj",
       "maxArticles": 5,
       "isPlaylist": false,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCTecoCovL-9_f59o888a1cA",
@@ -345,9 +271,7 @@
       "iconUrl": "https://yt3.googleusercontent.com/ytc/AIdro_mUymjKEAhTGjDregxfhnbL_AWT9SpE8f1oJMavbRoTBskH=s900-c-k-c0x00ffffff-no-rj",
       "maxArticles": 5,
       "isPlaylist": false,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UClQQoervgLHV2pAOxHJ16NA",
@@ -356,9 +280,7 @@
       "iconUrl": "https://www.youtube.com/s/desktop/477ecd89/img/logos/favicon.ico",
       "maxArticles": 5,
       "isPlaylist": false,
-      "tags": [
-        "GADGETS"
-      ]
+      "tags": ["GADGETS"]
     }
   ],
   "readLaterArticleIds": [

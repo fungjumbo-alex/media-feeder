@@ -1,0 +1,16 @@
+# Dependencies
+node_modules
+package-lock.json
+
+# Build outputs
+dist
+dist-ssr
+*.local
+
+# Firebase
+.firebase
+
+# Misc
+dist.zip
+*.log
+.DS_Store

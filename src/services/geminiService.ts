@@ -1,303 +1,338 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
+ */
+import { GoogleGenAI, Type, GenerateContentResponse } from '@google/genai';
 import { fetchViaProxy, INVIDIOUS_INSTANCES } from './proxyService';
-import type { RecommendedFeed, DetailedDigest, ThematicDigest, WebSource, AiModel, TranscriptLine, CaptionChoice, StructuredVideoSummary, Feed, Article } from '../types';
+import type {
+  RecommendedFeed,
+  DetailedDigest,
+  ThematicDigest,
+  WebSource,
+  AiModel,
+  TranscriptLine,
+  CaptionChoice,
+  StructuredVideoSummary,
+  Feed,
+  Article,
+} from '../types';
 
 let ai: GoogleGenAI | null = null;
 
 export class QuotaExceededError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'QuotaExceededError';
-    }
+  constructor(message: string) {
+    super(message);
+    this.name = 'QuotaExceededError';
+  }
 }
 
 // FIX: Modified function to return a `WebSource` object, including the `uri`.
 const fetchPageDetails = async (url: string): Promise<WebSource> => {
-    try {
-        const htmlContent = await fetchViaProxy(url, 'rss'); // Using 'rss' type for general web page fetching
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlContent, 'text/html');
+  try {
+    const htmlContent = await fetchViaProxy(url, 'rss'); // Using 'rss' type for general web page fetching
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlContent, 'text/html');
 
-        const title = doc.querySelector('title')?.textContent || url;
-        const description = doc.querySelector('meta[name="description"]')?.getAttribute('content') || undefined;
+    const title = doc.querySelector('title')?.textContent || url;
+    const description =
+      doc.querySelector('meta[name="description"]')?.getAttribute('content') || undefined;
 
-        return { uri: url, title: title.trim(), description: description?.trim() };
-    } catch (error) {
-        console.warn(`Failed to fetch page details for ${url}:`, error);
-        // Fallback to the original URL as the title if fetching fails.
-        return { uri: url, title: url };
-    }
+    return { uri: url, title: title.trim(), description: description?.trim() };
+  } catch (error) {
+    console.warn(`Failed to fetch page details for ${url}:`, error);
+    // Fallback to the original URL as the title if fetching fails.
+    return { uri: url, title: url };
+  }
 };
 
 const getAiClient = (): GoogleGenAI => {
-    const API_KEY = (window as any).process?.env?.API_KEY;
-    if (!API_KEY) throw new Error("API_KEY for Gemini is not configured. Please set the environment variable.");
-    if (!ai) ai = new GoogleGenAI({ apiKey: API_KEY });
-    return ai;
+  const API_KEY = (window as any).process?.env?.API_KEY;
+  if (!API_KEY)
+    throw new Error('API_KEY for Gemini is not configured. Please set the environment variable.');
+  if (!ai) ai = new GoogleGenAI({ apiKey: API_KEY });
+  return ai;
 };
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const generateContentWithRetry = async (
-    params: Parameters<InstanceType<typeof GoogleGenAI>['models']['generateContent']>[0],
-    maxRetries = 5,
-    initialDelay = 2000 // Start with 2 seconds
+  params: Parameters<InstanceType<typeof GoogleGenAI>['models']['generateContent']>[0],
+  maxRetries = 5,
+  initialDelay = 2000 // Start with 2 seconds
 ): Promise<GenerateContentResponse> => {
-    let attempt = 0;
-    let delay = initialDelay;
-    const aiClient = getAiClient();
+  let attempt = 0;
+  let delay = initialDelay;
+  const aiClient = getAiClient();
 
-    while (attempt < maxRetries) {
-        try {
-            const response = await aiClient.models.generateContent(params);
-            return response;
-        } catch (error: any) {
-            let isQuotaError = false;
-            let retryAfterSeconds = 0;
+  while (attempt < maxRetries) {
+    try {
+      const response = await aiClient.models.generateContent(params);
+      return response;
+    } catch (error: any) {
+      let isQuotaError = false;
+      let retryAfterSeconds = 0;
 
-            if (error && typeof error.message === 'string' && (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED'))) {
-                if (error.message.toLowerCase().includes('quota')) {
-                    isQuotaError = true;
-                    const retryMatch = error.message.match(/Please retry in (\d+(\.\d+)?)s/);
-                    if (retryMatch && retryMatch[1]) {
-                        retryAfterSeconds = parseFloat(retryMatch[1]);
-                    }
-                }
-            }
-
-            if (attempt >= maxRetries - 1) {
-                if (isQuotaError) {
-                    throw new QuotaExceededError(error.message);
-                }
-                throw error;
-            }
-
-            if (!isQuotaError) {
-                throw error;
-            }
-
-            attempt++;
-
-            const jitter = Math.random() * 1000;
-            const waitTime = retryAfterSeconds > 0
-                ? (retryAfterSeconds * 1000) + jitter
-                : delay + jitter;
-
-            console.warn(`Gemini API rate limit exceeded. Attempt ${attempt}/${maxRetries}. Retrying in ${(waitTime / 1000).toFixed(2)}s.`);
-
-            await wait(waitTime);
-
-            if (retryAfterSeconds === 0) {
-                delay *= 2;
-            }
+      if (
+        error &&
+        typeof error.message === 'string' &&
+        (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED'))
+      ) {
+        if (error.message.toLowerCase().includes('quota')) {
+          isQuotaError = true;
+          const retryMatch = error.message.match(/Please retry in (\d+(\.\d+)?)s/);
+          if (retryMatch && retryMatch[1]) {
+            retryAfterSeconds = parseFloat(retryMatch[1]);
+          }
         }
+      }
+
+      if (attempt >= maxRetries - 1) {
+        if (isQuotaError) {
+          throw new QuotaExceededError(error.message);
+        }
+        throw error;
+      }
+
+      if (!isQuotaError) {
+        throw error;
+      }
+
+      attempt++;
+
+      const jitter = Math.random() * 1000;
+      const waitTime = retryAfterSeconds > 0 ? retryAfterSeconds * 1000 + jitter : delay + jitter;
+
+      console.warn(
+        `Gemini API rate limit exceeded. Attempt ${attempt}/${maxRetries}. Retrying in ${(waitTime / 1000).toFixed(2)}s.`
+      );
+
+      await wait(waitTime);
+
+      if (retryAfterSeconds === 0) {
+        delay *= 2;
+      }
     }
-    throw new Error('Exhausted all retries for generateContent.');
+  }
+  throw new Error('Exhausted all retries for generateContent.');
 };
 
 const verifyAndGetCanonicalUrl = async (url: string): Promise<string | null> => {
-    if (!url.includes('youtube.com')) {
-        return url;
+  if (!url.includes('youtube.com')) {
+    return url;
+  }
+  try {
+    const htmlContent = await fetchViaProxy(url, 'youtube');
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlContent, 'text/html');
+
+    const canonicalLink = doc.querySelector('link[rel="canonical"]');
+    if (canonicalLink) {
+      const canonicalUrl = canonicalLink.getAttribute('href');
+      if (
+        canonicalUrl &&
+        (canonicalUrl.includes('/channel/') ||
+          canonicalUrl.includes('/c/') ||
+          canonicalUrl.includes('/user/') ||
+          canonicalUrl.includes('/@'))
+      ) {
+        return canonicalUrl;
+      }
     }
-    try {
-        const htmlContent = await fetchViaProxy(url, 'youtube');
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlContent, 'text/html');
 
-        const canonicalLink = doc.querySelector('link[rel="canonical"]');
-        if (canonicalLink) {
-            const canonicalUrl = canonicalLink.getAttribute('href');
-            if (canonicalUrl && (canonicalUrl.includes('/channel/') || canonicalUrl.includes('/c/') || canonicalUrl.includes('/user/') || canonicalUrl.includes('/@'))) {
-                return canonicalUrl;
-            }
-        }
-
-        const ogUrlMeta = doc.querySelector('meta[property="og:url"]');
-        if (ogUrlMeta) {
-            const ogUrl = ogUrlMeta.getAttribute('content');
-            if (ogUrl && (ogUrl.includes('/channel/') || ogUrl.includes('/c/') || ogUrl.includes('/user/') || ogUrl.includes('/@'))) {
-                return ogUrl;
-            }
-        }
-
-        const channelIdMatch = htmlContent.match(/"channelId":"(UC[\w-]{22})"/);
-        if (channelIdMatch) {
-            return url;
-        }
-
-        return null;
-
-    } catch (error) {
-        console.warn(`Failed to verify YouTube URL ${url}:`, error);
-        return null;
+    const ogUrlMeta = doc.querySelector('meta[property="og:url"]');
+    if (ogUrlMeta) {
+      const ogUrl = ogUrlMeta.getAttribute('content');
+      if (
+        ogUrl &&
+        (ogUrl.includes('/channel/') ||
+          ogUrl.includes('/c/') ||
+          ogUrl.includes('/user/') ||
+          ogUrl.includes('/@'))
+      ) {
+        return ogUrl;
+      }
     }
+
+    const channelIdMatch = htmlContent.match(/"channelId":"(UC[\w-]{22})"/);
+    if (channelIdMatch) {
+      return url;
+    }
+
+    return null;
+  } catch (error) {
+    console.warn(`Failed to verify YouTube URL ${url}:`, error);
+    return null;
+  }
 };
 
 const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
-    if (!content || !content.trim()) {
-        return [];
-    }
+  if (!content || !content.trim()) {
+    return [];
+  }
 
-    if (content.trim().startsWith('WEBVTT')) {
-        try {
-            const parseVTTTimestamp = (timestamp: string): number => {
-                const parts = timestamp.split(':');
-                let seconds = 0;
-                if (parts.length === 3) {
-                    seconds = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2]);
-                } else if (parts.length === 2) {
-                    seconds = parseInt(parts[0], 10) * 60 + parseFloat(parts[1]);
-                }
-                return seconds;
-            };
-
-            const lines = content.split('\n');
-            const transcript: TranscriptLine[] = [];
-            let i = 0;
-
-            while (i < lines.length && !lines[i].includes('-->')) {
-                i++;
-            }
-
-            while (i < lines.length) {
-                const timeLine = lines[i];
-                if (timeLine.includes('-->')) {
-                    const [startTimeStr, endTimeStr] = timeLine.split(' --> ');
-                    const startSeconds = parseVTTTimestamp(startTimeStr);
-                    const endSeconds = parseVTTTimestamp(endTimeStr.split(' ')[0]);
-
-                    i++;
-                    let text = '';
-                    while (i < lines.length && lines[i].trim() !== '') {
-                        text += lines[i].trim() + ' ';
-                        i++;
-                    }
-
-                    if (text) {
-                        transcript.push({
-                            text: text.trim().replace(/<[^>]+>/g, ''),
-                            start: startSeconds,
-                            duration: endSeconds - startSeconds,
-                        });
-                    }
-                }
-                i++;
-            }
-            return transcript;
-        } catch (e) {
-            throw new Error(`Failed to parse WEBVTT transcript: ${e instanceof Error ? e.message : 'Invalid format.'}`);
-        }
-    }
-
+  if (content.trim().startsWith('WEBVTT')) {
     try {
-        const data = JSON.parse(content);
-        if (data && Array.isArray(data.captions)) {
-            return data.captions.map((line: any) => ({
-                text: line.text,
-                start: line.start / 1000,
-                duration: line.duration / 1000
-            }));
+      const parseVTTTimestamp = (timestamp: string): number => {
+        const parts = timestamp.split(':');
+        let seconds = 0;
+        if (parts.length === 3) {
+          seconds =
+            parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2]);
+        } else if (parts.length === 2) {
+          seconds = parseInt(parts[0], 10) * 60 + parseFloat(parts[1]);
         }
-        throw new Error('Invalid Invidious transcript format: "captions" array not found.');
+        return seconds;
+      };
+
+      const lines = content.split('\n');
+      const transcript: TranscriptLine[] = [];
+      let i = 0;
+
+      while (i < lines.length && !lines[i].includes('-->')) {
+        i++;
+      }
+
+      while (i < lines.length) {
+        const timeLine = lines[i];
+        if (timeLine.includes('-->')) {
+          const [startTimeStr, endTimeStr] = timeLine.split(' --> ');
+          const startSeconds = parseVTTTimestamp(startTimeStr);
+          const endSeconds = parseVTTTimestamp(endTimeStr.split(' ')[0]);
+
+          i++;
+          let text = '';
+          while (i < lines.length && lines[i].trim() !== '') {
+            text += lines[i].trim() + ' ';
+            i++;
+          }
+
+          if (text) {
+            transcript.push({
+              text: text.trim().replace(/<[^>]+>/g, ''),
+              start: startSeconds,
+              duration: endSeconds - startSeconds,
+            });
+          }
+        }
+        i++;
+      }
+      return transcript;
     } catch (e) {
-        throw new Error(`Failed to parse transcript: ${e instanceof Error ? e.message : 'Invalid JSON format.'}`);
+      throw new Error(
+        `Failed to parse WEBVTT transcript: ${e instanceof Error ? e.message : 'Invalid format.'}`
+      );
     }
+  }
+
+  try {
+    const data = JSON.parse(content);
+    if (data && Array.isArray(data.captions)) {
+      return data.captions.map((line: any) => ({
+        text: line.text,
+        start: line.start / 1000,
+        duration: line.duration / 1000,
+      }));
+    }
+    throw new Error('Invalid Invidious transcript format: "captions" array not found.');
+  } catch (e) {
+    throw new Error(
+      `Failed to parse transcript: ${e instanceof Error ? e.message : 'Invalid JSON format.'}`
+    );
+  }
 };
 
 export const fetchAvailableCaptionChoices = async (videoId: string): Promise<CaptionChoice[]> => {
-    if (!videoId) return [];
-    let lastError: unknown = null;
+  if (!videoId) return [];
+  let lastError: unknown = null;
 
-    // Try up to 3 instances for better performance
-    for (const instance of INVIDIOUS_INSTANCES.slice(0, 3)) {
-        try {
-            const captionsListUrl = `${instance}/api/v1/captions/${videoId}`;
-            const content = await fetchViaProxy(captionsListUrl, 'youtube');
-            const data = JSON.parse(content);
-            const captionsArray = Array.isArray(data) ? data : data?.captions;
-            if (Array.isArray(captionsArray)) {
-                if (captionsArray.length > 0) {
-                    return captionsArray.map((track: any) => ({
-                        label: track.label,
-                        language_code: track.languageCode || track.language_code,
-                        url: `${instance}${track.url}`
-                    }));
-                }
-                // If we successfully got a response but there are no captions, return empty
-                return [];
-            }
-            throw new Error(`Invalid caption list data structure from ${instance}`);
-        } catch (error) {
-            lastError = error;
-            // Continue to next instance
+  // Try up to 3 instances for better performance
+  for (const instance of INVIDIOUS_INSTANCES.slice(0, 3)) {
+    try {
+      const captionsListUrl = `${instance}/api/v1/captions/${videoId}`;
+      const content = await fetchViaProxy(captionsListUrl, 'youtube');
+      const data = JSON.parse(content);
+      const captionsArray = Array.isArray(data) ? data : data?.captions;
+      if (Array.isArray(captionsArray)) {
+        if (captionsArray.length > 0) {
+          return captionsArray.map((track: any) => ({
+            label: track.label,
+            language_code: track.languageCode || track.language_code,
+            url: `${instance}${track.url}`,
+          }));
         }
+        // If we successfully got a response but there are no captions, return empty
+        return [];
+      }
+      throw new Error(`Invalid caption list data structure from ${instance}`);
+    } catch (error) {
+      lastError = error;
+      // Continue to next instance
     }
+  }
 
-    // If all instances failed, throw the error so calling code can handle it
-    if (lastError) {
-        const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
-        throw new Error(`All Invidious instances failed to provide a caption list. Last error: ${errorMessage}`);
-    }
-    return [];
+  // If all instances failed, throw the error so calling code can handle it
+  if (lastError) {
+    const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+    throw new Error(
+      `All Invidious instances failed to provide a caption list. Last error: ${errorMessage}`
+    );
+  }
+  return [];
 };
 
 export const fetchAndParseTranscript = async (url: string): Promise<TranscriptLine[]> => {
-    const content = await fetchViaProxy(url, 'youtube');
-    return parseInvidiousTranscript(content);
+  const content = await fetchViaProxy(url, 'youtube');
+  return parseInvidiousTranscript(content);
 };
 
 export const summarizeText = async (
-    text: string,
-    link: string | null,
-    model: AiModel,
-    targetLanguage: string,
-    contentType: 'article' | 'video' = 'article'
-): Promise<{ summary: string, sources: WebSource[] }> => {
-    let systemInstruction = `You are an expert summarizer. Your goal is to provide a highly detailed and thorough summary of the provided text.
+  text: string,
+  link: string | null,
+  model: AiModel,
+  targetLanguage: string,
+  contentType: 'article' | 'video' = 'article'
+): Promise<{ summary: string; sources: WebSource[] }> => {
+  let systemInstruction = `You are an expert summarizer. Your goal is to provide a highly detailed and thorough summary of the provided text.
     - The summary must be comprehensive, meticulously capturing all main points, key arguments, supporting details, important examples, findings, and conclusions.
     - Structure the summary into multiple, well-developed paragraphs to ensure it is easy to read and understand. Aim for a substantial summary, not a brief overview.
     - Do not use lists or bullet points. The output should be narrative prose.
     - Respond only with the summary text itself. Do not include any introductory or concluding phrases like "Here is the summary:" or "In conclusion...".`;
 
-    if (targetLanguage && targetLanguage !== 'original') {
-        systemInstruction += `\n- If the original text is not in ${targetLanguage}, please translate the final summary into ${targetLanguage}.`;
-    }
+  if (targetLanguage && targetLanguage !== 'original') {
+    systemInstruction += `\n- If the original text is not in ${targetLanguage}, please translate the final summary into ${targetLanguage}.`;
+  }
 
-    const contents = `Please summarize the following ${contentType} content:\n\n---\n\n${text.substring(0, 30000)}\n\n---`;
-    const config: any = { systemInstruction, tools: [] };
-    if (link && !link.includes('youtube.com') && !link.includes('youtu.be')) {
-        config.tools.push({ googleSearch: {} });
-    }
-    const response = await generateContentWithRetry({ model, contents, config });
-    const summary = response.text || '';
-    if (!summary) throw new Error("AI did not return a summary.");
+  const contents = `Please summarize the following ${contentType} content:\n\n---\n\n${text.substring(0, 30000)}\n\n---`;
+  const config: any = { systemInstruction, tools: [] };
+  if (link && !link.includes('youtube.com') && !link.includes('youtu.be')) {
+    config.tools.push({ googleSearch: {} });
+  }
+  const response = await generateContentWithRetry({ model, contents, config });
+  const summary = response.text || '';
+  if (!summary) throw new Error('AI did not return a summary.');
 
-    let sources: WebSource[] = [];
-    if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-        const uniqueSources = new Map<string, { title: string }>();
-        response.candidates[0].groundingMetadata.groundingChunks.forEach(chunk => {
-            if (chunk.web) {
-                const { uri, title } = chunk.web;
-                if (uri && !uniqueSources.has(uri)) uniqueSources.set(uri, { title: title || uri });
-            }
-        });
-        sources = await Promise.all(Array.from(uniqueSources.keys()).map(fetchPageDetails));
-    }
-    return { summary, sources };
+  let sources: WebSource[] = [];
+  if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+    const uniqueSources = new Map<string, { title: string }>();
+    response.candidates[0].groundingMetadata.groundingChunks.forEach(chunk => {
+      if (chunk.web) {
+        const { uri, title } = chunk.web;
+        if (uri && !uniqueSources.has(uri)) uniqueSources.set(uri, { title: title || uri });
+      }
+    });
+    sources = await Promise.all(Array.from(uniqueSources.keys()).map(fetchPageDetails));
+  }
+  return { summary, sources };
 };
 
 export const summarizeYouTubeVideo = async (
-    videoTitle: string,
-    transcript: TranscriptLine[],
-    model: AiModel,
-    targetLanguage: string
-): Promise<{ summary: StructuredVideoSummary, sources: WebSource[] }> => {
-    const fullTranscriptText = transcript.map(line => line.text).join(' ');
-    let systemInstruction = `You are an expert at summarizing YouTube video transcripts.
+  videoTitle: string,
+  transcript: TranscriptLine[],
+  model: AiModel,
+  targetLanguage: string
+): Promise<{ summary: StructuredVideoSummary; sources: WebSource[] }> => {
+  const fullTranscriptText = transcript.map(line => line.text).join(' ');
+  let systemInstruction = `You are an expert at summarizing YouTube video transcripts.
     Your task is to:
     1. Create a comprehensive, engaging, and detailed overall summary of the video's content. It should be at least two paragraphs long.
     2. Identify 5-7 key moments or sections. For each section, provide:
@@ -308,61 +343,61 @@ export const summarizeYouTubeVideo = async (
     - For timestamps, use the start time of the relevant transcript segment. Pick the most representative start time for the topic.
     - Respond only with the JSON object. Do not include any introductory phrases or markdown formatting.`;
 
-    if (targetLanguage && targetLanguage !== 'original') {
-        systemInstruction += `\n- If the original transcript is not in ${targetLanguage}, please translate the 'overallSummary', and the 'title' and 'summary' for each section into ${targetLanguage}.`;
-    }
+  if (targetLanguage && targetLanguage !== 'original') {
+    systemInstruction += `\n- If the original transcript is not in ${targetLanguage}, please translate the 'overallSummary', and the 'title' and 'summary' for each section into ${targetLanguage}.`;
+  }
 
-    const contents = `Video Title: ${videoTitle}\n\nTranscript:\n${fullTranscriptText.substring(0, 50000)}`;
+  const contents = `Video Title: ${videoTitle}\n\nTranscript:\n${fullTranscriptText.substring(0, 50000)}`;
 
-    const response = await generateContentWithRetry({
-        model,
-        contents,
-        config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    overallSummary: { type: Type.STRING },
-                    sections: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                timestamp: { type: Type.NUMBER },
-                                title: { type: Type.STRING },
-                                summary: { type: Type.STRING }
-                            },
-                            required: ['timestamp', 'title', 'summary']
-                        }
-                    }
-                },
-                required: ['overallSummary', 'sections']
-            }
-        }
-    });
+  const response = await generateContentWithRetry({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          overallSummary: { type: Type.STRING },
+          sections: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                timestamp: { type: Type.NUMBER },
+                title: { type: Type.STRING },
+                summary: { type: Type.STRING },
+              },
+              required: ['timestamp', 'title', 'summary'],
+            },
+          },
+        },
+        required: ['overallSummary', 'sections'],
+      },
+    },
+  });
 
-    const summaryJson = JSON.parse(response.text || '{}');
-    if (!summaryJson.overallSummary || !Array.isArray(summaryJson.sections)) {
-        throw new Error("AI returned an invalid format for the structured summary.");
-    }
+  const summaryJson = JSON.parse(response.text || '{}');
+  if (!summaryJson.overallSummary || !Array.isArray(summaryJson.sections)) {
+    throw new Error('AI returned an invalid format for the structured summary.');
+  }
 
-    summaryJson.sections.sort((a: any, b: any) => a.timestamp - b.timestamp);
+  summaryJson.sections.sort((a: any, b: any) => a.timestamp - b.timestamp);
 
-    return {
-        summary: summaryJson as StructuredVideoSummary,
-        sources: [] // YouTube summary doesn't use web grounding.
-    };
+  return {
+    summary: summaryJson as StructuredVideoSummary,
+    sources: [], // YouTube summary doesn't use web grounding.
+  };
 };
 
 export const generateRecommendations = async (
-    feeds: Feed[],
-    historyArticles: Article[],
-    model: AiModel,
-    customQuery?: string,
-    existingRecUrls?: string[]
+  feeds: Feed[],
+  historyArticles: Article[],
+  model: AiModel,
+  customQuery?: string,
+  existingRecUrls?: string[]
 ): Promise<{ recommendations: RecommendedFeed[] }> => {
-    const systemInstruction = `You are a content recommendation expert. Your goal is to suggest new YouTube channels or RSS feeds based on the user's current subscriptions and reading history.
+  const systemInstruction = `You are a content recommendation expert. Your goal is to suggest new YouTube channels or RSS feeds based on the user's current subscriptions and reading history.
     - Analyze the provided titles of subscriptions and recently read articles.
     - Find diverse, high-quality, and relevant new sources.
     - Provide a brief, compelling reason for each recommendation.
@@ -370,64 +405,67 @@ export const generateRecommendations = async (
     - If a list of existing recommendations is provided, do not suggest the same URLs again.
     - Respond only with the JSON object.`;
 
-    const feedTitles = feeds.map(f => f.title).join(', ');
-    const articleTitles = historyArticles.slice(0, 30).map(a => a.title).join(', ');
+  const feedTitles = feeds.map(f => f.title).join(', ');
+  const articleTitles = historyArticles
+    .slice(0, 30)
+    .map(a => a.title)
+    .join(', ');
 
-    let contents = `Current Subscriptions:\n${feedTitles}\n\nRecently Read Articles:\n${articleTitles}\n\n`;
-    if (customQuery) {
-        contents += `User's specific request: "${customQuery}"\n\n`;
-    }
-    if (existingRecUrls && existingRecUrls.length > 0) {
-        contents += `Do not recommend these URLs again:\n${existingRecUrls.join('\n')}\n\n`;
-    }
-    contents += `Please recommend 5 new feeds.`;
+  let contents = `Current Subscriptions:\n${feedTitles}\n\nRecently Read Articles:\n${articleTitles}\n\n`;
+  if (customQuery) {
+    contents += `User's specific request: "${customQuery}"\n\n`;
+  }
+  if (existingRecUrls && existingRecUrls.length > 0) {
+    contents += `Do not recommend these URLs again:\n${existingRecUrls.join('\n')}\n\n`;
+  }
+  contents += `Please recommend 5 new feeds.`;
 
-    const response = await generateContentWithRetry({
-        model,
-        contents,
-        config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    recommendations: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                title: { type: Type.STRING },
-                                url: { type: Type.STRING },
-                                reason: { type: Type.STRING }
-                            },
-                            required: ['title', 'url', 'reason']
-                        }
-                    }
-                },
-                required: ['recommendations']
-            }
-        }
-    });
+  const response = await generateContentWithRetry({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          recommendations: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                url: { type: Type.STRING },
+                reason: { type: Type.STRING },
+              },
+              required: ['title', 'url', 'reason'],
+            },
+          },
+        },
+        required: ['recommendations'],
+      },
+    },
+  });
 
-    const recommendationsJson = JSON.parse(response.text || '{}');
-    if (!recommendationsJson.recommendations || !Array.isArray(recommendationsJson.recommendations)) {
-        throw new Error("AI returned an invalid format for recommendations.");
-    }
+  const recommendationsJson = JSON.parse(response.text || '{}');
+  if (!recommendationsJson.recommendations || !Array.isArray(recommendationsJson.recommendations)) {
+    throw new Error('AI returned an invalid format for recommendations.');
+  }
 
-    return recommendationsJson;
+  return recommendationsJson;
 };
 
 export const generateRelatedChannels = async (
-    sourceFeed: Feed,
-    existingUrls: string[],
-    model: AiModel
+  sourceFeed: Feed,
+  existingUrls: string[],
+  model: AiModel
 ): Promise<{ recommendations: RecommendedFeed[] }> => {
-    const systemInstruction = `You are a YouTube channel recommendation expert. Based on the provided channel's title and description, suggest 5 similar channels that the user might enjoy.
+  const systemInstruction = `You are a YouTube channel recommendation expert. Based on the provided channel's title and description, suggest 5 similar channels that the user might enjoy.
     - For each recommendation, provide the channel title, its YouTube URL, and a brief reason why it's a good match.
     - Do not recommend channels that are already in the user's subscription list.
     - Respond only with the JSON object.`;
 
-    const contents = `Find channels related to this one:
+  const contents = `Find channels related to this one:
     Title: ${sourceFeed.title}
     Description: ${sourceFeed.description || ''}
     
@@ -436,286 +474,326 @@ export const generateRelatedChannels = async (
     
     Please provide 5 recommendations.`;
 
-    const response = await generateContentWithRetry({
-        model,
-        contents,
-        config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    recommendations: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                title: { type: Type.STRING },
-                                url: { type: Type.STRING },
-                                reason: { type: Type.STRING }
-                            },
-                            required: ['title', 'url', 'reason']
-                        }
-                    }
-                },
-                required: ['recommendations']
-            }
-        }
-    });
+  const response = await generateContentWithRetry({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          recommendations: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                url: { type: Type.STRING },
+                reason: { type: Type.STRING },
+              },
+              required: ['title', 'url', 'reason'],
+            },
+          },
+        },
+        required: ['recommendations'],
+      },
+    },
+  });
 
-    const recommendationsJson = JSON.parse(response.text || '{}');
-    if (!recommendationsJson.recommendations || !Array.isArray(recommendationsJson.recommendations)) {
-        throw new Error("AI returned an invalid format for related channels.");
-    }
+  const recommendationsJson = JSON.parse(response.text || '{}');
+  if (!recommendationsJson.recommendations || !Array.isArray(recommendationsJson.recommendations)) {
+    throw new Error('AI returned an invalid format for related channels.');
+  }
 
-    // Post-processing to ensure URLs are valid channel URLs
-    const validatedRecommendations = await Promise.all(
-        (recommendationsJson.recommendations as RecommendedFeed[]).map(async rec => {
-            const canonicalUrl = await verifyAndGetCanonicalUrl(rec.url);
-            return canonicalUrl ? { ...rec, url: canonicalUrl } : null;
-        })
-    );
+  // Post-processing to ensure URLs are valid channel URLs
+  const validatedRecommendations = await Promise.all(
+    (recommendationsJson.recommendations as RecommendedFeed[]).map(async rec => {
+      const canonicalUrl = await verifyAndGetCanonicalUrl(rec.url);
+      return canonicalUrl ? { ...rec, url: canonicalUrl } : null;
+    })
+  );
 
-    return { recommendations: validatedRecommendations.filter((r): r is RecommendedFeed => r !== null) };
+  return {
+    recommendations: validatedRecommendations.filter((r): r is RecommendedFeed => r !== null),
+  };
 };
 
 export const generateThematicDigest = async (
-    articles: Article[],
-    model: AiModel
+  articles: Article[],
+  model: AiModel
 ): Promise<ThematicDigest> => {
-    const systemInstruction = `You are an expert at creating thematic digests. Your task is to analyze a list of articles, group them by common themes, and provide a summary for each theme.
+  const systemInstruction = `You are an expert at creating thematic digests. Your task is to analyze a list of articles, group them by common themes, and provide a summary for each theme.
     - Identify 2-4 main themes present in the articles.
     - For each theme, provide a title, a concise summary of the theme, a list of relevant keywords, and list the articles that fall under it.
     - Create a main, overarching title for the entire digest.
     - Respond only with the JSON object.`;
 
-    const articleInfo = articles.map(a => `- Title: ${a.title}\n  Description: ${a.description.substring(0, 200)}...`).join('\n');
-    const contents = `Here is a list of articles:\n\n${articleInfo}\n\nPlease create a thematic digest based on them.`;
+  const articleInfo = articles
+    .map(a => `- Title: ${a.title}\n  Description: ${a.description.substring(0, 200)}...`)
+    .join('\n');
+  const contents = `Here is a list of articles:\n\n${articleInfo}\n\nPlease create a thematic digest based on them.`;
 
-    const response = await generateContentWithRetry({
-        model,
-        contents,
-        config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    digestTitle: { type: Type.STRING },
-                    themedGroups: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                themeTitle: { type: Type.STRING },
-                                themeSummary: { type: Type.STRING },
-                                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-                                articles: {
-                                    type: Type.ARRAY,
-                                    items: {
-                                        type: Type.OBJECT,
-                                        properties: {
-                                            title: { type: Type.STRING }
-                                        },
-                                        required: ['title']
-                                    }
-                                }
-                            },
-                            required: ['themeTitle', 'themeSummary', 'keywords', 'articles']
-                        }
-                    }
+  const response = await generateContentWithRetry({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          digestTitle: { type: Type.STRING },
+          themedGroups: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                themeTitle: { type: Type.STRING },
+                themeSummary: { type: Type.STRING },
+                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+                articles: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      title: { type: Type.STRING },
+                    },
+                    required: ['title'],
+                  },
                 },
-                required: ['digestTitle', 'themedGroups']
+              },
+              required: ['themeTitle', 'themeSummary', 'keywords', 'articles'],
+            },
+          },
+        },
+        required: ['digestTitle', 'themedGroups'],
+      },
+    },
+  });
+
+  const digestJson = JSON.parse(response.text || '{}');
+  if (!digestJson.digestTitle || !Array.isArray(digestJson.themedGroups)) {
+    throw new Error('AI returned an invalid format for the thematic digest.');
+  }
+
+  // Map article titles from response back to full article objects
+  const articlesByTitle = new Map(articles.map(a => [a.title, a]));
+  digestJson.themedGroups.forEach((group: any) => {
+    group.articles = group.articles
+      .map((articleInfo: { title: string }) => {
+        const fullArticle = articlesByTitle.get(articleInfo.title);
+        return fullArticle
+          ? {
+              id: fullArticle.id,
+              feedId: fullArticle.feedId,
+              title: fullArticle.title,
+              link: fullArticle.link,
             }
-        }
-    });
+          : null;
+      })
+      .filter((a: any) => a !== null);
+  });
 
-    const digestJson = JSON.parse(response.text || '{}');
-    if (!digestJson.digestTitle || !Array.isArray(digestJson.themedGroups)) {
-        throw new Error("AI returned an invalid format for the thematic digest.");
-    }
-
-    // Map article titles from response back to full article objects
-    const articlesByTitle = new Map(articles.map(a => [a.title, a]));
-    digestJson.themedGroups.forEach((group: any) => {
-        group.articles = group.articles
-            .map((articleInfo: { title: string }) => {
-                const fullArticle = articlesByTitle.get(articleInfo.title);
-                return fullArticle ? { id: fullArticle.id, feedId: fullArticle.feedId, title: fullArticle.title, link: fullArticle.link } : null;
-            })
-            .filter((a: any) => a !== null);
-    });
-
-    return digestJson as ThematicDigest;
+  return digestJson as ThematicDigest;
 };
 
-export const translateText = async (text: string, targetLanguage: string, model: AiModel): Promise<string> => {
-    const systemInstruction = `You are a helpful translation assistant. Translate the given text into ${targetLanguage}.
+export const translateText = async (
+  text: string,
+  targetLanguage: string,
+  model: AiModel
+): Promise<string> => {
+  const systemInstruction = `You are a helpful translation assistant. Translate the given text into ${targetLanguage}.
     - Respond only with the translated text. Do not add any extra phrases like "Here is the translation:".
     - Preserve the original formatting (e.g., paragraphs) as best as possible.`;
 
-    const contents = text;
+  const contents = text;
 
-    const response = await generateContentWithRetry({ model, contents, config: { systemInstruction } });
-    const translatedText = response.text;
+  const response = await generateContentWithRetry({
+    model,
+    contents,
+    config: { systemInstruction },
+  });
+  const translatedText = response.text;
 
-    if (!translatedText) throw new Error("Translation failed: AI did not return any text.");
+  if (!translatedText) throw new Error('Translation failed: AI did not return any text.');
 
-    return translatedText;
+  return translatedText;
 };
 
-export const translateStructuredSummary = async (summary: StructuredVideoSummary, targetLanguage: string, model: AiModel): Promise<StructuredVideoSummary> => {
-    const systemInstruction = `You are a translation assistant specializing in structured summaries. Translate the 'overallSummary', and the 'title' and 'summary' for each section into ${targetLanguage}.
+export const translateStructuredSummary = async (
+  summary: StructuredVideoSummary,
+  targetLanguage: string,
+  model: AiModel
+): Promise<StructuredVideoSummary> => {
+  const systemInstruction = `You are a translation assistant specializing in structured summaries. Translate the 'overallSummary', and the 'title' and 'summary' for each section into ${targetLanguage}.
     - Respond *only* with the translated JSON object, maintaining the original structure and keys.
     - Keep the 'timestamp' values exactly as they are.`;
 
-    const contents = JSON.stringify(summary);
+  const contents = JSON.stringify(summary);
 
-    const response = await generateContentWithRetry({
-        model,
-        contents,
-        config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    overallSummary: { type: Type.STRING },
-                    sections: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                timestamp: { type: Type.NUMBER },
-                                title: { type: Type.STRING },
-                                summary: { type: Type.STRING }
-                            },
-                            required: ['timestamp', 'title', 'summary']
-                        }
-                    }
-                },
-                required: ['overallSummary', 'sections']
-            }
-        }
-    });
+  const response = await generateContentWithRetry({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          overallSummary: { type: Type.STRING },
+          sections: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                timestamp: { type: Type.NUMBER },
+                title: { type: Type.STRING },
+                summary: { type: Type.STRING },
+              },
+              required: ['timestamp', 'title', 'summary'],
+            },
+          },
+        },
+        required: ['overallSummary', 'sections'],
+      },
+    },
+  });
 
-    const translatedJson = JSON.parse(response.text || '{}');
-    if (!translatedJson.overallSummary || !Array.isArray(translatedJson.sections)) {
-        throw new Error("AI returned an invalid format for the translated structured summary.");
+  const translatedJson = JSON.parse(response.text || '{}');
+  if (!translatedJson.overallSummary || !Array.isArray(translatedJson.sections)) {
+    throw new Error('AI returned an invalid format for the translated structured summary.');
+  }
+
+  return translatedJson as StructuredVideoSummary;
+};
+
+export const translateDetailedDigest = async (
+  digest: DetailedDigest,
+  targetLanguage: string,
+  model: AiModel
+): Promise<DetailedDigest> => {
+  const translationPromises = digest.map(async item => {
+    if (typeof item.summary === 'string') {
+      const translatedSummary = await translateText(item.summary, targetLanguage, model);
+      return { ...item, summary: translatedSummary };
+    } else {
+      const translatedStructuredSummary = await translateStructuredSummary(
+        item.summary,
+        targetLanguage,
+        model
+      );
+      return { ...item, summary: translatedStructuredSummary };
     }
+  });
 
-    return translatedJson as StructuredVideoSummary;
+  return Promise.all(translationPromises);
 };
 
-export const translateDetailedDigest = async (digest: DetailedDigest, targetLanguage: string, model: AiModel): Promise<DetailedDigest> => {
-    const translationPromises = digest.map(async (item) => {
-        if (typeof item.summary === 'string') {
-            const translatedSummary = await translateText(item.summary, targetLanguage, model);
-            return { ...item, summary: translatedSummary };
-        } else {
-            const translatedStructuredSummary = await translateStructuredSummary(item.summary, targetLanguage, model);
-            return { ...item, summary: translatedStructuredSummary };
-        }
-    });
-
-    return Promise.all(translationPromises);
-};
-
-export const translateThematicDigest = async (digest: ThematicDigest, targetLanguage: string, model: AiModel): Promise<ThematicDigest> => {
-    const systemInstruction = `You are a translation assistant. Translate the 'digestTitle', and the 'themeTitle' and 'themeSummary' for each group into ${targetLanguage}.
+export const translateThematicDigest = async (
+  digest: ThematicDigest,
+  targetLanguage: string,
+  model: AiModel
+): Promise<ThematicDigest> => {
+  const systemInstruction = `You are a translation assistant. Translate the 'digestTitle', and the 'themeTitle' and 'themeSummary' for each group into ${targetLanguage}.
     - Do NOT translate the 'keywords' or any article 'title' or 'link'.
     - Respond *only* with the translated JSON object, maintaining the original structure.`;
 
-    const contents = JSON.stringify(digest);
+  const contents = JSON.stringify(digest);
 
-    const response = await generateContentWithRetry({
-        model,
-        contents,
-        config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    digestTitle: { type: Type.STRING },
-                    themedGroups: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                themeTitle: { type: Type.STRING },
-                                themeSummary: { type: Type.STRING },
-                                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-                                articles: {
-                                    type: Type.ARRAY,
-                                    items: {
-                                        type: Type.OBJECT,
-                                        properties: {
-                                            id: { type: Type.STRING },
-                                            feedId: { type: Type.STRING },
-                                            title: { type: Type.STRING },
-                                            link: { type: Type.STRING }
-                                        },
-                                        required: ['id', 'feedId', 'title']
-                                    }
-                                }
-                            },
-                            required: ['themeTitle', 'themeSummary', 'keywords', 'articles']
-                        }
-                    }
+  const response = await generateContentWithRetry({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          digestTitle: { type: Type.STRING },
+          themedGroups: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                themeTitle: { type: Type.STRING },
+                themeSummary: { type: Type.STRING },
+                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+                articles: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      id: { type: Type.STRING },
+                      feedId: { type: Type.STRING },
+                      title: { type: Type.STRING },
+                      link: { type: Type.STRING },
+                    },
+                    required: ['id', 'feedId', 'title'],
+                  },
                 },
-                required: ['digestTitle', 'themedGroups']
-            }
-        }
-    });
+              },
+              required: ['themeTitle', 'themeSummary', 'keywords', 'articles'],
+            },
+          },
+        },
+        required: ['digestTitle', 'themedGroups'],
+      },
+    },
+  });
 
-    const translatedJson = JSON.parse(response.text || '{}');
-    if (!translatedJson.digestTitle || !Array.isArray(translatedJson.themedGroups)) {
-        throw new Error("AI returned an invalid format for the translated thematic digest.");
-    }
+  const translatedJson = JSON.parse(response.text || '{}');
+  if (!translatedJson.digestTitle || !Array.isArray(translatedJson.themedGroups)) {
+    throw new Error('AI returned an invalid format for the translated thematic digest.');
+  }
 
-    return translatedJson as ThematicDigest;
+  return translatedJson as ThematicDigest;
 };
 
 export const generatePageViewDigest = async (
-    articles: { id: string, feedId: string, title: string, link: string | null, content: string }[],
-    model: AiModel
-): Promise<{ digestTitle: string, digestContent: string }> => {
-    const systemInstruction = `You are an expert at synthesizing information. Your task is to analyze a list of article titles and brief descriptions, then generate a single, cohesive digest in Markdown format.
+  articles: { id: string; feedId: string; title: string; link: string | null; content: string }[],
+  model: AiModel
+): Promise<{ digestTitle: string; digestContent: string }> => {
+  const systemInstruction = `You are an expert at synthesizing information. Your task is to analyze a list of article titles and brief descriptions, then generate a single, cohesive digest in Markdown format.
     - Start with an overall title for the digest (e.g., "Digest of Recent Tech News").
     - Group related articles under thematic subheadings (e.g., "## AI Developments").
     - Under each subheading, write a 1-2 paragraph summary of that theme.
     - After the summary, list the relevant articles as bullet points with Markdown links.
     - Respond only with the generated title and content.`;
 
-    const articleInfo = articles.map(a => `- Title: ${a.title}\n  Content Preview: ${a.content.substring(0, 200)}...`).join('\n');
-    const contents = `Here is a list of articles from the current view:\n\n${articleInfo}\n\nPlease create a digest of this page view.`;
+  const articleInfo = articles
+    .map(a => `- Title: ${a.title}\n  Content Preview: ${a.content.substring(0, 200)}...`)
+    .join('\n');
+  const contents = `Here is a list of articles from the current view:\n\n${articleInfo}\n\nPlease create a digest of this page view.`;
 
-    const response = await generateContentWithRetry({
-        model,
-        contents,
-        config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    digestTitle: { type: Type.STRING },
-                    digestContent: { type: Type.STRING, description: "The full digest content in Markdown format." }
-                },
-                required: ['digestTitle', 'digestContent']
-            }
-        }
-    });
+  const response = await generateContentWithRetry({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          digestTitle: { type: Type.STRING },
+          digestContent: {
+            type: Type.STRING,
+            description: 'The full digest content in Markdown format.',
+          },
+        },
+        required: ['digestTitle', 'digestContent'],
+      },
+    },
+  });
 
-    const digestJson = JSON.parse(response.text || '{}');
-    if (!digestJson.digestTitle || !digestJson.digestContent) {
-        throw new Error("AI returned an invalid format for the page view digest.");
-    }
+  const digestJson = JSON.parse(response.text || '{}');
+  if (!digestJson.digestTitle || !digestJson.digestContent) {
+    throw new Error('AI returned an invalid format for the page view digest.');
+  }
 
-    // Add source links to the bottom of the content
-    const sourceLinks = articles.map(a => `- [${a.title}](${a.link})`).join('\n');
-    digestJson.digestContent += `\n\n---\n\n## Original Sources\n${sourceLinks}`;
+  // Add source links to the bottom of the content
+  const sourceLinks = articles.map(a => `- [${a.title}](${a.link})`).join('\n');
+  digestJson.digestContent += `\n\n---\n\n## Original Sources\n${sourceLinks}`;
 
-    return digestJson;
+  return digestJson;
 };

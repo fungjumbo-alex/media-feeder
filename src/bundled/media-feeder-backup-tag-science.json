@@ -1,4 +1,3 @@
-
 {
   "feeds": [
     {
@@ -9,9 +8,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "SCIENCE"
-      ]
+      "tags": ["SCIENCE"]
     },
     {
       "url": "https://www.youtube.com/channel/UCK-0srt5hdY5m6Zos_NlJZg/home",
@@ -21,9 +18,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "SCIENCE"
-      ]
+      "tags": ["SCIENCE"]
     },
     {
       "url": "https://www.youtube.com/channel/UC-9b7aDP6ZN0coj9-xFnrtw/home",
@@ -33,9 +28,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "SCIENCE"
-      ]
+      "tags": ["SCIENCE"]
     }
   ],
   "readLaterArticleIds": [],

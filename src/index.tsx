@@ -1,7 +1,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
+ */
 
 // --- Environment Variable Polyfill ---
 // This section handles the secure loading of environment variables.
@@ -33,7 +33,6 @@ if (typeof (window as any).process.env === 'undefined') {
   (window as any).process.env = decompressEnv();
 }
 // --- End Polyfill ---
-
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -76,16 +75,19 @@ console.error = (...args) => {
 
   // GSI auth error - show helpful message
   if (errorStr.includes('[GSI_LOGGER]: The given origin is not allowed')) {
-    window.dispatchEvent(new CustomEvent('gsi_auth_error', {
-      detail: {
-        message: "Sign-in failed: This app's URL is not authorized. Please add your URL (origin) to the 'Authorized JavaScript origins' list in your Google Cloud project's OAuth settings."
-      }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('gsi_auth_error', {
+        detail: {
+          message:
+            "Sign-in failed: This app's URL is not authorized. Please add your URL (origin) to the 'Authorized JavaScript origins' list in your Google Cloud project's OAuth settings.",
+        },
+      })
+    );
   }
 
   // Suppress non-critical third-party errors
   const suppressedPatterns = [
-    'Failed to execute \'postMessage\' on \'DOMWindow\'', // YouTube iframe API
+    "Failed to execute 'postMessage' on 'DOMWindow'", // YouTube iframe API
     'getVideoUrl is not a function', // YouTube player API
     'Trustpilot', // Trustpilot browser extension
     'browserextension.trustpilot.com', // Trustpilot extension
@@ -102,10 +104,14 @@ console.error = (...args) => {
 };
 
 // Add a global handler for unhandled promise rejections to catch specific, benign errors.
-window.addEventListener('unhandledrejection', (event) => {
+window.addEventListener('unhandledrejection', event => {
   // This error often originates from third-party scripts (like GSI) in an extension-like environment.
   // It's benign and can be safely ignored to prevent console noise.
-  if (event.reason && typeof event.reason.message === 'string' && event.reason.message.includes('Receiving end does not exist')) {
+  if (
+    event.reason &&
+    typeof event.reason.message === 'string' &&
+    event.reason.message.includes('Receiving end does not exist')
+  ) {
     event.preventDefault();
   }
 });
@@ -113,7 +119,7 @@ window.addEventListener('unhandledrejection', (event) => {
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   console.error('Root element #root not found!');
-  throw new Error("Could not find root element to mount to");
+  throw new Error('Could not find root element to mount to');
 }
 
 const root = ReactDOM.createRoot(rootElement);

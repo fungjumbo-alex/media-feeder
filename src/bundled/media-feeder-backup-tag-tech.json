@@ -1,4 +1,3 @@
-
 {
   "feeds": [
     {
@@ -9,11 +8,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "CHINESE",
-        "GADGETS",
-        "TECH"
-      ]
+      "tags": ["CHINESE", "GADGETS", "TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCBCA9oEjXph18jir5USpvBw/home",
@@ -23,11 +18,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "AI",
-        "CHINESE",
-        "TECH"
-      ]
+      "tags": ["AI", "CHINESE", "TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCNoGPh6-xT7afBoudgrx56Q/home",
@@ -37,10 +28,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "GADGETS",
-        "TECH"
-      ]
+      "tags": ["GADGETS", "TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCBj9S8TBRlCU4QnhTEOdWZQ/home",
@@ -50,11 +38,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "AI",
-        "CHINESE",
-        "TECH"
-      ]
+      "tags": ["AI", "CHINESE", "TECH"]
     },
     {
       "url": "https://applefans.today/feed",
@@ -64,9 +48,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCrB7UFnkosBjAhOg3a9NdWw/home",
@@ -76,11 +58,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "AI",
-        "CHINESE",
-        "TECH"
-      ]
+      "tags": ["AI", "CHINESE", "TECH"]
     },
     {
       "url": "https://www.techradar.com/rss",
@@ -89,9 +67,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCXuqSBlHAE6Xw-yeJA0Tunw/home",
@@ -101,9 +77,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://techcrunch.com/feed/",
@@ -113,9 +87,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.theverge.com/rss/index.xml",
@@ -125,9 +97,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.engadget.com/rss.xml",
@@ -137,9 +107,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://9to5google.com/feed/",
@@ -149,9 +117,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://appleinsider.com/appleinsider.rss",
@@ -161,9 +127,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://9to5mac.com/feed/",
@@ -173,9 +137,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.macworld.com/feed",
@@ -185,9 +147,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCi7eZm4CkFiLEZ4tF4Er4lA/home",
@@ -197,9 +157,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://pc3mag.com/feed/",
@@ -209,9 +167,7 @@
       "maxArticles": 50,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCvijahEyGtvMpmMHBu4FS2w/home",
@@ -221,9 +177,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": true,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCUUNkL6Wke6i0P6funa7wdQ/home",
@@ -233,9 +187,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCiQMYozSSTkJ2twtZM1bG9w/home",
@@ -245,9 +197,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "TECH"
-      ]
+      "tags": ["TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCQdcRL5X4RFIeLPJ2zkjoVA/home",
@@ -257,10 +207,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "GADGETS",
-        "TECH"
-      ]
+      "tags": ["GADGETS", "TECH"]
     },
     {
       "url": "https://www.youtube.com/channel/UCwT6qe78ElbbWswiDQqJMlw/home",
@@ -270,10 +217,7 @@
       "maxArticles": 5,
       "isPlaylist": false,
       "isFavorite": false,
-      "tags": [
-        "CANTONESE",
-        "GADGETS"
-      ]
+      "tags": ["CANTONESE", "GADGETS"]
     },
     {
       "url": "https://www.youtube.com/channel/UCZgwgJ1i9ywc2UweRwp09gg/home",
@@ -282,10 +226,7 @@
       "iconUrl": "https://www.youtube.com/s/desktop/477ecd89/img/logos/favicon.ico",
       "maxArticles": 5,
       "isPlaylist": false,
-      "tags": [
-        "CANTONESE",
-        "TECH"
-      ]
+      "tags": ["CANTONESE", "TECH"]
     }
   ],
   "readLaterArticleIds": [],
