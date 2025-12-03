@@ -53,10 +53,19 @@ console.log = (...args) => {
 
 const originalWarn = console.warn;
 console.warn = (...args) => {
-  // This is a targeted workaround for a benign but noisy deprecation warning from a CSS dependency.
-  if (typeof args[0] === 'string' && args[0].includes('-ms-high-contrast')) {
+  const warnStr = typeof args[0] === 'string' ? args[0] : '';
+
+  // Suppress specific warnings
+  const suppressedPatterns = [
+    '-ms-high-contrast', // CSS deprecation warning
+    'autocomplete attributes', // DOM autocomplete suggestions
+    '[DOM]', // DOM-related warnings
+  ];
+
+  if (suppressedPatterns.some(pattern => warnStr.includes(pattern))) {
     return;
   }
+
   originalWarn(...args);
 };
 
@@ -81,7 +90,8 @@ console.error = (...args) => {
     'Trustpilot', // Trustpilot browser extension
     'browserextension.trustpilot.com', // Trustpilot extension
     '<polyline> attribute points', // React DOM warnings (already fixed)
-    'Violation', // Performance violations (informational only)
+    '[Violation]', // Performance violations (informational only)
+    'handler took', // Performance timing messages
   ];
 
   if (suppressedPatterns.some(pattern => errorStr.includes(pattern))) {
