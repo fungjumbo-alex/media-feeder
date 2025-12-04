@@ -48,6 +48,7 @@ import { AdvancedInfoModal } from './components/AdvancedInfoModal';
 import { TagFilterBar } from './components/TagFilterBar';
 import { DigestConfigModal } from './components/DigestConfigModal';
 import { ImportYouTubeModal } from './components/ImportYouTubeModal';
+import { MindmapModal } from './components/MindmapModal';
 import { BundledChannelsModal } from './components/BundledChannelsModal';
 import { ClearDataModal } from './components/ClearDataModal';
 import { PrivacyPolicyContent } from './components/PrivacyPolicyContent';
@@ -86,6 +87,7 @@ const ResolvingUrlLoader: React.FC = () => (
 
 const App: React.FC = () => {
   const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = React.useState(false);
+  const [isMindmapModalOpen, setIsMindmapModalOpen] = React.useState(false);
   const [selectedArticleIndex, setSelectedArticleIndex] = React.useState<number>(-1);
 
   const {
@@ -380,7 +382,7 @@ const App: React.FC = () => {
       <ErrorBoundary
         fallback={<ErrorFallback error={new Error('Sidebar error')} componentName="Sidebar" />}
       >
-        <Sidebar />
+        <Sidebar onOpenMindmap={() => setIsMindmapModalOpen(true)} />
       </ErrorBoundary>
       <ErrorBoundary
         fallback={
@@ -824,6 +826,15 @@ const App: React.FC = () => {
             <InactiveFeedsContent />
           ) : contentView === 'dump' ? (
             <DumpContent />
+          ) : isMindmapModalOpen ? (
+            <div className="flex-1 overflow-hidden">
+              <MindmapModal
+                isOpen={true}
+                onClose={() => setIsMindmapModalOpen(false)}
+                articles={articlesToShow}
+                onOpenArticle={handleOpenArticle}
+              />
+            </div>
           ) : contentView === 'privacyPolicy' ? (
             <PrivacyPolicyContent />
           ) : contentView === 'about' ? (
@@ -882,7 +893,7 @@ const App: React.FC = () => {
         <BundledChannelsModal />
         <ClearDataModal />
         <SyncDataModal />
-        <ActionsMenuModal />
+        <ActionsMenuModal onOpenMindmap={() => setIsMindmapModalOpen(true)} />
         <NoteEditorModal />
         <TrendingKeywordsModal />
         <EpubSettingsModal />

@@ -15,6 +15,7 @@ import type {
   StructuredVideoSummary,
   Feed,
   Article,
+  MindmapHierarchy,
 } from '../types';
 
 let ai: GoogleGenAI | null = null;
@@ -585,11 +586,11 @@ export const generateThematicDigest = async (
         const fullArticle = articlesByTitle.get(articleInfo.title);
         return fullArticle
           ? {
-              id: fullArticle.id,
-              feedId: fullArticle.feedId,
-              title: fullArticle.title,
-              link: fullArticle.link,
-            }
+            id: fullArticle.id,
+            feedId: fullArticle.feedId,
+            title: fullArticle.title,
+            link: fullArticle.link,
+          }
           : null;
       })
       .filter((a: any) => a !== null);
@@ -796,4 +797,67 @@ export const generatePageViewDigest = async (
   digestJson.digestContent += `\n\n---\n\n## Original Sources\n${sourceLinks}`;
 
   return digestJson;
+};
+
+export const generateMindmapHierarchy = async (
+  articles: Article[],
+  model: AiModel
+): Promise<MindmapHierarchy> => {
+  const systemInstruction = `You are an expert knowledge organizer. Your task is to analyze a list of articles and organize them into a structured, hierarchical mindmap.
+    - Group the articles into 3-8 main high-level topics (Root Topics).
+    - For each Root Topic, create 2-5 Sub-topics if necessary to further organize the content.
+    - Assign every article to exactly one Sub-topic (or directly to a Root Topic if it fits best there).
+    - Ensure the topics are meaningful, descriptive, and capture the essence of the content.
+    - Handle multi-lingual content gracefully - group by topic, not just by language (unless "Language" is a relevant topic).
+    - Respond *only* with the JSON object.`;
+
+  const articleList = articles
+    .map(a => `- ID: ${a.id}\n  Title: ${a.title}\n  Description: ${a.description?.substring(0, 100)}...`)
+    .join('\n');
+
+  const contents = `Here is the list of articles to organize:\n\n${articleList}\n\nPlease generate a hierarchical mindmap structure.`;
+
+  const response = await generateContentWithRetry({
+    model,
+    contents,
+    config: {
+      systemInstruction,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          rootTopics: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                subTopics: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      title: { type: Type.STRING },
+                      articleIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    },
+                    required: ['title', 'articleIds'],
+                  },
+                },
+                articleIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+              },
+              required: ['title', 'subTopics', 'articleIds'],
+            },
+          },
+        },
+        required: ['rootTopics'],
+      },
+    },
+  });
+
+  const hierarchyJson = JSON.parse(response.text || '{}');
+  if (!hierarchyJson.rootTopics || !Array.isArray(hierarchyJson.rootTopics)) {
+    throw new Error('AI returned an invalid format for the mindmap hierarchy.');
+  }
+
+  return hierarchyJson as MindmapHierarchy;
 };

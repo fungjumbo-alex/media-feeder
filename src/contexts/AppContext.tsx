@@ -3536,6 +3536,10 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         );
         needsDeduplication = true;
         break;
+      case 'ai-summary-yt':
+        rawArticles = allArticles.filter(a => a.isVideo && a.structuredSummary);
+        needsDeduplication = true;
+        break;
       default:
         rawArticles = [];
     }

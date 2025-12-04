@@ -592,13 +592,9 @@ export const ArticleModal: React.FC = () => {
         } else {
           handleClose();
         }
-      } else if (event.key === 'ArrowRight' && articleNavigation.hasNextArticle && !isTheaterMode) {
+      } else if (event.key === 'ArrowRight' && articleNavigation.hasNextArticle) {
         articleNavigation.onNextArticle();
-      } else if (
-        event.key === 'ArrowLeft' &&
-        articleNavigation.hasPreviousArticle &&
-        !isTheaterMode
-      ) {
+      } else if (event.key === 'ArrowLeft' && articleNavigation.hasPreviousArticle) {
         articleNavigation.onPreviousArticle();
       } else if (event.key.toLowerCase() === 'r') {
         handleToggleReadLater(article.id);
@@ -616,7 +612,15 @@ export const ArticleModal: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [article, handleClose, articleNavigation, isTheaterMode]);
+  }, [
+    article,
+    handleClose,
+    articleNavigation,
+    isTheaterMode,
+    handleToggleReadLater,
+    handleLikeVideo,
+    setActiveTab,
+  ]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     const isInsideVideo = videoPlayerContainerRef.current?.contains(e.target as Node) ?? false;

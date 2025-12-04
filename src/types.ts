@@ -205,3 +205,43 @@ export const TRANSLATION_LANGUAGES = [
   { code: 'Hebrew', name: 'עברית (Hebrew)' },
   { code: 'Ukrainian', name: 'Українська (Ukrainian)' },
 ] as const;
+
+// Mindmap types
+export interface MindmapNode {
+  id: string;
+  type: 'video' | 'topic';
+  data: {
+    label: string;
+    article?: Article;
+    topic?: string;
+    articles?: Article[];
+    color?: string;
+    isSubTopic?: boolean;
+    isCollapsed?: boolean;
+  };
+  position: { x: number; y: number };
+}
+
+export interface MindmapEdge {
+  id: string;
+  source: string;
+  target: string;
+  type?: 'similarity' | 'topic';
+  animated?: boolean;
+}
+
+export interface MindmapGraph {
+  nodes: MindmapNode[];
+  edges: MindmapEdge[];
+}
+
+export interface MindmapHierarchy {
+  rootTopics: {
+    title: string;
+    subTopics: {
+      title: string;
+      articleIds: string[];
+    }[];
+    articleIds: string[];
+  }[];
+}

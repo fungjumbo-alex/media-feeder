@@ -318,9 +318,9 @@ const TagWithFeeds: React.FC<{
 
   const isActive = isFavorites
     ? currentView.type === 'favorites' &&
-      (currentView.value === tagType || (currentView.value === 'yt' && tagType === 'youtube'))
+    (currentView.value === tagType || (currentView.value === 'yt' && tagType === 'youtube'))
     : currentView.type === 'tag' &&
-      JSON.stringify(currentView.value) === JSON.stringify({ name: tag, type: tagType });
+    JSON.stringify(currentView.value) === JSON.stringify({ name: tag, type: tagType });
 
   if (isFavorites && feedsForDisplay.length === 0) {
     return null;
@@ -472,7 +472,7 @@ const ViewWithFeeds: React.FC<{
   );
 };
 
-export const Sidebar: React.FC = () => {
+export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap }) => {
   const {
     sortedFeeds,
     currentView,
@@ -631,11 +631,10 @@ export const Sidebar: React.FC = () => {
 
   return (
     <aside
-      className={`bg-gray-800 text-gray-300 flex flex-col transition-all duration-300 ease-in-out z-30 ${
-        isMobileView
-          ? `fixed h-full ${isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0 w-64 shadow-xl'}`
-          : `flex-shrink-0 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`
-      }`}
+      className={`bg-gray-800 text-gray-300 flex flex-col transition-all duration-300 ease-in-out z-30 ${isMobileView
+        ? `fixed h-full ${isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0 w-64 shadow-xl'}`
+        : `flex-shrink-0 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`
+        }`}
     >
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-700 flex-shrink-0">
         {!isSidebarCollapsed && (
@@ -742,6 +741,15 @@ export const Sidebar: React.FC = () => {
               count={unreadAiSummaryYtCount}
             />
           )}
+          <Tooltip text="Mindmap" isVisible={isSidebarCollapsed && !isMobileView}>
+            <button
+              onClick={onOpenMindmap}
+              className="flex items-center w-full px-3 py-2 text-sm rounded-md transition-colors text-gray-400 hover:bg-gray-700/50 hover:text-white"
+            >
+              <GridViewIcon className="w-5 h-5" />
+              {!isSidebarCollapsed && <span className="ml-3 flex-1 truncate text-left">Mindmap</span>}
+            </button>
+          </Tooltip>
         </SidebarSection>
 
         {sidebarTab === 'yt' && (youtubeTags.length > 0 || favoriteFeeds.some(isYouTubeFeed)) && (

@@ -30,7 +30,7 @@ const MenuButton: React.FC<{
   </button>
 );
 
-export const ActionsMenuModal: React.FC = () => {
+export const ActionsMenuModal: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap }) => {
   const {
     isActionsMenuOpen,
     setIsActionsMenuOpen,
@@ -99,6 +99,11 @@ export const ActionsMenuModal: React.FC = () => {
         label="Add Channel Bundles"
       />
       <div className="my-1 border-t border-gray-700"></div>
+      <MenuButton
+        onClick={createMenuAction(onOpenMindmap)}
+        icon={TrendingUpIcon}
+        label="View as Mindmap"
+      />
       <MenuButton
         onClick={createMenuAction(() => setIsTrendingKeywordsModalOpen(true))}
         icon={TrendingUpIcon}
