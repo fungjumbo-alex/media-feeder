@@ -76,10 +76,13 @@ const NavItem: React.FC<{
   count?: number;
   isTabbed?: boolean;
   currentTab?: 'yt' | 'rss';
-}> = ({ type, value, icon: Icon, label, count, isTabbed = false, currentTab }) => {
+  forceInactive?: boolean;
+  onCloseMindmap?: () => void;
+}> = ({ type, value, icon: Icon, label, count, isTabbed = false, currentTab, ...props }) => {
   const { handleViewChange, currentView, isSidebarCollapsed, isMobileView } = useAppContext();
 
   const handleClick = () => {
+    if (props.onCloseMindmap) props.onCloseMindmap();
     if (isTabbed) handleViewChange(type, currentTab);
     else handleViewChange(type, value);
   };
@@ -99,6 +102,11 @@ const NavItem: React.FC<{
   } else if (currentView.type === type) {
     finalIsActive = !currentView.value || currentView.value === currentTab;
   } else {
+    finalIsActive = false;
+  }
+
+  // If mindmap is open, nothing else should be active
+  if (props.forceInactive) {
     finalIsActive = false;
   }
 
@@ -160,7 +168,11 @@ const getHash = (str: string): number => {
   return hash;
 };
 
-const SidebarFeedIcon: React.FC<{ feed: Feed; count: number }> = ({ feed, count }) => {
+const SidebarFeedIcon: React.FC<{ feed: Feed; count: number; onCloseMindmap?: () => void }> = ({
+  feed,
+  count,
+  onCloseMindmap,
+}) => {
   const { handleSelectFeed, currentView } = useAppContext();
   const [hasError, setHasError] = useState(false);
   const unreadCount = count;
@@ -184,7 +196,10 @@ const SidebarFeedIcon: React.FC<{ feed: Feed; count: number }> = ({ feed, count 
   return (
     <Tooltip text={feed.title} isVisible={true}>
       <button
-        onClick={() => handleSelectFeed(feed.id)}
+        onClick={() => {
+          if (onCloseMindmap) onCloseMindmap();
+          handleSelectFeed(feed.id);
+        }}
         className={`relative aspect-square w-full bg-gray-700 rounded-md overflow-hidden transform z-0 hover:scale-125 hover:z-10 transition-transform duration-200 focus:outline-none focus:ring-2 ring-offset-2 ring-offset-gray-800 ring-indigo-500 ${isActive ? 'ring-2 ring-indigo-500' : ''}`}
         title={feed.title}
       >
@@ -212,7 +227,8 @@ const FeedsList: React.FC<{
   feeds: Feed[];
   typeFilter: (feed: Feed) => boolean;
   viewUnreadCounts?: Record<string, number>;
-}> = ({ feeds, typeFilter, viewUnreadCounts }) => {
+  onCloseMindmap?: () => void;
+}> = ({ feeds, typeFilter, viewUnreadCounts, onCloseMindmap }) => {
   const { unreadCounts, sidebarFeedsView } = useAppContext();
   const filteredFeeds = useMemo(() => feeds.filter(typeFilter), [feeds, typeFilter]);
   if (filteredFeeds.length === 0) return null;
@@ -224,7 +240,14 @@ const FeedsList: React.FC<{
           const count = viewUnreadCounts
             ? viewUnreadCounts[feed.id] || 0
             : unreadCounts[feed.id] || 0;
-          return <SidebarFeedIcon key={feed.id} feed={feed} count={count} />;
+          return (
+            <SidebarFeedIcon
+              key={feed.id}
+              feed={feed}
+              count={count}
+              onCloseMindmap={onCloseMindmap}
+            />
+          );
         })}
       </div>
     );
@@ -252,6 +275,7 @@ const FeedsList: React.FC<{
             }
             label={feed.title}
             count={count}
+            onCloseMindmap={onCloseMindmap}
           />
         );
       })}
@@ -263,7 +287,8 @@ const TagWithFeeds: React.FC<{
   tag: string;
   unreadCount: number;
   tagType: 'youtube' | 'rss';
-}> = ({ tag, unreadCount, tagType }) => {
+  onCloseMindmap?: () => void;
+}> = ({ tag, unreadCount, tagType, onCloseMindmap }) => {
   const {
     currentView,
     handleViewChange,
@@ -303,6 +328,7 @@ const TagWithFeeds: React.FC<{
 
   const handleNavClick = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (onCloseMindmap) onCloseMindmap();
     if (isFavorites) {
       handleViewChange('favorites', tagType);
     } else {
@@ -360,7 +386,11 @@ const TagWithFeeds: React.FC<{
       </Tooltip>
       {isExpanded && !isSidebarCollapsed && feedsForDisplay.length > 0 && (
         <div className="pl-4 pt-1">
-          <FeedsList feeds={feedsForDisplay} typeFilter={() => true} />
+          <FeedsList
+            feeds={feedsForDisplay}
+            typeFilter={() => true}
+            onCloseMindmap={onCloseMindmap}
+          />
         </div>
       )}
     </div>
@@ -373,7 +403,8 @@ const ViewWithFeeds: React.FC<{
   label: string;
   totalUnreadCount: number;
   currentTab: 'yt' | 'rss';
-}> = ({ viewType, icon: Icon, label, totalUnreadCount, currentTab }) => {
+  onCloseMindmap?: () => void;
+}> = ({ viewType, icon: Icon, label, totalUnreadCount, currentTab, onCloseMindmap }) => {
   const {
     currentView,
     handleViewChange,
@@ -411,6 +442,7 @@ const ViewWithFeeds: React.FC<{
 
   const handleNavClick = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (onCloseMindmap) onCloseMindmap();
     handleViewChange(viewType, currentTab);
   };
 
@@ -465,6 +497,7 @@ const ViewWithFeeds: React.FC<{
             feeds={filteredFeedsForDisplay}
             typeFilter={() => true}
             viewUnreadCounts={viewUnreadCounts}
+            onCloseMindmap={onCloseMindmap}
           />
         </div>
       )}
@@ -472,7 +505,11 @@ const ViewWithFeeds: React.FC<{
   );
 };
 
-export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap }) => {
+export const Sidebar: React.FC<{
+  onOpenMindmap: () => void;
+  isMindmapOpen: boolean;
+  onCloseMindmap: () => void;
+}> = ({ onOpenMindmap, isMindmapOpen, onCloseMindmap }) => {
   const {
     sortedFeeds,
     currentView,
@@ -599,6 +636,7 @@ export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap
           tag="__FAVORITES__"
           unreadCount={unreadFavs}
           tagType={tagType}
+          onCloseMindmap={onCloseMindmap}
         />
         {tags.map(tag => (
           <TagWithFeeds
@@ -606,6 +644,7 @@ export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap
             tag={tag}
             unreadCount={unreadTagCounts[tag] || 0}
             tagType={tagType}
+            onCloseMindmap={onCloseMindmap}
           />
         ))}
       </>
@@ -708,6 +747,8 @@ export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap
             label="All Subscriptions"
             currentTab={sidebarTab}
             isTabbed={true}
+            forceInactive={isMindmapOpen}
+            onCloseMindmap={onCloseMindmap}
           />
           <ViewWithFeeds
             viewType="published-today"
@@ -717,6 +758,7 @@ export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap
               sidebarTab === 'yt' ? unreadPublishedTodayYtCount : unreadPublishedTodayRssCount
             }
             currentTab={sidebarTab}
+            onCloseMindmap={onCloseMindmap}
           />
           <NavItem
             type="readLater"
@@ -725,6 +767,8 @@ export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap
             count={sidebarTab === 'yt' ? unreadReadLaterYtCount : unreadReadLaterRssCount}
             isTabbed={true}
             currentTab={sidebarTab}
+            forceInactive={isMindmapOpen}
+            onCloseMindmap={onCloseMindmap}
           />
           <ViewWithFeeds
             viewType="history"
@@ -732,6 +776,7 @@ export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap
             label="History"
             totalUnreadCount={sidebarTab === 'yt' ? historyYtCount : historyRssCount}
             currentTab={sidebarTab}
+            onCloseMindmap={onCloseMindmap}
           />
           {sidebarTab === 'yt' && (
             <NavItem
@@ -739,15 +784,20 @@ export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap
               icon={AiSummaryIcon}
               label="YT with AI Summary"
               count={unreadAiSummaryYtCount}
+              forceInactive={isMindmapOpen}
+              onCloseMindmap={onCloseMindmap}
             />
           )}
-          <Tooltip text="Mindmap" isVisible={isSidebarCollapsed && !isMobileView}>
+          <Tooltip text="AI Grouping" isVisible={isSidebarCollapsed && !isMobileView}>
             <button
               onClick={onOpenMindmap}
-              className="flex items-center w-full px-3 py-2 text-sm rounded-md transition-colors text-gray-400 hover:bg-gray-700/50 hover:text-white"
+              className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-colors ${isMindmapOpen
+                ? 'bg-gray-700 text-white'
+                : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
+                }`}
             >
               <GridViewIcon className="w-5 h-5" />
-              {!isSidebarCollapsed && <span className="ml-3 flex-1 truncate text-left">Mindmap</span>}
+              {!isSidebarCollapsed && <span className="ml-3 flex-1 truncate text-left">AI Grouping</span>}
             </button>
           </Tooltip>
         </SidebarSection>
@@ -783,14 +833,22 @@ export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap
               isCollapsed={isYoutubeFeedsCollapsed}
               onToggle={onToggleYoutubeFeedsCollapse}
             >
-              <FeedsList feeds={ytFeeds} typeFilter={isYouTubeChannel} />
+              <FeedsList
+                feeds={ytFeeds}
+                typeFilter={isYouTubeChannel}
+                onCloseMindmap={onCloseMindmap}
+              />
             </SidebarSection>
             <SidebarSection
               title="Playlists"
               isCollapsed={isYoutubePlaylistsCollapsed}
               onToggle={onToggleYoutubePlaylistsCollapse}
             >
-              <FeedsList feeds={ytFeeds} typeFilter={isYouTubePlaylist} />
+              <FeedsList
+                feeds={ytFeeds}
+                typeFilter={isYouTubePlaylist}
+                onCloseMindmap={onCloseMindmap}
+              />
             </SidebarSection>
           </>
         ) : (
@@ -829,14 +887,14 @@ export const Sidebar: React.FC<{ onOpenMindmap: () => void }> = ({ onOpenMindmap
                   isCollapsed={isRedditFeedsCollapsed}
                   onToggle={onToggleRedditFeedsCollapse}
                 >
-                  <FeedsList feeds={redditFeeds} typeFilter={() => true} />
+                  <FeedsList feeds={redditFeeds} typeFilter={() => true} onCloseMindmap={onCloseMindmap} />
                 </SidebarSection>
                 <SidebarSection
                   title="Other RSS Feeds"
                   isCollapsed={isRssFeedsCollapsed}
                   onToggle={onToggleRssFeedsCollapse}
                 >
-                  <FeedsList feeds={rssFeeds} typeFilter={() => true} />
+                  <FeedsList feeds={rssFeeds} typeFilter={() => true} onCloseMindmap={onCloseMindmap} />
                 </SidebarSection>
               </>
             )}

@@ -14,7 +14,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { XIcon, SearchIcon } from './icons';
 import type { Article, MindmapHierarchy } from '../types';
-import { buildMindmapGraph, buildMindmapFromHierarchy } from '../utils/mindmapUtils';
+import { buildMindmapFromHierarchy } from '../utils/mindmapUtils';
 import { generateMindmapHierarchy } from '../services/geminiService';
 import { useAppContext } from '../contexts/AppContext';
 
@@ -63,6 +63,191 @@ const nodeTypes = {
     topic: TopicNode,
 };
 
+// Outline View Component
+const OutlineView: React.FC<{
+    hierarchy: MindmapHierarchy;
+    articles: Article[];
+    expandedTopics: Set<string>;
+    onToggleTopic: (topicId: string) => void;
+    onOpenArticle: (article: Article) => void;
+    searchQuery: string;
+    viewMode: 'list' | 'thumbnail';
+}> = ({ hierarchy, articles, expandedTopics, onToggleTopic, onOpenArticle, searchQuery, viewMode }) => {
+    const articleMap = new Map(articles.map(a => [a.id, a]));
+    const query = searchQuery.toLowerCase();
+
+    const matchesSearch = (text: string) => {
+        return !query || text.toLowerCase().includes(query);
+    };
+
+    const renderArticle = (article: Article) => {
+        if (viewMode === 'thumbnail') {
+            return (
+                <button
+                    key={article.id}
+                    onClick={() => onOpenArticle(article)}
+                    className="group relative overflow-hidden rounded-lg bg-gray-800 hover:bg-gray-750 transition-all"
+                >
+                    <div className="aspect-video w-full overflow-hidden bg-gray-900">
+                        {article.imageUrl ? (
+                            <img
+                                src={article.imageUrl}
+                                alt={article.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-600">
+                                <div className="w-12 h-12 rounded-full bg-gray-700 flex items-center justify-center">
+                                    <span className="text-2xl">📄</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <div className="p-2">
+                        <div className="text-xs text-gray-300 group-hover:text-white line-clamp-2">
+                            {article.title}
+                        </div>
+                    </div>
+                </button>
+            );
+        } else {
+            return (
+                <button
+                    key={article.id}
+                    onClick={() => onOpenArticle(article)}
+                    className="w-full text-left p-3 pl-12 hover:bg-gray-800 transition-colors border-t border-gray-800 group"
+                >
+                    <div className="flex items-start gap-2">
+                        <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0"></div>
+                        <div className="text-sm text-gray-300 group-hover:text-white line-clamp-2">
+                            {article.title}
+                        </div>
+                    </div>
+                </button>
+            );
+        }
+    };
+
+    return (
+        <div className="h-full overflow-y-auto bg-gray-900 p-6 space-y-4">
+            {hierarchy.rootTopics.map((rootTopic, rootIndex) => {
+                const rootId = `root-${rootIndex}`;
+                const isRootExpanded = expandedTopics.has(rootId);
+                const rootArticleCount = rootTopic.subTopics.reduce(
+                    (sum, sub) => sum + sub.articleIds.length,
+                    rootTopic.articleIds.length
+                );
+
+                // Filter visibility based on search
+                const rootMatches = matchesSearch(rootTopic.title);
+                const hasMatchingContent = rootMatches ||
+                    rootTopic.subTopics.some(sub =>
+                        matchesSearch(sub.title) ||
+                        sub.articleIds.some(id => {
+                            const article = articleMap.get(id);
+                            return article && matchesSearch(article.title);
+                        })
+                    );
+
+                if (!hasMatchingContent) return null;
+
+                return (
+                    <div key={rootId} className="border border-gray-700 rounded-lg overflow-hidden">
+                        {/* Root Topic Header */}
+                        <button
+                            onClick={() => onToggleTopic(rootId)}
+                            className="w-full flex items-center justify-between p-4 bg-gray-800 hover:bg-gray-750 transition-colors text-left"
+                            style={{ opacity: rootMatches ? 1 : 0.5 }}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="text-lg font-semibold text-white">
+                                    {rootTopic.title}
+                                </div>
+                                <span className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded-full">
+                                    {rootArticleCount} {rootArticleCount === 1 ? 'video' : 'videos'}
+                                </span>
+                            </div>
+                            <div className={`text-gray-400 transition-transform ${isRootExpanded ? 'rotate-90' : ''}`}>
+                                ▶
+                            </div>
+                        </button>
+
+                        {/* Sub-topics and Articles */}
+                        {isRootExpanded && (
+                            <div className="bg-gray-850">
+                                {rootTopic.subTopics.length > 0 ? (
+                                    rootTopic.subTopics.map((subTopic, subIndex) => {
+                                        const subId = `${rootId}-sub-${subIndex}`;
+                                        const isSubExpanded = expandedTopics.has(subId);
+                                        const subMatches = matchesSearch(subTopic.title);
+                                        const hasMatchingArticles = subTopic.articleIds.some(id => {
+                                            const article = articleMap.get(id);
+                                            return article && matchesSearch(article.title);
+                                        });
+
+                                        if (!subMatches && !hasMatchingArticles) return null;
+
+                                        return (
+                                            <div key={subId} className="border-t border-gray-700">
+                                                {/* Sub-topic Header */}
+                                                <button
+                                                    onClick={() => onToggleTopic(subId)}
+                                                    className="w-full flex items-center justify-between p-3 pl-8 hover:bg-gray-800 transition-colors text-left"
+                                                    style={{ opacity: subMatches ? 1 : 0.5 }}
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="text-sm font-medium text-gray-200">
+                                                            {subTopic.title}
+                                                        </div>
+                                                        <span className="text-xs text-gray-500 bg-gray-700 px-2 py-0.5 rounded-full">
+                                                            {subTopic.articleIds.length}
+                                                        </span>
+                                                    </div>
+                                                    <div className={`text-gray-500 text-sm transition-transform ${isSubExpanded ? 'rotate-90' : ''}`}>
+                                                        ▶
+                                                    </div>
+                                                </button>
+
+                                                {/* Articles */}
+                                                {isSubExpanded && (
+                                                    <div className={viewMode === 'thumbnail' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-gray-900' : 'bg-gray-900'}>
+                                                        {subTopic.articleIds.map(articleId => {
+                                                            const article = articleMap.get(articleId);
+                                                            if (!article) return null;
+
+                                                            const articleMatches = matchesSearch(article.title);
+                                                            if (!articleMatches) return null;
+
+                                                            return renderArticle(article);
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    // Direct articles under root (no sub-topics)
+                                    <div className={viewMode === 'thumbnail' ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-gray-900' : 'bg-gray-900'}>
+                                        {rootTopic.articleIds.map(articleId => {
+                                            const article = articleMap.get(articleId);
+                                            if (!article) return null;
+
+                                            const articleMatches = matchesSearch(article.title);
+                                            if (!articleMatches) return null;
+
+                                            return renderArticle(article);
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
 export const MindmapModal: React.FC<MindmapModalProps> = ({
     isOpen,
     onClose,
@@ -72,35 +257,43 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
     const { aiModel } = useAppContext();
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
+    const [viewMode, setViewMode] = useState<'graph' | 'outline'>('graph');
+    const [articleViewMode, setArticleViewMode] = useState<'list' | 'thumbnail'>('list');
     const [isInitialized, setIsInitialized] = useState(false);
-    const [aiHierarchy, setAiHierarchy] = useState<MindmapHierarchy | null>(null);
+    const [aiHierarchy, setAiHierarchy] = useState<MindmapHierarchy | null>(() => {
+        // Load from localStorage on mount
+        const stored = localStorage.getItem('mindmap_hierarchy');
+        return stored ? JSON.parse(stored) : null;
+    });
     const [isClustering, setIsClustering] = useState(false);
 
-    // Build the graph from articles - recalculate when expand state changes
+    // Build the graph from AI hierarchy
     const graphWithExpansion = useMemo(() => {
         const videos = articles.filter(a => a.isVideo);
-        if (videos.length === 0) return { nodes: [], edges: [] };
+        if (videos.length === 0 || !aiHierarchy) return { nodes: [], edges: [] };
 
-        // Use AI hierarchy if available
-        if (aiHierarchy) {
-            return buildMindmapFromHierarchy(videos, aiHierarchy, expandedTopics);
-        }
-
-        return buildMindmapGraph(videos, expandedTopics);
+        return buildMindmapFromHierarchy(videos, aiHierarchy, expandedTopics);
     }, [articles, expandedTopics, aiHierarchy]);
 
     const handleClusterWithAI = async () => {
+
         setIsClustering(true);
         try {
             const videos = articles.filter(a => a.isVideo);
+
             const hierarchy = await generateMindmapHierarchy(videos, aiModel);
+
             setAiHierarchy(hierarchy);
+
+            // Persist to localStorage
+            localStorage.setItem('mindmap_hierarchy', JSON.stringify(hierarchy));
+
 
             // Reset expansion state for new hierarchy
             setExpandedTopics(new Set());
             setIsInitialized(false); // Trigger re-initialization of expansion state
         } catch (error) {
-            console.error('Failed to cluster with AI:', error);
+            console.error('[Mindmap] Failed to cluster with AI:', error);
             alert('Failed to cluster with AI. Please try again.');
         } finally {
             setIsClustering(false);
@@ -118,10 +311,12 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
 
     // Auto-execute cluster with AI on first open if not already clustered
     React.useEffect(() => {
+
         if (isOpen && !aiHierarchy && !isClustering && articles.filter(a => a.isVideo).length > 0) {
+
             handleClusterWithAI();
         }
-    }, [isOpen]); // Only run when modal opens
+    }, [isOpen, aiHierarchy, isClustering, articles]); // Added missing dependencies
 
 
 
@@ -184,14 +379,40 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
 
     // Expand All: add all topic IDs to expanded set (show all videos)
     const handleExpandAll = () => {
-        const allTopicIds = graphWithExpansion.nodes
-            .filter(n => n.type === 'topic')
-            .map(n => n.id);
+        if (!aiHierarchy) return;
+
+        const allTopicIds: string[] = [];
+
+        // Traverse the hierarchy to get ALL topic IDs (roots and sub-topics)
+        aiHierarchy.rootTopics.forEach((rootTopic, rootIndex) => {
+            const rootId = `root-${rootIndex}`;
+            allTopicIds.push(rootId);
+
+            // Add all sub-topic IDs
+            rootTopic.subTopics.forEach((_, subIndex) => {
+                const subId = `${rootId}-sub-${subIndex}`;
+                allTopicIds.push(subId);
+            });
+        });
+
         setExpandedTopics(new Set(allTopicIds));
     };
 
     // Collapse All: clear all expanded topics (hide all videos)
     const handleCollapseAll = () => setExpandedTopics(new Set());
+
+    // Toggle topic for outline view
+    const handleToggleTopic = (topicId: string) => {
+        setExpandedTopics(prev => {
+            const next = new Set(prev);
+            if (next.has(topicId)) {
+                next.delete(topicId);
+            } else {
+                next.add(topicId);
+            }
+            return next;
+        });
+    };
 
     // Apply search filter and add collapse state to node data
     const { visibleNodes, visibleEdges } = useMemo(() => {
@@ -241,11 +462,53 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="flex flex-col h-full bg-gray-900">
+        <div className="fixed inset-0 bg-gray-900/95 backdrop-blur-sm z-50 flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-700">
-                <h2 className="text-xl font-bold text-white">Video Mindmap</h2>
+            <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+                <h2 className="text-xl font-bold text-white">AI Grouping</h2>
                 <div className="flex items-center gap-4">
+                    <div className="flex gap-2 mr-4">
+                        <button
+                            onClick={() => setViewMode('graph')}
+                            className={`px-3 py-1 text-xs font-medium rounded ${viewMode === 'graph'
+                                ? 'bg-indigo-600 text-white'
+                                : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
+                                }`}
+                        >
+                            Graph
+                        </button>
+                        <button
+                            onClick={() => setViewMode('outline')}
+                            className={`px-3 py-1 text-xs font-medium rounded ${viewMode === 'outline'
+                                ? 'bg-indigo-600 text-white'
+                                : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
+                                }`}
+                        >
+                            Outline
+                        </button>
+                    </div>
+                    {viewMode === 'outline' && (
+                        <div className="flex gap-2 mr-4 border-l border-gray-700 pl-4">
+                            <button
+                                onClick={() => setArticleViewMode('list')}
+                                className={`px-3 py-1 text-xs font-medium rounded ${articleViewMode === 'list'
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
+                                    }`}
+                            >
+                                List
+                            </button>
+                            <button
+                                onClick={() => setArticleViewMode('thumbnail')}
+                                className={`px-3 py-1 text-xs font-medium rounded ${articleViewMode === 'thumbnail'
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
+                                    }`}
+                            >
+                                Thumbnail
+                            </button>
+                        </div>
+                    )}
                     <div className="flex gap-2 mr-4">
                         <button
                             onClick={handleExpandAll}
@@ -260,28 +523,6 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
                             Collapse All
                         </button>
                     </div>
-                    <button
-                        onClick={handleClusterWithAI}
-                        disabled={isClustering}
-                        className={`
-                                px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center
-                                ${isClustering
-                                ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                : 'bg-indigo-600 text-white hover:bg-indigo-700'}
-                            `}
-                    >
-                        {isClustering ? (
-                            <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                                Clustering...
-                            </>
-                        ) : (
-                            <>
-                                <span className="mr-2">✨</span>
-                                Cluster with AI
-                            </>
-                        )}
-                    </button>
                     <div className="relative">
                         <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
@@ -301,17 +542,42 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
                 </div>
             </div>
 
-            {/* Graph */}
-            <div className="flex-1 relative">
-                {graphWithExpansion.nodes.length === 0 ? (
+            {/* Graph or Outline View */}
+            <div className="flex-1 min-h-0 relative">
+                {graphWithExpansion.nodes.length === 0 || !aiHierarchy ? (
                     <div className="absolute inset-0 flex items-center justify-center">
                         <div className="text-center">
-                            <p className="text-gray-400 text-lg">No videos with AI summaries found</p>
-                            <p className="text-gray-500 text-sm mt-2">
-                                Generate AI summaries for your videos to see them in the mindmap
-                            </p>
+                            {isClustering ? (
+                                <>
+                                    <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                                    <p className="text-gray-300 text-lg font-medium">Organizing videos with AI...</p>
+                                    <p className="text-gray-500 text-sm mt-2">
+                                        Creating a smart hierarchy of your content
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-gray-400 text-lg">No videos found</p>
+                                    <p className="text-gray-500 text-sm mt-2">
+                                        Add some videos to see them organized in the mindmap
+                                    </p>
+                                </>
+                            )}
                         </div>
                     </div>
+                ) : viewMode === 'outline' ? (
+                    <OutlineView
+                        hierarchy={aiHierarchy}
+                        articles={articles}
+                        expandedTopics={expandedTopics}
+                        onToggleTopic={handleToggleTopic}
+                        onOpenArticle={(article) => {
+                            onOpenArticle(article);
+                            onClose();
+                        }}
+                        searchQuery={searchQuery}
+                        viewMode={articleViewMode}
+                    />
                 ) : (
                     <ReactFlow
                         nodes={visibleNodes}

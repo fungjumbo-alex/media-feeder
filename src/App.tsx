@@ -94,6 +94,7 @@ const App: React.FC = () => {
     hasEnteredApp,
     headerTitle,
     articlesToShow,
+    allArticles,
     availableTagsForFilter,
     isInitialLoad,
     isRefreshingAll,
@@ -382,7 +383,11 @@ const App: React.FC = () => {
       <ErrorBoundary
         fallback={<ErrorFallback error={new Error('Sidebar error')} componentName="Sidebar" />}
       >
-        <Sidebar onOpenMindmap={() => setIsMindmapModalOpen(true)} />
+        <Sidebar
+          onOpenMindmap={() => setIsMindmapModalOpen(true)}
+          isMindmapOpen={isMindmapModalOpen}
+          onCloseMindmap={() => setIsMindmapModalOpen(false)}
+        />
       </ErrorBoundary>
       <ErrorBoundary
         fallback={
@@ -826,15 +831,6 @@ const App: React.FC = () => {
             <InactiveFeedsContent />
           ) : contentView === 'dump' ? (
             <DumpContent />
-          ) : isMindmapModalOpen ? (
-            <div className="flex-1 overflow-hidden">
-              <MindmapModal
-                isOpen={true}
-                onClose={() => setIsMindmapModalOpen(false)}
-                articles={articlesToShow}
-                onOpenArticle={handleOpenArticle}
-              />
-            </div>
           ) : contentView === 'privacyPolicy' ? (
             <PrivacyPolicyContent />
           ) : contentView === 'about' ? (
@@ -904,6 +900,14 @@ const App: React.FC = () => {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       {isDemoMode && <DemoGuide />}
       {isMobileView && <BottomNavBar />}
+      {isMindmapModalOpen && (
+        <MindmapModal
+          isOpen={true}
+          onClose={() => setIsMindmapModalOpen(false)}
+          articles={allArticles}
+          onOpenArticle={handleOpenArticle}
+        />
+      )}
       <KeyboardShortcutsModal
         isOpen={isKeyboardShortcutsOpen}
         onClose={() => setIsKeyboardShortcutsOpen(false)}

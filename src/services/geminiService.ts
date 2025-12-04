@@ -808,6 +808,7 @@ export const generateMindmapHierarchy = async (
     - For each Root Topic, create 2-5 Sub-topics if necessary to further organize the content.
     - Assign every article to exactly one Sub-topic (or directly to a Root Topic if it fits best there).
     - Ensure the topics are meaningful, descriptive, and capture the essence of the content.
+    - Keep titles concise to save space.
     - Handle multi-lingual content gracefully - group by topic, not just by language (unless "Language" is a relevant topic).
     - Respond *only* with the JSON object.`;
 
@@ -823,6 +824,7 @@ export const generateMindmapHierarchy = async (
     config: {
       systemInstruction,
       responseMimeType: 'application/json',
+      maxOutputTokens: 8192, // Increase token limit to prevent truncation
       responseSchema: {
         type: Type.OBJECT,
         properties: {
@@ -854,10 +856,20 @@ export const generateMindmapHierarchy = async (
     },
   });
 
-  const hierarchyJson = JSON.parse(response.text || '{}');
-  if (!hierarchyJson.rootTopics || !Array.isArray(hierarchyJson.rootTopics)) {
-    throw new Error('AI returned an invalid format for the mindmap hierarchy.');
-  }
+  let jsonString = response.text || '{}';
 
-  return hierarchyJson as MindmapHierarchy;
+  // Clean up markdown code blocks if present
+  jsonString = jsonString.replace(/```json\n/g, '').replace(/```/g, '');
+
+  try {
+    const hierarchyJson = JSON.parse(jsonString);
+    if (!hierarchyJson.rootTopics || !Array.isArray(hierarchyJson.rootTopics)) {
+      throw new Error('AI returned an invalid format for the mindmap hierarchy.');
+    }
+    return hierarchyJson as MindmapHierarchy;
+  } catch (error) {
+    console.error('Failed to parse AI response:', error);
+    console.log('Raw response:', jsonString);
+    throw new Error('Failed to parse mindmap hierarchy from AI response.');
+  }
 };
