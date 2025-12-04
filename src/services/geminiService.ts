@@ -58,7 +58,7 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const generateContentWithRetry = async (
   params: Parameters<InstanceType<typeof GoogleGenAI>['models']['generateContent']>[0],
-  maxRetries = 5,
+  maxRetries = 3,
   initialDelay = 2000 // Start with 2 seconds
 ): Promise<GenerateContentResponse> => {
   let attempt = 0;
@@ -67,7 +67,17 @@ const generateContentWithRetry = async (
 
   while (attempt < maxRetries) {
     try {
-      const response = await aiClient.models.generateContent(params);
+      // Create a timeout promise - 15 seconds
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Request timed out after 15 seconds')), 15000);
+      });
+
+      // Race the API call against the timeout
+      const response = await Promise.race([
+        aiClient.models.generateContent(params),
+        timeoutPromise,
+      ]);
+
       return response;
     } catch (error: any) {
       let isQuotaError = false;
@@ -87,6 +97,11 @@ const generateContentWithRetry = async (
         }
       }
 
+      // Fail fast on timeout
+      if (error.message.includes('timed out')) {
+        throw error;
+      }
+
       if (attempt >= maxRetries - 1) {
         if (isQuotaError) {
           throw new QuotaExceededError(error.message);
@@ -95,7 +110,11 @@ const generateContentWithRetry = async (
       }
 
       if (!isQuotaError) {
-        throw error;
+        // If it's not a quota error and not a timeout (e.g. 500 error), rethrow?
+        // But if it's a 400 error (invalid argument), we should probably stop.
+        if (error.message.includes('400') || error.message.includes('INVALID_ARGUMENT')) {
+          throw error;
+        }
       }
 
       attempt++;
@@ -104,7 +123,7 @@ const generateContentWithRetry = async (
       const waitTime = retryAfterSeconds > 0 ? retryAfterSeconds * 1000 + jitter : delay + jitter;
 
       console.warn(
-        `Gemini API rate limit exceeded. Attempt ${attempt}/${maxRetries}. Retrying in ${(waitTime / 1000).toFixed(2)}s.`
+        `Gemini API error (attempt ${attempt}/${maxRetries}): ${error.message}. Retrying in ${(waitTime / 1000).toFixed(2)}s.`
       );
 
       await wait(waitTime);
@@ -586,11 +605,11 @@ export const generateThematicDigest = async (
         const fullArticle = articlesByTitle.get(articleInfo.title);
         return fullArticle
           ? {
-            id: fullArticle.id,
-            feedId: fullArticle.feedId,
-            title: fullArticle.title,
-            link: fullArticle.link,
-          }
+              id: fullArticle.id,
+              feedId: fullArticle.feedId,
+              title: fullArticle.title,
+              link: fullArticle.link,
+            }
           : null;
       })
       .filter((a: any) => a !== null);
@@ -803,60 +822,73 @@ export const generateMindmapHierarchy = async (
   articles: Article[],
   model: AiModel
 ): Promise<MindmapHierarchy> => {
-  const systemInstruction = `You are an expert knowledge organizer. Your task is to analyze a list of articles and organize them into a structured, hierarchical mindmap.
-    - Group the articles into 3-8 main high-level topics (Root Topics).
-    - For each Root Topic, create 2-5 Sub-topics if necessary to further organize the content.
-    - Assign every article to exactly one Sub-topic (or directly to a Root Topic if it fits best there).
-    - Ensure the topics are meaningful, descriptive, and capture the essence of the content.
-    - Keep titles concise to save space.
-    - Handle multi-lingual content gracefully - group by topic, not just by language (unless "Language" is a relevant topic).
-    - Respond *only* with the JSON object.`;
+  console.log(`[AI Clustering] Processing ${articles.length} articles`);
 
-  const articleList = articles
-    .map(a => `- ID: ${a.id}\n  Title: ${a.title}\n  Description: ${a.description?.substring(0, 100)}...`)
+  if (articles.length === 0) {
+    throw new Error('No articles provided for clustering');
+  }
+
+  // Sort by date (newest first) to prioritize latest content
+  const articlesToProcess = articles.sort(
+    (a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0)
+  );
+
+  const systemInstruction = `You are a JSON generator. Your ONLY task is to group these articles into topics.
+    - Prioritize the latest/newest videos when forming groups or choosing representative titles.
+    - Group articles that discuss the same or very similar events/topics.
+
+Output strictly valid JSON. NO explanations. NO thinking.
+
+Format:
+{
+  "rootTopics": [
+    {
+      "title": "Topic",
+      "subTopics": [
+        { "title": "Subtopic", "articleIds": ["id1"] }
+      ],
+      "articleIds": []
+    }
+  ]
+}`;
+
+  const articleList = articlesToProcess
+    .map(a => `${a.id}|${a.pubDate || 'No Date'}|${a.title}`)
     .join('\n');
 
-  const contents = `Here is the list of articles to organize:\n\n${articleList}\n\nPlease generate a hierarchical mindmap structure.`;
+  const contents = `Group these ${articlesToProcess.length} articles into 3-8 topics. The input format is ID|Date|Title:\n${articleList}`;
+
+  console.log(
+    `[AI Clustering] Sending request to ${model} with ${contents.length} characters for ${articlesToProcess.length} articles`
+  );
 
   const response = await generateContentWithRetry({
     model,
     contents,
     config: {
       systemInstruction,
-      responseMimeType: 'application/json',
-      maxOutputTokens: 8192, // Increase token limit to prevent truncation
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          rootTopics: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                subTopics: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: { type: Type.STRING },
-                      articleIds: { type: Type.ARRAY, items: { type: Type.STRING } },
-                    },
-                    required: ['title', 'articleIds'],
-                  },
-                },
-                articleIds: { type: Type.ARRAY, items: { type: Type.STRING } },
-              },
-              required: ['title', 'subTopics', 'articleIds'],
-            },
-          },
-        },
-        required: ['rootTopics'],
-      },
+      maxOutputTokens: 8192,
     },
   });
 
-  let jsonString = response.text || '{}';
+  // Check if response is valid
+  if (!response || !response.candidates || response.candidates.length === 0) {
+    console.error('Empty or invalid response from AI:', response);
+    throw new Error('AI returned an empty response. Please check your API key and quota.');
+  }
+
+  // Extract text from the response
+  const candidate = response.candidates[0];
+
+  if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+    console.error('No content in AI response:', response);
+    const reason = candidate.finishReason || 'UNKNOWN';
+    throw new Error(
+      `AI response has no content. Finish reason: ${reason}. The response may have been blocked or filtered.`
+    );
+  }
+
+  let jsonString = candidate.content.parts[0].text || '{}';
 
   // Clean up markdown code blocks if present
   jsonString = jsonString.replace(/```json\n/g, '').replace(/```/g, '');
@@ -864,7 +896,11 @@ export const generateMindmapHierarchy = async (
   try {
     const hierarchyJson = JSON.parse(jsonString);
     if (!hierarchyJson.rootTopics || !Array.isArray(hierarchyJson.rootTopics)) {
+      console.error('Invalid hierarchy structure:', hierarchyJson);
       throw new Error('AI returned an invalid format for the mindmap hierarchy.');
+    }
+    if (hierarchyJson.rootTopics.length === 0) {
+      throw new Error('AI returned an empty hierarchy. Please try again with different articles.');
     }
     return hierarchyJson as MindmapHierarchy;
   } catch (error) {
