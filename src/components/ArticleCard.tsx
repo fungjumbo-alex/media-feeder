@@ -122,6 +122,11 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
             No Image
           </div>
         )}
+        {article.isVideo && article.duration != null && (
+          <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs font-semibold px-1.5 py-0.5 rounded">
+            {formatDuration(article.duration)}
+          </div>
+        )}
       </div>
       {zoomLevel !== 'xl' && (
         <div className="p-4 flex flex-col flex-grow">
