@@ -14,6 +14,7 @@ import React, {
   FC,
 } from 'react';
 import { fetchAndParseRss } from '../services/rssService';
+import { findArticleIdsForTopic } from '../utils/mindmapUtils';
 import {
   generateRecommendations,
   generateRelatedChannels,
@@ -25,6 +26,7 @@ import {
   translateThematicDigest,
   translateDetailedDigest,
   QuotaExceededError,
+  generateMindmapHierarchy,
 } from '../services/geminiService';
 import {
   fetchYouTubeComments,
@@ -65,6 +67,7 @@ import type {
   Note,
   NoteFolder,
   ArticleViewMode,
+  MindmapHierarchy,
 } from '../types';
 import { ZOOM_LEVELS, AVAILABLE_MODELS } from '../types';
 import * as LZString from 'lz-string';
@@ -113,6 +116,9 @@ const FAVORITES_ORDER_YT_KEY = 'media-feeder-favorites-order-yt-v1';
 const FAVORITES_ORDER_RSS_KEY = 'media-feeder-favorites-order-rss-v1';
 const AUTO_UPLOAD_AFTER_REFRESH_KEY = 'media-feeder-auto-upload-after-refresh';
 const AUTO_SUMMARIZE_ON_REFRESH_KEY = 'media-feeder-auto-summarize-on-refresh';
+const AUTO_CLUSTER_ON_REFRESH_KEY = 'media-feeder-auto-cluster-on-refresh';
+const AUTO_TRANSCRIBE_ON_REFRESH_KEY = 'media-feeder-auto-transcribe-on-refresh';
+const AUTO_AI_TIME_WINDOW_DAYS_KEY = 'media-feeder-auto-ai-time-window-days';
 const NOTES_KEY = 'media-feeder-notes-v1';
 const NOTE_FOLDERS_KEY = 'media-feeder-note-folders-v1';
 const NOTES_COLLAPSED_KEY = 'media-feeder-notes-collapsed-v1';
@@ -257,6 +263,7 @@ const getInitialView = (): CurrentView => {
   if (type === 'import') return { type: 'import', value: decodeURIComponent(value) };
   if (type === 'keyword-articles')
     return { type: 'keyword-articles', value: decodeURIComponent(value) };
+  if (type === 'ai-topic') return { type: 'ai-topic', value: { title: decodeURIComponent(value) } };
 
   const tabbedViews = ['published-today', 'readLater', 'history', 'favorites'];
   if (tabbedViews.includes(type)) {
@@ -351,26 +358,35 @@ const generateArticleMarkdown = async (article: Article): Promise<string> => {
     }
   }
 
-  // If it's a YouTube video, try to fetch and append the transcript.
+  // If it's a YouTube video, try to use existing transcript or fetch and append it.
   if (article.isVideo && article.link) {
-    const videoId = getYouTubeId(article.link);
-    if (videoId) {
-      try {
-        const choices = await fetchAvailableCaptionChoices(videoId);
-        if (choices.length > 0) {
-          const transcriptLines = await fetchAndParseTranscript(choices[0].url);
-          if (transcriptLines.length > 0) {
-            articleMarkdown += `### Transcript\n\n`;
-            transcriptLines.forEach(line => {
-              const timestamp = `[${formatTranscriptTime(line.start)}](${article.link}&t=${Math.floor(line.start)}s)`;
-              articleMarkdown += `${timestamp} ${line.text}\n`;
-            });
-            articleMarkdown += `\n`;
+    if (article.transcript && article.transcript.length > 0) {
+      articleMarkdown += `### Transcript\n\n`;
+      article.transcript.forEach(line => {
+        const timestamp = `[${formatTranscriptTime(line.start)}](${article.link}&t=${Math.floor(line.start)}s)`;
+        articleMarkdown += `${timestamp} ${line.text}\n`;
+      });
+      articleMarkdown += `\n`;
+    } else {
+      const videoId = getYouTubeId(article.link);
+      if (videoId) {
+        try {
+          const choices = await fetchAvailableCaptionChoices(videoId);
+          if (choices.length > 0) {
+            const transcriptLines = await fetchAndParseTranscript(choices[0].url);
+            if (transcriptLines.length > 0) {
+              articleMarkdown += `### Transcript\n\n`;
+              transcriptLines.forEach(line => {
+                const timestamp = `[${formatTranscriptTime(line.start)}](${article.link}&t=${Math.floor(line.start)}s)`;
+                articleMarkdown += `${timestamp} ${line.text}\n`;
+              });
+              articleMarkdown += `\n`;
+            }
           }
+        } catch (e) {
+          console.warn(`Could not fetch transcript for article "${article.title}" for note:`, e);
+          articleMarkdown += `\n_Transcript could not be loaded._\n`;
         }
-      } catch (e) {
-        console.warn(`Could not fetch transcript for article "${article.title}" for note:`, e);
-        articleMarkdown += `\n_Transcript could not be loaded._\n`;
       }
     }
   }
@@ -387,14 +403,14 @@ interface AppContextType {
   setSelectedArticle: React.Dispatch<React.SetStateAction<Article | null>>;
   currentView: CurrentView;
   contentView:
-    | 'articles'
-    | 'feedsGrid'
-    | 'inactiveFeeds'
-    | 'dump'
-    | 'privacyPolicy'
-    | 'about'
-    | 'help'
-    | 'notes';
+  | 'articles'
+  | 'feedsGrid'
+  | 'inactiveFeeds'
+  | 'dump'
+  | 'privacyPolicy'
+  | 'about'
+  | 'help'
+  | 'notes';
   readArticleIds: Map<string, number>;
   readLaterArticleIds: Set<string>;
   likedVideoIds: Set<string>;
@@ -535,6 +551,7 @@ interface AppContextType {
   unreadCountsForPublishedToday: Record<string, number>;
   unreadCountsForReadLater: Record<string, number>;
   feedsByTag: Map<string, Feed[]>;
+  feedsById: Map<string, Feed>;
   articlesToShow: Article[];
   articlesForNavigation: Article[];
   availableTagsForFilter: string[];
@@ -582,6 +599,12 @@ interface AppContextType {
   handleToggleAutoUploadAfterRefresh: () => void;
   autoSummarizeOnRefresh: boolean;
   handleToggleAutoSummarizeOnRefresh: () => void;
+  autoClusterOnRefresh: boolean;
+  handleToggleAutoClusterOnRefresh: () => void;
+  autoTranscribeOnRefresh: boolean;
+  handleToggleAutoTranscribeOnRefresh: () => void;
+  autoAiTimeWindowDays: number;
+  setAutoAiTimeWindowDays: React.Dispatch<React.SetStateAction<number>>;
   handleToggleRssAndReddit: () => void;
   urlFromExtension: string | null;
   setUrlFromExtension: React.Dispatch<React.SetStateAction<string | null>>;
@@ -786,6 +809,10 @@ interface AppContextType {
   handleQuotaError: (options?: { source: 'auto' | 'manual' }) => void;
   handleSuccessfulApiCall: () => void;
   isAiDisabled: boolean;
+  aiHierarchy: MindmapHierarchy | null;
+  setAiHierarchy: React.Dispatch<React.SetStateAction<MindmapHierarchy | null>>;
+  isAiTopicsCollapsed: boolean;
+  onToggleAiTopicsCollapse: () => void;
 }
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -1220,6 +1247,15 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [autoSummarizeOnRefresh, setAutoSummarizeOnRefresh] = useState<boolean>(() =>
     getStoredData(AUTO_SUMMARIZE_ON_REFRESH_KEY, false)
   );
+  const [autoClusterOnRefresh, setAutoClusterOnRefresh] = useState<boolean>(() =>
+    getStoredData(AUTO_CLUSTER_ON_REFRESH_KEY, false)
+  );
+  const [autoTranscribeOnRefresh, setAutoTranscribeOnRefresh] = useState(() =>
+    getStoredData(AUTO_TRANSCRIBE_ON_REFRESH_KEY, false)
+  );
+  const [autoAiTimeWindowDays, setAutoAiTimeWindowDays] = useState<number>(() =>
+    getStoredData(AUTO_AI_TIME_WINDOW_DAYS_KEY, 3)
+  );
   const [enableRssAndReddit, setEnableRssAndReddit] = useState<boolean>(() =>
     getStoredData(ENABLE_RSS_REDDIT_KEY, true)
   );
@@ -1292,6 +1328,13 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     filename: string;
     source: 'selection' | 'view';
   } | null>(null);
+
+  const [aiHierarchy, setAiHierarchy] = useState<MindmapHierarchy | null>(() =>
+    getStoredData('media-feeder-ai-hierarchy', null)
+  );
+  const [isAiTopicsCollapsed, setIsAiTopicsCollapsed] = useState<boolean>(() =>
+    getStoredData('media-feeder-ai-topics-collapsed', false)
+  );
   const [trendingKeywords, setTrendingKeywords] = useState<
     Array<{ keyword: string; count: number }>
   >(() => {
@@ -2029,15 +2072,15 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     | 'about'
     | 'help'
     | 'notes' = useMemo(() => {
-    if (currentView.type === 'all-subscriptions') return 'feedsGrid';
-    if (currentView.type === 'inactive-feeds') return 'inactiveFeeds';
-    if (currentView.type === 'dump') return 'dump';
-    if (currentView.type === 'privacy-policy') return 'privacyPolicy';
-    if (currentView.type === 'about') return 'about';
-    if (currentView.type === 'help') return 'help';
-    if (currentView.type === 'note-folder') return 'notes';
-    return 'articles';
-  }, [currentView]);
+      if (currentView.type === 'all-subscriptions') return 'feedsGrid';
+      if (currentView.type === 'inactive-feeds') return 'inactiveFeeds';
+      if (currentView.type === 'dump') return 'dump';
+      if (currentView.type === 'privacy-policy') return 'privacyPolicy';
+      if (currentView.type === 'about') return 'about';
+      if (currentView.type === 'help') return 'help';
+      if (currentView.type === 'note-folder') return 'notes';
+      return 'articles';
+    }, [currentView]);
 
   const youtubeFeeds = useMemo(
     () => sortedFeeds.filter(feed => feed.url.toLowerCase().includes('youtube.com')),
@@ -2053,17 +2096,18 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   }, [sidebarTab, youtubeFeeds, rssAndOtherFeeds]);
 
   const { articlesToShow, availableTagsForFilter } = useMemo(() => {
-    let rawArticles: Article[];
+    const viewForFiltering = currentView;
+    let rawArticles: Article[] = [];
     let needsDeduplication = false;
 
-    switch (currentView.type) {
+    switch (viewForFiltering.type) {
       case 'feed':
-        const feedToDisplay = feedsById.get(currentView.value || '');
+        const feedToDisplay = feedsById.get(viewForFiltering.value || '');
         if (feedToDisplay) {
           const articleIdsInFeed = new Set(feedToDisplay.items.map(i => i.id));
           const taggedItemsMap = new Map(
             allArticles
-              .filter(a => a.feedId === currentView.value && articleIdsInFeed.has(a.id))
+              .filter(a => a.feedId === viewForFiltering.value && articleIdsInFeed.has(a.id))
               .map(a => [a.id, a])
           );
           rawArticles = feedToDisplay.items.map(item => taggedItemsMap.get(item.id) || item);
@@ -2072,7 +2116,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         }
         break;
       case 'search':
-        if (!currentView.value) {
+        if (!viewForFiltering.value) {
           rawArticles = [];
         } else {
           let articlesToSearch = allArticles;
@@ -2088,7 +2132,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
               return feed ? !feed.url.toLowerCase().includes('youtube.com') : false;
             });
           }
-          const query = currentView.value.toLowerCase();
+          const query = viewForFiltering.value.toLowerCase();
           rawArticles = articlesToSearch.filter(
             a =>
               a.title.toLowerCase().includes(query) || a.description.toLowerCase().includes(query)
@@ -2097,10 +2141,10 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         needsDeduplication = true;
         break;
       case 'keyword-articles':
-        if (!currentView.value) {
+        if (!viewForFiltering.value) {
           rawArticles = [];
         } else {
-          const query = String(currentView.value).toLowerCase();
+          const query = String(viewForFiltering.value).toLowerCase();
           rawArticles = allArticles.filter(a => (a.title || '').toLowerCase().includes(query));
         }
         needsDeduplication = true;
@@ -2121,7 +2165,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         needsDeduplication = true;
         break;
       case 'tag':
-        rawArticles = filterArticlesForTag(allArticles, currentView.value, feedsById);
+        rawArticles = filterArticlesForTag(allArticles, viewForFiltering.value, feedsById);
         needsDeduplication = true;
         break;
       case 'published-today':
@@ -2134,35 +2178,45 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         needsDeduplication = true;
         break;
       case 'ai-summary-yt':
-        rawArticles = allArticles.filter(a => {
-          const feed = feedsById.get(a.feedId);
-          if (!feed) return false;
-          const isYouTube = feed.url.toLowerCase().includes('youtube.com');
-          return isYouTube && (a.summary || a.structuredSummary);
-        });
+        rawArticles = allArticles.filter(a => a.isVideo && a.structuredSummary);
+        needsDeduplication = true;
+        break;
+      case 'ai-topic':
+        let targetIds = new Set<string>();
+        const val = viewForFiltering.value;
+        if (val && typeof val === 'object' && Array.isArray(val.articleIds)) {
+          targetIds = new Set(val.articleIds);
+        } else if (typeof val === 'string' && aiHierarchy) {
+          const ids = findArticleIdsForTopic(aiHierarchy, val);
+          targetIds = new Set(ids);
+        } else if (
+          val &&
+          typeof val === 'object' &&
+          val.title &&
+          typeof val.title === 'string' &&
+          aiHierarchy
+        ) {
+          // Fallback if articleIds is missing but title is present in object
+          const ids = findArticleIdsForTopic(aiHierarchy, val.title);
+          targetIds = new Set(ids);
+        }
+        rawArticles = allArticles.filter(a => targetIds.has(a.id));
         needsDeduplication = true;
         break;
       default:
         rawArticles = [];
     }
 
-    const viewsToFilterByTab = ['favorites', 'published-today', 'readLater', 'history'];
-    if (viewsToFilterByTab.includes(currentView.type)) {
-      rawArticles = rawArticles.filter(article => {
-        const feed = feedsById.get(article.feedId);
-        if (!feed) return false;
-
-        const isYouTubeFeed = feed.url.toLowerCase().includes('youtube.com');
-        const tabForView = currentView.value === 'rss' ? 'rss' : 'yt';
-
-        if (tabForView === 'yt') {
-          return isYouTubeFeed;
-        } else {
-          // 'rss'
-          return !isYouTubeFeed;
-        }
-      });
-    }
+    const tabFilteredArticles = rawArticles.filter(article => {
+      const feed = feedsById.get(article.feedId);
+      if (!feed) return false;
+      const isYouTubeFeed = feed.url.toLowerCase().includes('youtube.com');
+      if (sidebarTab === 'yt') {
+        return isYouTubeFeed;
+      } else {
+        return !isYouTubeFeed;
+      }
+    });
 
     const sortArticles = (articles: Article[]): Article[] => {
       const sortByCustomOrder = (order: string[]) => {
@@ -2178,23 +2232,23 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       };
 
       if (
-        currentView.type === 'feed' &&
+        viewForFiltering.type === 'feed' &&
         articles.length > 0 &&
         articles.some(a => a.order !== undefined)
       ) {
         return [...articles].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
       }
-      if (currentView.type === 'history') {
+      if (viewForFiltering.type === 'history') {
         return [...articles].sort(
           (a, b) => (readArticleIds.get(b.id) || 0) - (readArticleIds.get(a.id) || 0)
         );
       }
-      if (currentView.type === 'readLater') {
-        const source = currentView.value || 'yt';
+      if (viewForFiltering.type === 'readLater') {
+        const source = viewForFiltering.value || 'yt';
         return sortByCustomOrder(source === 'yt' ? readLaterOrderYt : readLaterOrderRss);
       }
-      if (currentView.type === 'tag') {
-        const tagValue = currentView.value;
+      if (viewForFiltering.type === 'tag') {
+        const tagValue = viewForFiltering.value;
         let tagKey: string | undefined;
         if (typeof tagValue === 'object' && tagValue.name && tagValue.type) {
           tagKey = `${tagValue.type}-${tagValue.name}`;
@@ -2207,35 +2261,30 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           if (order) return sortByCustomOrder(order);
         }
       }
-      if (currentView.type === 'favorites') {
-        const source = currentView.value || 'yt';
+      if (viewForFiltering.type === 'favorites') {
+        const source = viewForFiltering.value || 'yt';
         return sortByCustomOrder(source === 'yt' ? favoritesOrderYt : favoritesOrderRss);
       }
       return [...articles].sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
     };
-    const processedArticles = sortArticles(
-      needsDeduplication ? deduplicateArticles(rawArticles) : rawArticles
-    );
 
-    const availableTags = new Set<string>();
-    if (['favorites', 'published-today', 'readLater', 'history'].includes(currentView.type)) {
-      processedArticles.forEach(article => {
-        if (article.tags) article.tags.forEach(tag => availableTags.add(tag));
-      });
-    }
+    const processedArticles = sortArticles(
+      needsDeduplication ? deduplicateArticles(tabFilteredArticles) : tabFilteredArticles
+    );
 
     let finalArticles = processedArticles;
     if (
-      ['favorites', 'published-today', 'readLater', 'history'].includes(currentView.type) &&
+      ['favorites', 'published-today', 'readLater', 'history'].includes(viewForFiltering.type) &&
       activeTagFilter
     ) {
       finalArticles = processedArticles.filter(article => article.tags?.includes(activeTagFilter));
     }
 
-    return {
-      articlesToShow: finalArticles,
-      availableTagsForFilter: Array.from(availableTags).sort(),
-    };
+    const availableTags = new Set<string>();
+    processedArticles.forEach(a => a.tags?.forEach(t => availableTags.add(t)));
+    const sortedTags = Array.from(availableTags).sort();
+
+    return { articlesToShow: finalArticles, availableTagsForFilter: sortedTags };
   }, [
     currentView,
     feedsById,
@@ -2251,6 +2300,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     favoritesOrderYt,
     favoritesOrderRss,
     sidebarTab,
+    aiHierarchy
   ]);
 
   const notesForView = useMemo(() => {
@@ -2290,6 +2340,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         return 'Published Today';
       case 'ai-summary-yt':
         return 'YT with AI Summary';
+      case 'ai-topic':
+        return (currentView.value as { title: string }).title || 'AI Topic';
       case 'all-subscriptions':
         return 'All Subscriptions';
       case 'inactive-feeds':
@@ -2330,6 +2382,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         return 'No articles published today.';
       case 'ai-summary-yt':
         return 'No YouTube articles with an AI summary found.';
+      case 'ai-topic':
+        return 'No articles found for this AI topic.';
       default:
         return 'No articles to display.';
     }
@@ -2356,6 +2410,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       if (value) {
         if (type === 'tag' && typeof value === 'object' && value.name && value.type) {
           newHash += `/${value.type}/${encodeURIComponent(value.name)}`;
+        } else if (type === 'ai-topic' && typeof value === 'object' && value.title) {
+          newHash += `/${encodeURIComponent(value.title)}`;
         } else if (typeof value === 'string') {
           newHash += `/${encodeURIComponent(value)}`;
         }
@@ -2365,6 +2421,242 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       }
     },
     [isProcessingUrl]
+  );
+
+  const handleSummaryGenerated = useCallback(
+    (articleId: string, summary: string | StructuredVideoSummary, sources?: WebSource[]) => {
+      const updateArticle = (article: Article) => {
+        if (typeof summary === 'string') {
+          return { ...article, summary, sources: sources || [] };
+        }
+        return { ...article, structuredSummary: summary, sources: sources || [] };
+      };
+
+      setFeeds(prevFeeds =>
+        prevFeeds.map(feed => ({
+          ...feed,
+          items: feed.items.map(item => (item.id === articleId ? updateArticle(item) : item)),
+        }))
+      );
+
+      setSelectedArticle(prevArticle =>
+        prevArticle?.id === articleId ? updateArticle(prevArticle) : prevArticle
+      );
+    },
+    []
+  );
+
+  // FIX: Moved handleQuotaError before its usage in runInBackgroundSummaryGeneration
+  const handleQuotaError = useCallback(
+    (options?: { source: 'auto' | 'manual' }) => {
+      setToast({
+        message:
+          "Gemini API quota exceeded. Please check your API key's billing status or try again later.",
+        type: 'error',
+      });
+      if (options?.source === 'auto') {
+        setAutoSummarizeOnRefresh(false);
+        setIsAiDisabled(true);
+      }
+    },
+    [setToast, setAutoSummarizeOnRefresh, setIsAiDisabled]
+  );
+
+  const handleToggleAutoTranscribeOnRefresh = useCallback(() => {
+    setAutoTranscribeOnRefresh(prev => !prev);
+  }, []);
+
+  const runInBackgroundTranscription = useCallback(
+    async (feedsToProcess: Feed[]) => {
+      console.log('[AutoTranscript] Checking if auto-transcription is valid...', { autoTranscribeOnRefresh });
+      if (!autoTranscribeOnRefresh) {
+        console.log('[AutoTranscript] Skipped: disabled.');
+        return;
+      }
+
+      const allArticles = feedsToProcess.flatMap(f => f.items);
+
+      // Filter by time window
+      const timeWindowMs = autoAiTimeWindowDays * 24 * 60 * 60 * 1000;
+      const cutoffTime = Date.now() - timeWindowMs;
+
+      const videosToTranscribe = allArticles
+        .filter(a => a.isVideo && getYouTubeId(a.link) && !a.transcript && !a.transcriptAttempted)
+        .filter(a => a.pubDateTimestamp && a.pubDateTimestamp >= cutoffTime)
+        .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
+
+      console.log(`[AutoTranscript] Found ${videosToTranscribe.length} videos eligible for transcription (filtered by last ${autoAiTimeWindowDays} days).`);
+
+      if (videosToTranscribe.length === 0) return;
+
+      const updates = new Map<string, any>();
+      const attemptedIds = new Set<string>();
+
+      // Process sequentially to avoid rate limits/blocking
+      for (const article of videosToTranscribe) {
+        attemptedIds.add(article.id);
+        try {
+          console.log(`[AutoTranscript] Fetching transcript for: ${article.title}`);
+          const videoId = getYouTubeId(article.link)!;
+          const choices = await fetchAvailableCaptionChoices(videoId);
+          if (choices.length > 0) {
+            const lines = await fetchAndParseTranscript(choices[0].url);
+            if (lines.length > 0) {
+              console.log(`[AutoTranscript] Success for: ${article.title}`);
+              updates.set(article.id, lines);
+              article.transcript = lines; // Update local reference in-place
+            }
+          } else {
+            console.log(`[AutoTranscript] No captions found for: ${article.title}`);
+          }
+        } catch (e) {
+          console.warn(`[AutoTranscript] Failed for ${article.title}`, e);
+        }
+      }
+
+      // Update feeds with transcripts and mark all as attempted
+      if (updates.size > 0 || attemptedIds.size > 0) {
+        console.log(`[AutoTranscript] Updating ${updates.size} articles with transcripts, marking ${attemptedIds.size} as attempted.`);
+        setFeeds(currentFeeds =>
+          currentFeeds.map(feed => ({
+            ...feed,
+            items: feed.items.map(item => {
+              if (attemptedIds.has(item.id)) {
+                return {
+                  ...item,
+                  transcript: updates.get(item.id) || item.transcript,
+                  transcriptAttempted: true,
+                };
+              }
+              return item;
+            })
+          }))
+        );
+      }
+    },
+    [autoTranscribeOnRefresh]
+  );
+
+  const runInBackgroundSummaryGeneration = useCallback(
+    async (allFeeds: Feed[]) => {
+      console.log('[AutoSummary] Checking if auto-summary is valid...', { autoSummarizeOnRefresh });
+      if (!autoSummarizeOnRefresh) {
+        console.log('[AutoSummary] Skipped: disabled.');
+        return;
+      }
+
+      const allArticles = allFeeds.flatMap(f => f.items);
+
+      // Filter by time window
+      const timeWindowMs = autoAiTimeWindowDays * 24 * 60 * 60 * 1000;
+      const cutoffTime = Date.now() - timeWindowMs;
+
+      const videosToSummarize = allArticles
+        .filter(a => a.isVideo && !a.summary && !a.structuredSummary && getYouTubeId(a.link))
+        .filter(a => a.pubDateTimestamp && a.pubDateTimestamp >= cutoffTime)
+        .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
+
+      console.log(`[AutoSummary] Found ${videosToSummarize.length} videos eligible for summary (filtered by last ${autoAiTimeWindowDays} days).`);
+
+      if (videosToSummarize.length === 0) {
+        return;
+      }
+
+      for (const article of videosToSummarize) {
+        console.log(`[AutoSummary] Processing: ${article.title}`);
+        const videoId = getYouTubeId(article.link)!;
+        try {
+          let transcriptLines = article.transcript;
+
+          if (!transcriptLines || transcriptLines.length === 0) {
+            const choices = await fetchAvailableCaptionChoices(videoId);
+            if (choices.length > 0) {
+              transcriptLines = await fetchAndParseTranscript(choices[0].url);
+            }
+          }
+
+          if (transcriptLines && transcriptLines.length > 3) {
+            const { summary, sources } = await summarizeYouTubeVideo(
+              article.title,
+              transcriptLines,
+              aiModel,
+              defaultAiLanguage
+            );
+            handleSummaryGenerated(article.id, summary, sources);
+            continue;
+          }
+
+          const textForSummary = `Title: ${article.title}\nDescription: ${(article.content || article.description).replace(/<[^>]*>?/gm, '').trim()}`;
+          if (textForSummary.length > 100) {
+            const { summary, sources } = await summarizeText(
+              textForSummary,
+              article.link,
+              aiModel,
+              defaultAiLanguage,
+              'video'
+            );
+            handleSummaryGenerated(article.id, summary, sources);
+          }
+        } catch (error) {
+          console.warn(`[AutoSummary] Auto-summary failed for "${article.title}":`, error);
+          if (error instanceof QuotaExceededError) {
+            handleQuotaError({ source: 'auto' });
+            break;
+          }
+        }
+      }
+    },
+    [aiModel, defaultAiLanguage, handleSummaryGenerated, autoSummarizeOnRefresh, handleQuotaError]
+  );
+
+  const runInBackgroundGrouping = useCallback(
+    async (feedsOverride?: Feed[]) => {
+      console.log('[AutoGrouping] Checking if auto-grouping is valid...', { autoClusterOnRefresh });
+      if (!autoClusterOnRefresh) {
+        console.log('[AutoGrouping] Skipped: disabled.');
+        return;
+      }
+      const feedsToUse = feedsOverride || feeds;
+
+      const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+      const allArticles = feedsToUse.flatMap(f => f.items);
+
+      // Deduplicate by ID
+      const seenIds = new Set<string>();
+      const uniqueArticles: Article[] = [];
+      for (const article of allArticles) {
+        if (!seenIds.has(article.id)) {
+          seenIds.add(article.id);
+          uniqueArticles.push(article);
+        }
+      }
+
+      const allVideos = uniqueArticles
+        .filter(i => i.isVideo && i.pubDateTimestamp && i.pubDateTimestamp >= threeDaysAgo)
+        .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
+
+      console.log(`[AutoGrouping] Found ${allVideos.length} recent videos for grouping.`);
+
+      if (allVideos.length < 5) {
+        console.log('[AutoGrouping] Not enough recent videos to generate a meaningful hierarchy.');
+        return;
+      }
+
+      try {
+        console.log('[AutoGrouping] Generating hierarchy...');
+        const hierarchy = await generateMindmapHierarchy(allVideos, aiModel, defaultAiLanguage);
+        console.log('[AutoGrouping] Hierarchy generated successfully.');
+        setAiHierarchy(hierarchy);
+      } catch (error) {
+        console.warn('[AutoGrouping] Failed to generate background hierarchy:', error);
+        if (error instanceof QuotaExceededError) {
+          handleQuotaError({ source: 'auto' });
+          // Disable auto-cluster to prevent further errors
+          setAutoClusterOnRefresh(false);
+        }
+      }
+    },
+    [autoClusterOnRefresh, feeds, aiModel, defaultAiLanguage, handleQuotaError]
   );
 
   const handleImportData = useCallback(
@@ -2387,6 +2679,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         setNoteFolders([]);
 
         let newFeedsCount = 0;
+        const allImportedArticles: Article[] = [];
         const currentFeedsMap = new Map(feeds.map(f => [f.url, f]));
 
         currentFeedsMap.forEach((feed: Feed) => {
@@ -2409,6 +2702,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
               };
             }
           );
+          allImportedArticles.push(...articlesFromBackup);
 
           if (existingFeed) {
             const updatedFeed: Feed = {
@@ -2446,7 +2740,13 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (data.articleZoomLevel) setArticleZoomLevel(data.articleZoomLevel);
         if (data.autoplayMode) setAutoplayMode(data.autoplayMode);
 
-        setFeeds(Array.from(currentFeedsMap.values()));
+        const latestFeeds = Array.from(currentFeedsMap.values());
+        setFeeds(latestFeeds);
+
+        runInBackgroundTranscription(latestFeeds).then(() => {
+          runInBackgroundSummaryGeneration(latestFeeds);
+        });
+        runInBackgroundGrouping(latestFeeds);
 
         const totalImportedFeeds = currentFeedsMap.size;
         if (!options?.silent) {
@@ -2487,6 +2787,10 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       handleViewChange,
       setNotes,
       setNoteFolders,
+      runInBackgroundTranscription,
+      runInBackgroundSummaryGeneration,
+      runInBackgroundGrouping,
+      autoAiTimeWindowDays,
     ]
   );
 
@@ -3540,6 +3844,28 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         rawArticles = allArticles.filter(a => a.isVideo && a.structuredSummary);
         needsDeduplication = true;
         break;
+      case 'ai-topic':
+        let targetIds = new Set<string>();
+        const val = viewForFiltering.value;
+        if (val && typeof val === 'object' && Array.isArray(val.articleIds)) {
+          targetIds = new Set(val.articleIds);
+        } else if (typeof val === 'string' && aiHierarchy) {
+          const ids = findArticleIdsForTopic(aiHierarchy, val);
+          targetIds = new Set(ids);
+        } else if (
+          val &&
+          typeof val === 'object' &&
+          val.title &&
+          typeof val.title === 'string' &&
+          aiHierarchy
+        ) {
+          // Fallback if articleIds is missing but title is present in object
+          const ids = findArticleIdsForTopic(aiHierarchy, val.title);
+          targetIds = new Set(ids);
+        }
+        rawArticles = allArticles.filter(a => targetIds.has(a.id));
+        needsDeduplication = true;
+        break;
       default:
         rawArticles = [];
     }
@@ -3639,8 +3965,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       return {
         hasNextArticle: false,
         hasPreviousArticle: false,
-        onNextArticle: () => {},
-        onPreviousArticle: () => {},
+        onNextArticle: () => { },
+        onPreviousArticle: () => { },
       };
     const currentIndex = articlesForNavigation.findIndex(a => a.id === selectedArticle.id);
     const hasNextArticle = currentIndex >= 0 && currentIndex < articlesForNavigation.length - 1;
@@ -3860,7 +4186,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const handleGoogleSignOut = useCallback(() => {
     if (accessToken) {
-      google.accounts.oauth2.revoke(accessToken, () => {});
+      google.accounts.oauth2.revoke(accessToken, () => { });
     }
     if (tokenRefreshTimerRef.current) {
       clearTimeout(tokenRefreshTimerRef.current);
@@ -3874,110 +4200,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setToast({ message: 'You have been signed out.', type: 'success' });
   }, [accessToken, setToast]);
 
-  const handleSummaryGenerated = useCallback(
-    (articleId: string, summary: string | StructuredVideoSummary, sources?: WebSource[]) => {
-      const updateArticle = (article: Article) => {
-        if (typeof summary === 'string') {
-          return { ...article, summary, sources: sources || [] };
-        }
-        return { ...article, structuredSummary: summary, sources: sources || [] };
-      };
 
-      setFeeds(prevFeeds =>
-        prevFeeds.map(feed => ({
-          ...feed,
-          items: feed.items.map(item => (item.id === articleId ? updateArticle(item) : item)),
-        }))
-      );
-
-      setSelectedArticle(prevArticle =>
-        prevArticle?.id === articleId ? updateArticle(prevArticle) : prevArticle
-      );
-    },
-    []
-  );
-
-  // FIX: Moved `handleQuotaError` before its usage in `runInBackgroundSummaryGeneration`
-  const handleQuotaError = useCallback(
-    (options?: { source: 'auto' | 'manual' }) => {
-      setToast({
-        message:
-          "Gemini API quota exceeded. Please check your API key's billing status or try again later.",
-        type: 'error',
-      });
-      if (options?.source === 'auto') {
-        setAutoSummarizeOnRefresh(false);
-        setIsAiDisabled(true);
-      }
-    },
-    [setToast, setAutoSummarizeOnRefresh, setIsAiDisabled]
-  );
-
-  const runInBackgroundSummaryGeneration = useCallback(
-    async (newArticles: Article[], isBroadRefresh = false) => {
-      if (!autoSummarizeOnRefresh || newArticles.length === 0) {
-        return;
-      }
-
-      let articlesToConsider = [...newArticles];
-      if (isBroadRefresh) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayTimestamp = today.getTime();
-        articlesToConsider = articlesToConsider.filter(
-          a => a.pubDateTimestamp && a.pubDateTimestamp >= todayTimestamp
-        );
-      }
-
-      const videosToSummarize = articlesToConsider
-        .filter(a => a.isVideo && !a.summary && !a.structuredSummary && getYouTubeId(a.link))
-        .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
-
-      if (videosToSummarize.length === 0) {
-        return;
-      }
-
-      for (const article of videosToSummarize) {
-        const videoId = getYouTubeId(article.link)!;
-        try {
-          const choices = await fetchAvailableCaptionChoices(videoId);
-
-          if (choices.length > 0) {
-            const transcriptLines = await fetchAndParseTranscript(choices[0].url);
-            if (transcriptLines.length > 3) {
-              const { summary, sources } = await summarizeYouTubeVideo(
-                article.title,
-                transcriptLines,
-                aiModel,
-                defaultAiLanguage
-              );
-              handleSummaryGenerated(article.id, summary, sources);
-              continue;
-            }
-          }
-
-          const textForSummary = `Title: ${article.title}\nDescription: ${(article.content || article.description).replace(/<[^>]*>?/gm, '').trim()}`;
-          if (textForSummary.length > 100) {
-            const { summary, sources } = await summarizeText(
-              textForSummary,
-              article.link,
-              aiModel,
-              defaultAiLanguage,
-              'video'
-            );
-            handleSummaryGenerated(article.id, summary, sources);
-          }
-        } catch (error) {
-          console.warn(`[AutoSummary] Auto-summary failed for "${article.title}":`, error);
-          if (error instanceof QuotaExceededError) {
-            handleQuotaError({ source: 'auto' });
-            break;
-          }
-        }
-      }
-    },
-    [aiModel, defaultAiLanguage, handleSummaryGenerated, autoSummarizeOnRefresh, handleQuotaError]
-  );
 
   const handleUploadToDrive = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -4335,8 +4558,25 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           });
         }
 
-        const isBroadRefresh = viewTitle === 'all feeds' || viewTitle === 'favorite feeds';
-        runInBackgroundSummaryGeneration(allNewArticles, isBroadRefresh);
+
+        console.log('[Refresh] Refresh complete. Triggering background tasks...');
+        console.log(`[Refresh] New articles found: ${allNewArticles.length}`);
+
+        // Chain background tasks: Transcription -> Summary
+        // Updated to use currentFeeds (all articles) instead of just new ones
+        setFeeds(currentFeeds => {
+          console.log('[Refresh] Triggering background transcription sequence...');
+          // Fire and forget (it is async)
+          runInBackgroundTranscription(currentFeeds).then(() => {
+            console.log('[Refresh] Transcription task finished (or skipped). Starting summary generation...');
+            runInBackgroundSummaryGeneration(currentFeeds);
+          });
+
+          console.log('[Refresh] Triggering background grouping...');
+          runInBackgroundGrouping(currentFeeds);
+
+          return currentFeeds;
+        });
 
         if (autoUploadAfterRefresh) {
           setTriggerAutoUpload(true);
@@ -4493,9 +4733,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           new Map(combinedArticles.map(a => [a.id, a])).values()
         );
 
-        // Define newArticles for summary generation (items in newFeedData that were not in existing feed)
-        const existingArticlesMap = new Map(feedToRefresh.items.map(a => [a.id, a]));
-        const newArticles = newFeedData.items.filter(a => !existingArticlesMap.has(a.id));
+
 
         const sortedAndCleanedArticles = deduplicatedArticles
           .map(({ order, ...rest }) => rest)
@@ -4519,7 +4757,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
         setToast({ message: `Refreshed "${updatedFeed.title}"`, type: 'success' });
 
-        runInBackgroundSummaryGeneration(newArticles, false);
+        runInBackgroundTranscription([updatedFeed]).then(() => {
+          runInBackgroundSummaryGeneration([updatedFeed]);
+        });
 
         if (autoUploadAfterRefresh) {
           setTriggerAutoUpload(true);
@@ -5764,6 +6004,19 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   );
   const onToggleRssTagsCollapse = useCallback(() => setIsRssTagsCollapsed(prev => !prev), []);
   const onToggleNotesCollapse = useCallback(() => setIsNotesCollapsed(prev => !prev), []);
+  const onToggleAiTopicsCollapse = useCallback(() => setIsAiTopicsCollapsed(prev => !prev), []);
+
+  useEffect(() => {
+    try {
+      if (aiHierarchy) {
+        localStorage.setItem('media-feeder-ai-hierarchy', JSON.stringify(aiHierarchy));
+      } else {
+        localStorage.removeItem('media-feeder-ai-hierarchy');
+      }
+    } catch (e) {
+      console.warn('Failed to save AI hierarchy to local storage:', e);
+    }
+  }, [aiHierarchy]);
 
   const onToggleTagExpansion = useCallback((tag: string, tagType: 'youtube' | 'rss') => {
     const compositeKey = `${tagType}-${tag}`;
@@ -5859,6 +6112,11 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   );
   const handleToggleAutoSummarizeOnRefresh = useCallback(
     () => setAutoSummarizeOnRefresh(prev => !prev),
+    []
+  );
+
+  const handleToggleAutoClusterOnRefresh = useCallback(
+    () => setAutoClusterOnRefresh(prev => !prev),
     []
   );
   const handleToggleRssAndReddit = useCallback(() => setEnableRssAndReddit(prev => !prev), []);
@@ -6449,6 +6707,15 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     safeSetLocalStorage(AUTO_SUMMARIZE_ON_REFRESH_KEY, autoSummarizeOnRefresh);
   }, [autoSummarizeOnRefresh, safeSetLocalStorage]);
   useEffect(() => {
+    safeSetLocalStorage(AUTO_CLUSTER_ON_REFRESH_KEY, autoClusterOnRefresh);
+  }, [autoClusterOnRefresh, safeSetLocalStorage]);
+  useEffect(() => {
+    safeSetLocalStorage(AUTO_TRANSCRIBE_ON_REFRESH_KEY, autoTranscribeOnRefresh);
+  }, [autoTranscribeOnRefresh, safeSetLocalStorage]);
+  useEffect(() => {
+    safeSetLocalStorage(AUTO_AI_TIME_WINDOW_DAYS_KEY, autoAiTimeWindowDays);
+  }, [autoAiTimeWindowDays, safeSetLocalStorage]);
+  useEffect(() => {
     safeSetLocalStorage(NOTES_KEY, notes);
   }, [notes, safeSetLocalStorage]);
   useEffect(() => {
@@ -6457,6 +6724,12 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   useEffect(() => {
     safeSetLocalStorage(NOTES_COLLAPSED_KEY, isNotesCollapsed);
   }, [isNotesCollapsed, safeSetLocalStorage]);
+  useEffect(() => {
+    safeSetLocalStorage('media-feeder-ai-hierarchy', aiHierarchy);
+  }, [aiHierarchy, safeSetLocalStorage]);
+  useEffect(() => {
+    safeSetLocalStorage('media-feeder-ai-topics-collapsed', isAiTopicsCollapsed);
+  }, [isAiTopicsCollapsed, safeSetLocalStorage]);
   useEffect(() => {
     safeSetLocalStorage(TRENDING_KEYWORDS_KEY, trendingKeywords);
   }, [trendingKeywords, safeSetLocalStorage]);
@@ -6551,6 +6824,10 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     sortedFeeds,
     favoriteFeeds,
     unreadCounts,
+    feedsById,
+
+    // AI
+    aiHierarchy,
     commentsState,
     handleFetchComments,
     handleFetchArticleDetails,
@@ -6617,6 +6894,12 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     handleToggleAutoUploadAfterRefresh,
     autoSummarizeOnRefresh,
     handleToggleAutoSummarizeOnRefresh,
+    autoClusterOnRefresh,
+    handleToggleAutoClusterOnRefresh,
+    autoTranscribeOnRefresh,
+    handleToggleAutoTranscribeOnRefresh,
+    autoAiTimeWindowDays,
+    setAutoAiTimeWindowDays,
     handleToggleRssAndReddit,
     urlFromExtension,
     setUrlFromExtension,
@@ -6784,6 +7067,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     handleQuotaError,
     handleSuccessfulApiCall,
     isAiDisabled,
+    setAiHierarchy,
+    isAiTopicsCollapsed,
+    onToggleAiTopicsCollapse,
   };
 
   return <AppContext.Provider value={contextValue}>{children}</AppContext.Provider>;

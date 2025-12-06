@@ -13,11 +13,31 @@ export function buildMindmapFromHierarchy(
     const nodes: MindmapNode[] = [];
     const edges: MindmapEdge[] = [];
     const articleMap = new Map(articles.map(a => [a.id, a]));
+    const addedNodeIds = new Set<string>();
+    const addedEdgeIds = new Set<string>();
 
     // Create a new directed graph for layout
     const g = new dagre.graphlib.Graph();
     g.setGraph({ rankdir: 'LR', ranksep: 150, nodesep: 30 });
     g.setDefaultEdgeLabel(() => ({}));
+
+    // Helper to add node if not exists
+    const addNode = (node: MindmapNode, width: number, height: number) => {
+        if (!addedNodeIds.has(node.id)) {
+            nodes.push(node);
+            g.setNode(node.id, { width, height });
+            addedNodeIds.add(node.id);
+        }
+    };
+
+    // Helper to add edge if not exists
+    const addEdge = (edge: MindmapEdge) => {
+        if (!addedEdgeIds.has(edge.id)) {
+            edges.push(edge);
+            g.setEdge(edge.source, edge.target);
+            addedEdgeIds.add(edge.id);
+        }
+    };
 
     // Process Root Topics
     hierarchy.rootTopics.forEach((rootTopic, rootIndex) => {
@@ -35,8 +55,7 @@ export function buildMindmapFromHierarchy(
             },
             position: { x: 0, y: 0 },
         };
-        nodes.push(rootNode);
-        g.setNode(rootId, { width: 250, height: 60 });
+        addNode(rootNode, 250, 60);
 
         // Process Sub-topics - only if root IS expanded
         rootTopic.subTopics.forEach((subTopic, subIndex) => {
@@ -55,21 +74,22 @@ export function buildMindmapFromHierarchy(
                     },
                     position: { x: 0, y: 0 },
                 };
-                nodes.push(subNode);
-                g.setNode(subId, { width: 220, height: 50 });
+                addNode(subNode, 220, 50);
 
                 // Edge: Root -> Sub
-                edges.push({
+                addEdge({
                     id: `${rootId}-${subId}`,
                     source: rootId,
                     target: subId,
                     type: 'topic',
                 });
-                g.setEdge(rootId, subId);
 
                 // Process Articles in Sub-topic - only if sub-topic IS expanded
                 if (expandedTopics.has(subId)) {
-                    subTopic.articleIds.forEach(articleId => {
+                    // Use a Set to handle duplicate article IDs within the same subtopic
+                    const uniqueArticleIds = new Set(subTopic.articleIds);
+
+                    uniqueArticleIds.forEach(articleId => {
                         const article = articleMap.get(articleId);
                         if (article) {
                             const articleNode: MindmapNode = {
@@ -81,17 +101,16 @@ export function buildMindmapFromHierarchy(
                                 },
                                 position: { x: 0, y: 0 },
                             };
-                            nodes.push(articleNode);
-                            g.setNode(articleId, { width: 350, height: 50 });
+                            // Note: We use addNode which handles duplicates across diff topics (graph structure)
+                            addNode(articleNode, 350, 50);
 
                             // Edge: Sub -> Article
-                            edges.push({
+                            addEdge({
                                 id: `${subId}-${articleId}`,
                                 source: subId,
                                 target: articleId,
                                 type: 'topic',
                             });
-                            g.setEdge(subId, articleId);
                         }
                     });
                 }
@@ -99,10 +118,10 @@ export function buildMindmapFromHierarchy(
         });
 
         // Process Direct Articles under Root - only if root IS expanded AND has no sub-topics
-        // If a root topic has sub-topics, we only show sub-topics when expanded
-        // If a root topic has NO sub-topics, we show direct articles when expanded
         if (expandedTopics.has(rootId) && rootTopic.subTopics.length === 0) {
-            rootTopic.articleIds.forEach(articleId => {
+            const uniqueArticleIds = new Set(rootTopic.articleIds);
+
+            uniqueArticleIds.forEach(articleId => {
                 const article = articleMap.get(articleId);
                 if (article) {
                     const articleNode: MindmapNode = {
@@ -114,17 +133,15 @@ export function buildMindmapFromHierarchy(
                         },
                         position: { x: 0, y: 0 },
                     };
-                    nodes.push(articleNode);
-                    g.setNode(articleId, { width: 350, height: 50 });
+                    addNode(articleNode, 350, 50);
 
                     // Edge: Root -> Article
-                    edges.push({
+                    addEdge({
                         id: `${rootId}-${articleId}`,
                         source: rootId,
                         target: articleId,
                         type: 'topic',
                     });
-                    g.setEdge(rootId, articleId);
                 }
             });
         }
@@ -162,4 +179,29 @@ function getTopicColor(index: number): string {
         '#f97316', // orange
     ];
     return colors[index % colors.length];
+}
+
+/**
+ * Find article IDs for a given topic title in the hierarchy.
+ * @param hierarchy The mindmap hierarchy.
+ * @param topicTitle The title of the topic (or subtopic) to search for.
+ * @returns An array of article IDs associated with the topic.
+ */
+export function findArticleIdsForTopic(hierarchy: MindmapHierarchy, topicTitle: string): string[] {
+    for (const root of hierarchy.rootTopics) {
+        if (root.title === topicTitle) {
+            // Aggregate all article IDs from the root and its subtopics
+            const allIds = new Set(root.articleIds);
+            root.subTopics.forEach(sub => {
+                sub.articleIds.forEach(id => allIds.add(id));
+            });
+            return Array.from(allIds);
+        }
+        for (const sub of root.subTopics) {
+            if (sub.title === topicTitle) {
+                return sub.articleIds;
+            }
+        }
+    }
+    return [];
 }

@@ -30,6 +30,10 @@ export const AiSettingsModal: React.FC = () => {
     handleToggleAutoUploadAfterRefresh,
     autoSummarizeOnRefresh,
     handleToggleAutoSummarizeOnRefresh,
+    autoClusterOnRefresh,
+    handleToggleAutoClusterOnRefresh,
+    autoTranscribeOnRefresh,
+    handleToggleAutoTranscribeOnRefresh,
     driveSyncStatus,
     handleRefreshMissingIcons,
     handleViewChange,
@@ -45,6 +49,8 @@ export const AiSettingsModal: React.FC = () => {
     setDefaultAiLanguage,
     accessToken,
     isAiDisabled,
+    autoAiTimeWindowDays,
+    setAutoAiTimeWindowDays,
   } = useAppContext();
 
   if (!isAiSettingsModalOpen) return null;
@@ -199,6 +205,29 @@ export const AiSettingsModal: React.FC = () => {
               <div className="border-t border-gray-600/50 pt-4">
                 <div className="flex justify-between items-center">
                   <div>
+                    <h4 className="font-semibold text-gray-100">Auto-transcribe videos on refresh</h4>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Automatically fetch transcripts for new YouTube videos after a refresh.
+                    </p>
+                  </div>
+                  <label
+                    htmlFor="auto-transcribe-toggle"
+                    className="relative inline-flex items-center cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      id="auto-transcribe-toggle"
+                      className="sr-only peer"
+                      checked={autoTranscribeOnRefresh}
+                      onChange={handleToggleAutoTranscribeOnRefresh}
+                    />
+                    <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
+              <div className="border-t border-gray-600/50 pt-4">
+                <div className="flex justify-between items-center">
+                  <div>
                     <h4
                       className={`font-semibold transition-colors ${isAiDisabled ? 'text-yellow-400' : 'text-gray-100'}`}
                     >
@@ -228,6 +257,63 @@ export const AiSettingsModal: React.FC = () => {
                     />
                     <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
                   </label>
+                </div>
+              </div>
+              <div className="border-t border-gray-600/50 pt-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h4
+                      className={`font-semibold transition-colors ${isAiDisabled ? 'text-yellow-400' : 'text-gray-100'}`}
+                    >
+                      Auto-generate mindmap on refresh
+                    </h4>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Automatically group recent videos into a mindmap hierarchy after a refresh.
+                    </p>
+                  </div>
+                  <label
+                    htmlFor="auto-cluster-toggle"
+                    className="relative inline-flex items-center cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      id="auto-cluster-toggle"
+                      className="sr-only peer"
+                      checked={autoClusterOnRefresh}
+                      onChange={handleToggleAutoClusterOnRefresh}
+                    />
+                    <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
+              <div className="border-t border-gray-600/50 pt-4">
+                <div>
+                  <h4 className="font-semibold text-gray-100">Time window for auto AI tasks</h4>
+                  <p className="text-xs text-gray-400 mt-1 mb-3">
+                    Limit auto-transcription and auto-summary to articles published within the last X days.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <label htmlFor="time-window-input" className="text-sm text-gray-300">
+                      Last
+                    </label>
+                    <input
+                      type="number"
+                      id="time-window-input"
+                      min="1"
+                      max="365"
+                      value={autoAiTimeWindowDays}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val) && val >= 1 && val <= 365) {
+                          setAutoAiTimeWindowDays(val);
+                        }
+                      }}
+                      className="w-20 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="time-window-input" className="text-sm text-gray-300">
+                      days
+                    </label>
+                  </div>
                 </div>
               </div>
               <div className="border-t border-gray-600/50 pt-4">

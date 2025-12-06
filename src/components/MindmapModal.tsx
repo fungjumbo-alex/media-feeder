@@ -79,196 +79,196 @@ const OutlineView: React.FC<{
   searchQuery,
   viewMode,
 }) => {
-  const articleMap = new Map(articles.map(a => [a.id, a]));
-  const query = searchQuery.toLowerCase();
+    const articleMap = new Map(articles.map(a => [a.id, a]));
+    const query = searchQuery.toLowerCase();
 
-  const matchesSearch = (text: string) => {
-    return !query || text.toLowerCase().includes(query);
-  };
+    const matchesSearch = (text: string) => {
+      return !query || text.toLowerCase().includes(query);
+    };
 
-  const renderArticle = (article: Article) => {
-    if (viewMode === 'thumbnail') {
-      return (
-        <button
-          key={article.id}
-          onClick={() => onOpenArticle(article)}
-          className="group relative overflow-hidden rounded-lg bg-gray-800 hover:bg-gray-750 transition-all"
-        >
-          <div className="aspect-video w-full overflow-hidden bg-gray-900">
-            {article.imageUrl ? (
-              <img
-                src={article.imageUrl}
-                alt={article.title}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-600">
-                <div className="w-12 h-12 rounded-full bg-gray-700 flex items-center justify-center">
-                  <span className="text-2xl">📄</span>
+    const renderArticle = (article: Article) => {
+      if (viewMode === 'thumbnail') {
+        return (
+          <button
+            key={article.id}
+            onClick={() => onOpenArticle(article)}
+            className="group relative overflow-hidden rounded-lg bg-gray-800 hover:bg-gray-750 transition-all"
+          >
+            <div className="aspect-video w-full overflow-hidden bg-gray-900">
+              {article.imageUrl ? (
+                <img
+                  src={article.imageUrl}
+                  alt={article.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-600">
+                  <div className="w-12 h-12 rounded-full bg-gray-700 flex items-center justify-center">
+                    <span className="text-2xl">📄</span>
+                  </div>
                 </div>
+              )}
+            </div>
+            <div className="p-2">
+              <div className="text-xs text-gray-300 group-hover:text-white line-clamp-2">
+                {article.title}
               </div>
-            )}
-          </div>
-          <div className="p-2">
-            <div className="text-xs text-gray-300 group-hover:text-white line-clamp-2">
-              {article.title}
             </div>
-          </div>
-        </button>
-      );
-    } else {
-      return (
-        <button
-          key={article.id}
-          onClick={() => onOpenArticle(article)}
-          className="w-full text-left p-3 pl-12 hover:bg-gray-800 transition-colors border-t border-gray-800 group"
-        >
-          <div className="flex items-start gap-2">
-            <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0"></div>
-            <div className="text-sm text-gray-300 group-hover:text-white line-clamp-2">
-              {article.title}
-            </div>
-          </div>
-        </button>
-      );
-    }
-  };
-
-  return (
-    <div className="h-full overflow-y-auto bg-gray-900 p-6 space-y-4">
-      {hierarchy.rootTopics.map((rootTopic, rootIndex) => {
-        const rootId = `root-${rootIndex}`;
-        const isRootExpanded = expandedTopics.has(rootId);
-        const rootArticleCount = rootTopic.subTopics.reduce(
-          (sum, sub) => sum + sub.articleIds.length,
-          rootTopic.articleIds.length
+          </button>
         );
+      } else {
+        return (
+          <button
+            key={article.id}
+            onClick={() => onOpenArticle(article)}
+            className="w-full text-left p-3 pl-12 hover:bg-gray-800 transition-colors border-t border-gray-800 group"
+          >
+            <div className="flex items-start gap-2">
+              <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0"></div>
+              <div className="text-sm text-gray-300 group-hover:text-white line-clamp-2">
+                {article.title}
+              </div>
+            </div>
+          </button>
+        );
+      }
+    };
 
-        // Filter visibility based on search
-        const rootMatches = matchesSearch(rootTopic.title);
-        const hasMatchingContent =
-          rootMatches ||
-          rootTopic.subTopics.some(
-            sub =>
-              matchesSearch(sub.title) ||
-              sub.articleIds.some(id => {
-                const article = articleMap.get(id);
-                return article && matchesSearch(article.title);
-              })
+    return (
+      <div className="h-full overflow-y-auto bg-gray-900 p-6 space-y-4">
+        {hierarchy.rootTopics.map((rootTopic, rootIndex) => {
+          const rootId = `root-${rootIndex}`;
+          const isRootExpanded = expandedTopics.has(rootId);
+          const rootArticleCount = rootTopic.subTopics.reduce(
+            (sum, sub) => sum + sub.articleIds.length,
+            rootTopic.articleIds.length
           );
 
-        if (!hasMatchingContent) return null;
+          // Filter visibility based on search
+          const rootMatches = matchesSearch(rootTopic.title);
+          const hasMatchingContent =
+            rootMatches ||
+            rootTopic.subTopics.some(
+              sub =>
+                matchesSearch(sub.title) ||
+                sub.articleIds.some(id => {
+                  const article = articleMap.get(id);
+                  return article && matchesSearch(article.title);
+                })
+            );
 
-        return (
-          <div key={rootId} className="border border-gray-700 rounded-lg overflow-hidden">
-            {/* Root Topic Header */}
-            <button
-              onClick={() => onToggleTopic(rootId)}
-              className="w-full flex items-center justify-between p-4 bg-gray-800 hover:bg-gray-750 transition-colors text-left"
-              style={{ opacity: rootMatches ? 1 : 0.5 }}
-            >
-              <div className="flex items-center gap-3">
-                <div className="text-lg font-semibold text-white">{rootTopic.title}</div>
-                <span className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded-full">
-                  {rootArticleCount} {rootArticleCount === 1 ? 'video' : 'videos'}
-                </span>
-              </div>
-              <div
-                className={`text-gray-400 transition-transform ${isRootExpanded ? 'rotate-90' : ''}`}
+          if (!hasMatchingContent) return null;
+
+          return (
+            <div key={rootId} className="border border-gray-700 rounded-lg overflow-hidden">
+              {/* Root Topic Header */}
+              <button
+                onClick={() => onToggleTopic(rootId)}
+                className="w-full flex items-center justify-between p-4 bg-gray-800 hover:bg-gray-750 transition-colors text-left"
+                style={{ opacity: rootMatches ? 1 : 0.5 }}
               >
-                ▶
-              </div>
-            </button>
+                <div className="flex items-center gap-3">
+                  <div className="text-lg font-semibold text-white">{rootTopic.title}</div>
+                  <span className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded-full">
+                    {rootArticleCount} {rootArticleCount === 1 ? 'video' : 'videos'}
+                  </span>
+                </div>
+                <div
+                  className={`text-gray-400 transition-transform ${isRootExpanded ? 'rotate-90' : ''}`}
+                >
+                  ▶
+                </div>
+              </button>
 
-            {/* Sub-topics and Articles */}
-            {isRootExpanded && (
-              <div className="bg-gray-850">
-                {rootTopic.subTopics.length > 0 ? (
-                  rootTopic.subTopics.map((subTopic, subIndex) => {
-                    const subId = `${rootId}-sub-${subIndex}`;
-                    const isSubExpanded = expandedTopics.has(subId);
-                    const subMatches = matchesSearch(subTopic.title);
-                    const hasMatchingArticles = subTopic.articleIds.some(id => {
-                      const article = articleMap.get(id);
-                      return article && matchesSearch(article.title);
-                    });
+              {/* Sub-topics and Articles */}
+              {isRootExpanded && (
+                <div className="bg-gray-850">
+                  {rootTopic.subTopics.length > 0 ? (
+                    rootTopic.subTopics.map((subTopic, subIndex) => {
+                      const subId = `${rootId}-sub-${subIndex}`;
+                      const isSubExpanded = expandedTopics.has(subId);
+                      const subMatches = matchesSearch(subTopic.title);
+                      const hasMatchingArticles = subTopic.articleIds.some(id => {
+                        const article = articleMap.get(id);
+                        return article && matchesSearch(article.title);
+                      });
 
-                    if (!subMatches && !hasMatchingArticles) return null;
+                      if (!subMatches && !hasMatchingArticles) return null;
 
-                    return (
-                      <div key={subId} className="border-t border-gray-700">
-                        {/* Sub-topic Header */}
-                        <button
-                          onClick={() => onToggleTopic(subId)}
-                          className="w-full flex items-center justify-between p-3 pl-8 hover:bg-gray-800 transition-colors text-left"
-                          style={{ opacity: subMatches ? 1 : 0.5 }}
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium text-gray-200">
-                              {subTopic.title}
+                      return (
+                        <div key={subId} className="border-t border-gray-700">
+                          {/* Sub-topic Header */}
+                          <button
+                            onClick={() => onToggleTopic(subId)}
+                            className="w-full flex items-center justify-between p-3 pl-8 hover:bg-gray-800 transition-colors text-left"
+                            style={{ opacity: subMatches ? 1 : 0.5 }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-medium text-gray-200">
+                                {subTopic.title}
+                              </div>
+                              <span className="text-xs text-gray-500 bg-gray-700 px-2 py-0.5 rounded-full">
+                                {subTopic.articleIds.length}
+                              </span>
                             </div>
-                            <span className="text-xs text-gray-500 bg-gray-700 px-2 py-0.5 rounded-full">
-                              {subTopic.articleIds.length}
-                            </span>
-                          </div>
-                          <div
-                            className={`text-gray-500 text-sm transition-transform ${isSubExpanded ? 'rotate-90' : ''}`}
-                          >
-                            ▶
-                          </div>
-                        </button>
+                            <div
+                              className={`text-gray-500 text-sm transition-transform ${isSubExpanded ? 'rotate-90' : ''}`}
+                            >
+                              ▶
+                            </div>
+                          </button>
 
-                        {/* Articles */}
-                        {isSubExpanded && (
-                          <div
-                            className={
-                              viewMode === 'thumbnail'
-                                ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-gray-900'
-                                : 'bg-gray-900'
-                            }
-                          >
-                            {subTopic.articleIds.map(articleId => {
-                              const article = articleMap.get(articleId);
-                              if (!article) return null;
+                          {/* Articles */}
+                          {isSubExpanded && (
+                            <div
+                              className={
+                                viewMode === 'thumbnail'
+                                  ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-gray-900'
+                                  : 'bg-gray-900'
+                              }
+                            >
+                              {Array.from(new Set(subTopic.articleIds)).map(articleId => {
+                                const article = articleMap.get(articleId);
+                                if (!article) return null;
 
-                              const articleMatches = matchesSearch(article.title);
-                              if (!articleMatches) return null;
+                                const articleMatches = matchesSearch(article.title);
+                                if (!articleMatches) return null;
 
-                              return renderArticle(article);
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                ) : (
-                  // Direct articles under root (no sub-topics)
-                  <div
-                    className={
-                      viewMode === 'thumbnail'
-                        ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-gray-900'
-                        : 'bg-gray-900'
-                    }
-                  >
-                    {rootTopic.articleIds.map(articleId => {
-                      const article = articleMap.get(articleId);
-                      if (!article) return null;
+                                return renderArticle(article);
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    // Direct articles under root (no sub-topics)
+                    <div
+                      className={
+                        viewMode === 'thumbnail'
+                          ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-gray-900'
+                          : 'bg-gray-900'
+                      }
+                    >
+                      {Array.from(new Set(rootTopic.articleIds)).map(articleId => {
+                        const article = articleMap.get(articleId);
+                        if (!article) return null;
 
-                      const articleMatches = matchesSearch(article.title);
-                      if (!articleMatches) return null;
+                        const articleMatches = matchesSearch(article.title);
+                        if (!articleMatches) return null;
 
-                      return renderArticle(article);
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-};
+                        return renderArticle(article);
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
 export const MindmapModal: React.FC<MindmapModalProps> = ({
   isOpen,
@@ -276,17 +276,13 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
   articles,
   onOpenArticle,
 }) => {
-  const { aiModel } = useAppContext();
+  const { aiModel, defaultAiLanguage, aiHierarchy, setAiHierarchy } = useAppContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'graph' | 'outline'>('graph');
   const [articleViewMode, setArticleViewMode] = useState<'list' | 'thumbnail'>('list');
   const [isInitialized, setIsInitialized] = useState(false);
-  const [aiHierarchy, setAiHierarchy] = useState<MindmapHierarchy | null>(() => {
-    // Load from localStorage on mount
-    const stored = localStorage.getItem('mindmap_hierarchy');
-    return stored ? JSON.parse(stored) : null;
-  });
+
   const [isClustering, setIsClustering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -315,11 +311,8 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
         return;
       }
 
-      const hierarchy = await generateMindmapHierarchy(videos, aiModel);
+      const hierarchy = await generateMindmapHierarchy(videos, aiModel, defaultAiLanguage);
       setAiHierarchy(hierarchy);
-
-      // Persist to localStorage
-      localStorage.setItem('mindmap_hierarchy', JSON.stringify(hierarchy));
 
       // Reset expansion state for new hierarchy
       setExpandedTopics(new Set());
@@ -499,21 +492,19 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
           <div className="flex gap-2 mr-4">
             <button
               onClick={() => setViewMode('graph')}
-              className={`px-3 py-1 text-xs font-medium rounded ${
-                viewMode === 'graph'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
-              }`}
+              className={`px-3 py-1 text-xs font-medium rounded ${viewMode === 'graph'
+                ? 'bg-indigo-600 text-white'
+                : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
+                }`}
             >
               Graph
             </button>
             <button
               onClick={() => setViewMode('outline')}
-              className={`px-3 py-1 text-xs font-medium rounded ${
-                viewMode === 'outline'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
-              }`}
+              className={`px-3 py-1 text-xs font-medium rounded ${viewMode === 'outline'
+                ? 'bg-indigo-600 text-white'
+                : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
+                }`}
             >
               Outline
             </button>
@@ -522,21 +513,19 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
             <div className="flex gap-2 mr-4 border-l border-gray-700 pl-4">
               <button
                 onClick={() => setArticleViewMode('list')}
-                className={`px-3 py-1 text-xs font-medium rounded ${
-                  articleViewMode === 'list'
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
-                }`}
+                className={`px-3 py-1 text-xs font-medium rounded ${articleViewMode === 'list'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
+                  }`}
               >
                 List
               </button>
               <button
                 onClick={() => setArticleViewMode('thumbnail')}
-                className={`px-3 py-1 text-xs font-medium rounded ${
-                  articleViewMode === 'thumbnail'
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
-                }`}
+                className={`px-3 py-1 text-xs font-medium rounded ${articleViewMode === 'thumbnail'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-300 bg-gray-800 border border-gray-600 hover:bg-gray-700'
+                  }`}
               >
                 Thumbnail
               </button>
@@ -545,7 +534,6 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
           <div className="flex gap-2 mr-4">
             <button
               onClick={() => {
-                localStorage.removeItem('mindmap_hierarchy');
                 setAiHierarchy(null);
                 setExpandedTopics(new Set());
                 setIsInitialized(false);

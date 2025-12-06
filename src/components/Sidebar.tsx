@@ -187,11 +187,7 @@ const SidebarFeedIcon: React.FC<{ feed: Feed; count: number; onCloseMindmap?: ()
     return (feed.title || 'F').charAt(0).toUpperCase();
   }, [feed.title]);
 
-  const FallbackIcon = () => (
-    <div className={`w-full h-full flex items-center justify-center rounded ${fallbackColor}`}>
-      <span className="font-bold text-white/80 text-lg">{initial}</span>
-    </div>
-  );
+
 
   return (
     <Tooltip text={feed.title} isVisible={true}>
@@ -211,7 +207,9 @@ const SidebarFeedIcon: React.FC<{ feed: Feed; count: number; onCloseMindmap?: ()
             onError={() => setHasError(true)}
           />
         ) : (
-          <FallbackIcon />
+          <div className={`w-full h-full flex items-center justify-center rounded ${fallbackColor}`}>
+            <span className="font-bold text-white/80 text-lg">{initial}</span>
+          </div>
         )}
         {unreadCount > 0 && (
           <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[10px] font-bold rounded-full px-1 min-w-[16px] h-4 flex items-center justify-center shadow-md border border-gray-800">
@@ -505,6 +503,212 @@ const ViewWithFeeds: React.FC<{
   );
 };
 
+
+const TopicItem: React.FC<{
+  title: string;
+  articleIds: string[];
+  subTopics?: { title: string; articleIds: string[] }[];
+  depth?: number;
+  onNavigate: (title: string, ids: string[]) => void;
+}> = ({ title, articleIds, subTopics, depth = 0, onNavigate }) => {
+  const { currentView, allArticles, sidebarTab, feedsById } = useAppContext();
+  const hasSubTopics = subTopics && subTopics.length > 0;
+
+  // Filter articleIds to only include those that:
+  // 1. Exist in allArticles
+  // 2. Match the current sidebarTab (YT vs RSS)
+  const validArticleCount = useMemo(() => {
+    if (!allArticles || !feedsById) return 0;
+
+    // Create a set of valid IDs for O(1) lookup, but we have strict checks
+    // Actually we iterate IDs and check existence.
+    // Optimization: allArticles is large. articlesById would be better.
+    // But we might only have allArticles exposed efficiently or as an array.
+    // Let's assume allArticles is available.
+    // To avoid O(N*M), let's use allArticles.find? No fast lookup.
+    // If allArticles is array, checking existence for each ID is slow.
+    // However, articleIds for a topic is usually small.
+    // But we do this for EVERY topic item.
+    // If we have articlesById map in context, that's best.
+    // Let's check if articlesById is exposed in useAppContext. 
+    // If not, we iterate articleIds and find in allArticles. 
+    // Given the previous code used allArticles.filter(id set), it implies allArticles iteration.
+
+    // Let's filter the input articleIds.
+    // We need to check if the article exists AND matches tab.
+    // Since we don't have a map, we have to iterate allArticles? 
+    // NO! That would be terrible for performance in a list.
+    // We should iterate articleIds and check against a Map.
+    // DOES appContext provide a map?
+    // Let's assume for now we use allArticles.
+    // Wait, the previous `filteredArticles` logic iterated `allArticles`. 
+    // Here we are inside `TopicItem`. If we iterate `allArticles` for every topic, it will lag.
+
+    // Ideally we rely on the parent or `AiTopicsList` to pre-calculate, or we get a Map.
+    // AppContext usually has `articlesById`. Let's assume it's exposed or verify.
+    // I will use allArticles.find for now, but really I should verify `articlesById` existence.
+
+    // Wait, if I cannot verify `articlesById`, I'll use `allArticles`.
+    // But wait, `allArticles` is `Article[]`.
+    // Let's assume `allArticles` is what we have.
+    const isYtTab = sidebarTab === 'yt';
+
+    // Optimization: Build a Set of valid IDs for the current tab ONCE in the parent list?
+    // That's much better. But `AiTopicsList` is the parent. 
+    // Let's move this logic to `AiTopicsList` if possible?
+    // But `TopicItem` is recursive.
+
+    // Let's stick to doing it here but verify if we can use a Map. 
+    // `useAppContext` typically exposes state.
+
+    return articleIds.filter(id => {
+      const article = allArticles.find(a => a.id === id);
+      if (!article) return false;
+      const feed = feedsById.get(article.feedId);
+      if (!feed) return false;
+      const isYtFeed = feed.url.toLowerCase().includes('youtube.com');
+      return isYtTab ? isYtFeed : !isYtFeed;
+    }).length;
+  }, [articleIds, allArticles, sidebarTab, feedsById]);
+
+
+  // Check if this topic is active
+  const isSelfActive =
+    currentView.type === 'ai-topic' &&
+    (currentView.value as { title: string })?.title === title;
+
+  // Check if any subtopic is active (recursive check helper)
+  const isChildActive = useMemo(() => {
+    if (!hasSubTopics || !subTopics) return false;
+    const checkActive = (subs: { title: string }[]): boolean => {
+      return subs.some(sub => {
+        if (currentView.type === 'ai-topic' && (currentView.value as { title: string })?.title === sub.title) {
+          return true;
+        }
+        return false;
+      });
+    };
+    return checkActive(subTopics);
+  }, [currentView, subTopics, hasSubTopics]);
+
+
+  // Initialize expanded state
+  const [isExpanded, setIsExpanded] = useState(isChildActive);
+
+  useEffect(() => {
+    if (isChildActive) {
+      setIsExpanded(true);
+    }
+  }, [isChildActive]);
+
+  const handleExpand = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsExpanded(!isExpanded);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    onNavigate(title, articleIds);
+  };
+
+  const paddingLeft = (depth + 1) * 12;
+
+  // Render even if validArticleCount is 0? 
+  // User might want to see topics even if empty in current view?
+  // Or maybe gray them out?
+  // For now just show the count.
+
+  return (
+    <div className="w-full">
+      <div
+        className={`flex items-center w-full pr-2 py-1.5 text-sm rounded-md transition-colors ${isSelfActive
+          ? 'bg-gray-700 text-white'
+          : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
+          }`}
+        style={{ paddingLeft: `${paddingLeft}px` }}
+      >
+        {hasSubTopics && (
+          <button
+            onClick={handleExpand}
+            className="p-0.5 mr-1 rounded hover:bg-gray-600 transition-colors"
+          >
+            <ChevronRightIcon
+              className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+            />
+          </button>
+        )}
+        {!hasSubTopics && <span className="w-4 mr-1" />}
+        <a
+          href={`#/ai-topic/${encodeURIComponent(title)}`}
+          onClick={handleClick}
+          className="flex-1 truncate cursor-pointer flex items-center"
+        >
+          <TagIcon className="w-3 h-3 mr-2 opacity-70" />
+          <span className="truncate">{title}</span>
+          {validArticleCount > 0 && (
+            <span className="ml-auto text-[10px] bg-gray-700 px-1.5 py-0.5 rounded-full text-gray-400">
+              {validArticleCount}
+            </span>
+          )}
+        </a>
+      </div>
+      {hasSubTopics && isExpanded && (
+        <div className="mt-0.5">
+          {subTopics!.map((sub, idx) => (
+            <TopicItem
+              key={`${title}-${sub.title}-${idx}`}
+              title={sub.title}
+              articleIds={sub.articleIds}
+              depth={depth + 1}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindmap }) => {
+  const { aiHierarchy, handleViewChange } = useAppContext();
+
+  if (!aiHierarchy || !aiHierarchy.rootTopics || aiHierarchy.rootTopics.length === 0) {
+    return (
+      <div className="px-4 py-3 text-xs text-gray-500 italic text-center">
+        No topics generated yet. Use the "AI Grouping" button to generate topics correctly.
+      </div>
+    );
+  }
+
+  const handleNavigate = (title: string, ids: string[]) => {
+    if (onCloseMindmap) onCloseMindmap();
+    handleViewChange('ai-topic', { title, articleIds: ids });
+  };
+
+  return (
+    <div className="space-y-0.5 mt-1">
+      {aiHierarchy.rootTopics.map((topic, idx) => {
+        // Calculate total unique article IDs for the root topic to show correct count
+        const allIds = new Set(topic.articleIds);
+        topic.subTopics?.forEach(sub => {
+          sub.articleIds.forEach(id => allIds.add(id));
+        });
+        const aggregateIds = Array.from(allIds);
+
+        return (
+          <TopicItem
+            key={`${topic.title}-${idx}`}
+            title={topic.title}
+            articleIds={aggregateIds}
+            subTopics={topic.subTopics}
+            onNavigate={handleNavigate}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
 export const Sidebar: React.FC<{
   onOpenMindmap: () => void;
   isMindmapOpen: boolean;
@@ -568,6 +772,9 @@ export const Sidebar: React.FC<{
     setIsTrendingKeywordsModalOpen,
     // FIX: Add missing property `favoriteFeeds` to destructuring.
     favoriteFeeds,
+    aiHierarchy,
+    isAiTopicsCollapsed,
+    onToggleAiTopicsCollapse,
   } = useAppContext();
 
   const [isActionsPopoverOpen, setIsActionsPopoverOpen] = useState(false);
@@ -650,6 +857,7 @@ export const Sidebar: React.FC<{
       </>
     );
   };
+
 
   const ytFeeds = useMemo(() => sortedFeeds.filter(isYouTubeFeed), [sortedFeeds]);
   const nonYtFeeds = useMemo(() => sortedFeeds.filter(feed => !isYouTubeFeed(feed)), [sortedFeeds]);
@@ -801,6 +1009,16 @@ export const Sidebar: React.FC<{
             </button>
           </Tooltip>
         </SidebarSection>
+
+        {!isSidebarCollapsed && aiHierarchy && (
+          <SidebarSection
+            title="AI Topics"
+            isCollapsed={isAiTopicsCollapsed}
+            onToggle={onToggleAiTopicsCollapse}
+          >
+            <AiTopicsList onCloseMindmap={onCloseMindmap} />
+          </SidebarSection>
+        )}
 
         {sidebarTab === 'yt' && (youtubeTags.length > 0 || favoriteFeeds.some(isYouTubeFeed)) && (
           <SidebarSection

@@ -67,9 +67,9 @@ const generateContentWithRetry = async (
 
   while (attempt < maxRetries) {
     try {
-      // Create a timeout promise - 15 seconds
+      // Create a timeout promise - 300 seconds (5 min - needed for very large mindmap generation)
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Request timed out after 15 seconds')), 15000);
+        setTimeout(() => reject(new Error('Request timed out after 300 seconds')), 300000);
       });
 
       // Race the API call against the timeout
@@ -605,11 +605,11 @@ export const generateThematicDigest = async (
         const fullArticle = articlesByTitle.get(articleInfo.title);
         return fullArticle
           ? {
-              id: fullArticle.id,
-              feedId: fullArticle.feedId,
-              title: fullArticle.title,
-              link: fullArticle.link,
-            }
+            id: fullArticle.id,
+            feedId: fullArticle.feedId,
+            title: fullArticle.title,
+            link: fullArticle.link,
+          }
           : null;
       })
       .filter((a: any) => a !== null);
@@ -820,7 +820,8 @@ export const generatePageViewDigest = async (
 
 export const generateMindmapHierarchy = async (
   articles: Article[],
-  model: AiModel
+  model: AiModel,
+  targetLanguage: string = 'English'
 ): Promise<MindmapHierarchy> => {
   console.log(`[AI Clustering] Processing ${articles.length} articles`);
 
@@ -833,7 +834,7 @@ export const generateMindmapHierarchy = async (
     (a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0)
   );
 
-  const systemInstruction = `You are a JSON generator. Your ONLY task is to group these articles into topics.
+  let systemInstruction = `You are a JSON generator. Your ONLY task is to group these articles into topics.
     - Prioritize the latest/newest videos when forming groups or choosing representative titles.
     - Group articles that discuss the same or very similar events/topics.
 
@@ -850,13 +851,23 @@ Format:
       "articleIds": []
     }
   ]
-}`;
+}
+
+IMPORTANT CONSTRAINTS:
+1. Each article ID from the input list must appear EXACTLY ONCE in the entire JSON output.
+2. Assign each article to the single most relevant subtopic.
+3. Do NOT repeat article IDs across multiple topics or subtopics.
+4. If an article doesn't fit well, put it in a "Miscellaneous" topic.`;
+
+  if (targetLanguage && targetLanguage !== 'original') {
+    systemInstruction += `\n\nIMPORTANT: All "title" fields in the JSON output MUST be translated into ${targetLanguage}.`;
+  }
 
   const articleList = articlesToProcess
-    .map(a => `${a.id}|${a.pubDate || 'No Date'}|${a.title}`)
+    .map(a => `${a.id}|${a.title}`)
     .join('\n');
 
-  const contents = `Group these ${articlesToProcess.length} articles into 3-8 topics. The input format is ID|Date|Title:\n${articleList}`;
+  const contents = `Group these ${articlesToProcess.length} articles into 3-8 topics. The input format is ID|Title:\n${articleList}`;
 
   console.log(
     `[AI Clustering] Sending request to ${model} with ${contents.length} characters for ${articlesToProcess.length} articles`
@@ -867,7 +878,10 @@ Format:
     contents,
     config: {
       systemInstruction,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 16384,
+      thinkingConfig: {
+        thinkingBudget: 0, // Disable extended thinking to prevent token exhaustion
+      },
     },
   });
 
@@ -879,6 +893,14 @@ Format:
 
   // Extract text from the response
   const candidate = response.candidates[0];
+
+  // Check for MAX_TOKENS finish reason
+  if (candidate.finishReason === 'MAX_TOKENS') {
+    console.error('AI response hit MAX_TOKENS limit:', response);
+    throw new Error(
+      `The mindmap is too complex for the current token limit. Try reducing the number of articles or refresh to regenerate with a simpler structure.`
+    );
+  }
 
   if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
     console.error('No content in AI response:', response);
@@ -894,7 +916,13 @@ Format:
   jsonString = jsonString.replace(/```json\n/g, '').replace(/```/g, '');
 
   try {
-    const hierarchyJson = JSON.parse(jsonString);
+    let hierarchyJson = JSON.parse(jsonString);
+
+    // Robust parsing: if AI returned an array, wrap it in the expected object structure
+    if (Array.isArray(hierarchyJson)) {
+      hierarchyJson = { rootTopics: hierarchyJson };
+    }
+
     if (!hierarchyJson.rootTopics || !Array.isArray(hierarchyJson.rootTopics)) {
       console.error('Invalid hierarchy structure:', hierarchyJson);
       throw new Error('AI returned an invalid format for the mindmap hierarchy.');

@@ -50,6 +50,8 @@ export interface Article {
   tags?: string[];
   order?: number;
   isReddit?: boolean;
+  transcript?: TranscriptLine[];
+  transcriptAttempted?: boolean;
 }
 
 export interface Feed {
