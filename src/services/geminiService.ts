@@ -543,9 +543,18 @@ export const generateThematicDigest = async (
   articles: Article[],
   model: AiModel
 ): Promise<ThematicDigest> => {
-  const systemInstruction = `You are an expert at creating thematic digests. Your task is to analyze a list of articles, group them by common themes, and provide a summary for each theme.
+  const systemInstruction = `You are an expert at creating thematic digests. Your task is to analyze a list of articles, group them by common themes, and provide detailed, comprehensive summaries for each theme.
     - Identify 2-4 main themes present in the articles.
-    - For each theme, provide a title, a concise summary of the theme, a list of relevant keywords, and list the articles that fall under it.
+    - For each theme, provide:
+      * A clear, descriptive title
+      * A DETAILED summary (3-5 paragraphs) that:
+        - Explains the overarching theme and why it's significant
+        - Synthesizes the key points and insights from all articles in this theme
+        - Highlights important trends, patterns, or connections between the articles
+        - Provides analysis and context, not just a list of facts
+        - Discusses implications or potential impacts when relevant
+      * A list of relevant keywords
+      * The articles that fall under this theme
     - Create a main, overarching title for the entire digest.
     - Respond only with the JSON object.`;
 
