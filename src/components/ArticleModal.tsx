@@ -390,7 +390,8 @@ export const ArticleModal: React.FC = () => {
   }, [article, videoId]);
 
   const showDetailsTab = article?.hasIframe || (videoId && article?.description);
-  const hasTranscript = !!transcriptData?.transcript && transcriptData.transcript.length > 0;
+  const hasTranscript = (!!transcriptData?.transcript && transcriptData.transcript.length > 0) ||
+    (!!captionChoices && captionChoices.length > 0);
   const currentFeed = useMemo(() => {
     if (!article) return null;
     return feeds.find(f => f.id === article.feedId);
@@ -751,17 +752,7 @@ export const ArticleModal: React.FC = () => {
           setCaptionChoices(choices);
           if (choices.length > 0) {
             setSelectedCaptionUrl(choices[0].url);
-            // Auto-download the first transcript immediately
-            setIsFetchingTranscript(true);
-            try {
-              const transcript = await fetchAndParseTranscript(choices[0].url);
-              setTranscriptData({ transcript, language: choices[0].label });
-              lineRefs.current = [];
-            } catch (e) {
-              setTranscriptError(e instanceof Error ? e.message : 'Failed to load transcript.');
-            } finally {
-              setIsFetchingTranscript(false);
-            }
+            // The useEffect on selectedCaptionUrl will handle the fetch
           } else setTranscriptError('No transcripts available for this video.');
         } catch (e) {
           setTranscriptError(
@@ -939,8 +930,20 @@ export const ArticleModal: React.FC = () => {
       if (videoId) {
         await ensureYouTubeApiReady();
         if (playerRef.current) {
-          const playerUrl = playerRef.current.getVideoUrl();
-          if (!playerUrl || !playerUrl.includes(videoId)) playerRef.current.loadVideoById(videoId);
+          // Check if player is ready and has the method
+          try {
+            const playerUrl = typeof playerRef.current.getVideoUrl === 'function'
+              ? playerRef.current.getVideoUrl()
+              : null;
+            if (!playerUrl || !playerUrl.includes(videoId)) {
+              if (typeof playerRef.current.loadVideoById === 'function') {
+                playerRef.current.loadVideoById(videoId);
+              }
+            }
+          } catch (e) {
+            // If methods fail, player might not be ready yet - skip update
+            console.warn('[YouTube Player] Player methods not ready yet, skipping video update');
+          }
         } else {
           playerRef.current = new YT.Player(playerElementId, {
             videoId,
@@ -956,7 +959,7 @@ export const ArticleModal: React.FC = () => {
             events: {
               onStateChange: e => onPlayerStateChangeRef.current(e),
               onError: e => onPlayerErrorRef.current(e),
-              onReady: () => {},
+              onReady: () => { },
             },
           });
         }
@@ -1341,7 +1344,7 @@ export const ArticleModal: React.FC = () => {
             ) : (
               <div
                 className="article-content-area flex-grow overflow-y-auto px-6 pt-4 pb-12 h-full overflow-x-hidden"
-                onTouchStart={() => {}}
+                onTouchStart={() => { }}
               >
                 {' '}
                 {shouldShowImage && (

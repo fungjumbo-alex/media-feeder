@@ -20,7 +20,11 @@ export default defineConfig(({ mode }) => {
   return {
     server: {
       proxy: {
-        // We can keep other proxies if needed
+        '/api/transcript': {
+          target: 'http://127.0.0.1:5001',
+          changeOrigin: true,
+          secure: false,
+        }
       }
     },
     plugins: [
@@ -41,8 +45,22 @@ export default defineConfig(({ mode }) => {
             try {
               // Use dynamic import for node-fetch if needed, or global fetch if Node 18+
               // Assuming Node 18+ or node-fetch is available.
+              // Add browser-like headers to avoid being blocked
+              const fetchOptions = {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                  'Accept-Language': 'en-US,en;q=0.9',
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                  'Referer': 'https://www.youtube.com/',
+                  'Origin': 'https://www.youtube.com',
+                  'Sec-Fetch-Dest': 'empty',
+                  'Sec-Fetch-Mode': 'cors',
+                  'Sec-Fetch-Site': 'cross-site',
+                }
+              };
+
               const fetch = (await import('node-fetch')).default;
-              const response = await fetch(targetUrl);
+              const response = await fetch(targetUrl, fetchOptions);
 
               // Forward headers, but exclude those that might cause issues
               const excludedHeaders = ['content-encoding', 'content-length', 'transfer-encoding', 'connection'];

@@ -4,6 +4,7 @@
  */
 import { GoogleGenAI, Type, GenerateContentResponse } from '@google/genai';
 import { fetchViaProxy, INVIDIOUS_INSTANCES } from './proxyService';
+import { fetchTranscript } from './youtubeService';
 import type {
   RecommendedFeed,
   DetailedDigest,
@@ -190,6 +191,35 @@ const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
     return [];
   }
 
+  // Handle YouTube's XML format
+  if (content.trim().startsWith('<?xml') || content.trim().startsWith('<transcript>')) {
+    try {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(content, 'text/xml');
+      const textNodes = xmlDoc.querySelectorAll('text');
+
+      if (textNodes.length === 0) {
+        throw new Error('No text nodes found in XML transcript');
+      }
+
+      return Array.from(textNodes).map(node => {
+        const text = node.textContent || '';
+        const start = parseFloat(node.getAttribute('start') || '0');
+        const dur = parseFloat(node.getAttribute('dur') || '0');
+
+        return {
+          text: text.replace(/&amp;#39;/g, "'").replace(/&amp;quot;/g, '"').replace(/&amp;/g, '&'),
+          start,
+          duration: dur,
+        };
+      });
+    } catch (e) {
+      throw new Error(
+        `Failed to parse XML transcript: ${e instanceof Error ? e.message : 'Invalid format.'}`
+      );
+    }
+  }
+
   if (content.trim().startsWith('WEBVTT')) {
     try {
       const parseVTTTimestamp = (timestamp: string): number => {
@@ -245,7 +275,30 @@ const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
   }
 
   try {
+    const trimmed = content.trim();
+    if (trimmed.startsWith('<html') || trimmed.startsWith('<!DOCTYPE')) {
+      throw new Error('Received HTML instead of JSON/XML (likely an error page).');
+    }
     const data = JSON.parse(content);
+
+    // Support YouTube native 'json3' format (events)
+    if (data.events && Array.isArray(data.events)) {
+      return data.events
+        .filter((event: any) => event.segs && event.segs.length > 0)
+        .map((event: any) => {
+          const text = event.segs
+            .map((seg: any) => seg.utf8)
+            .join('')
+            .trim();
+          return {
+            text: text,
+            start: (event.tStartMs || 0) / 1000,
+            duration: (event.dDurationMs || 0) / 1000,
+          };
+        })
+        .filter((line: any) => line.text.length > 0);
+    }
+
     if (data && Array.isArray(data.captions)) {
       return data.captions.map((line: any) => ({
         text: line.text,
@@ -253,7 +306,7 @@ const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
         duration: line.duration / 1000,
       }));
     }
-    throw new Error('Invalid Invidious transcript format: "captions" array not found.');
+    throw new Error('Invalid transcript format: neither "captions" nor "events" found.');
   } catch (e) {
     throw new Error(
       `Failed to parse transcript: ${e instanceof Error ? e.message : 'Invalid JSON format.'}`
@@ -261,8 +314,65 @@ const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
   }
 };
 
-export const fetchAvailableCaptionChoices = async (videoId: string): Promise<CaptionChoice[]> => {
-  if (!videoId) return [];
+// Helper: Fetch transcript data directly from YouTube page
+const fetchCaptionsFromYouTubeDirect = async (videoId: string): Promise<CaptionChoice[]> => {
+  try {
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const htmlContent = await fetchViaProxy(videoUrl, 'youtube');
+
+    // Extract the ytInitialPlayerResponse JSON from the page
+    const match = htmlContent.match(/var ytInitialPlayerResponse = ({.+?});/);
+    if (!match || !match[1]) {
+      throw new Error('Could not find ytInitialPlayerResponse in YouTube page');
+    }
+
+    const playerResponse = JSON.parse(match[1]);
+    const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+
+    if (!Array.isArray(captionTracks) || captionTracks.length === 0) {
+      return [];
+    }
+
+    return captionTracks.map((track: any) => ({
+      label: track.name?.simpleText || track.languageCode || 'Unknown',
+      language_code: track.languageCode,
+      url: track.baseUrl,
+    }));
+  } catch (error) {
+    throw new Error(`YouTube direct fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+};
+
+// Helper: Fetch transcript from youtube-transcript.io API
+const fetchCaptionsFromThirdPartyAPI = async (videoId: string): Promise<CaptionChoice[]> => {
+  try {
+    const apiUrl = `https://youtube-transcript.io/api/transcript?videoId=${videoId}`;
+    const content = await fetchViaProxy(apiUrl, 'youtube');
+
+    if (!content || content.trim() === '') {
+      throw new Error('Empty response from youtube-transcript.io');
+    }
+
+    const data = JSON.parse(content);
+
+    // The API returns transcript data directly, we need to create a choice for it
+    if (data && (Array.isArray(data.transcript) || Array.isArray(data))) {
+      // Return a single caption choice that points to this API
+      return [{
+        label: data.language || 'English (auto-generated)',
+        language_code: data.languageCode || 'en',
+        url: `youtube-transcript-api:${videoId}`, // Special marker for this source
+      }];
+    }
+
+    throw new Error('Invalid response format from youtube-transcript.io');
+  } catch (error) {
+    throw new Error(`Third-party API fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+};
+
+// Helper: Fetch captions from Invidious instances
+const fetchCaptionsFromInvidious = async (videoId: string): Promise<CaptionChoice[]> => {
   let lastError: unknown = null;
 
   // Try up to 3 instances for better performance
@@ -270,7 +380,19 @@ export const fetchAvailableCaptionChoices = async (videoId: string): Promise<Cap
     try {
       const captionsListUrl = `${instance}/api/v1/captions/${videoId}`;
       const content = await fetchViaProxy(captionsListUrl, 'youtube');
-      const data = JSON.parse(content);
+
+      // Check if content is empty or invalid before parsing
+      if (!content || content.trim() === '') {
+        throw new Error(`Empty response from ${instance}`);
+      }
+
+      let data;
+      try {
+        data = JSON.parse(content);
+      } catch (parseError) {
+        throw new Error(`Invalid JSON response from ${instance}: ${parseError instanceof Error ? parseError.message : 'Parse failed'}`);
+      }
+
       const captionsArray = Array.isArray(data) ? data : data?.captions;
       if (Array.isArray(captionsArray)) {
         if (captionsArray.length > 0) {
@@ -290,18 +412,208 @@ export const fetchAvailableCaptionChoices = async (videoId: string): Promise<Cap
     }
   }
 
-  // If all instances failed, throw the error so calling code can handle it
   if (lastError) {
     const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
-    throw new Error(
-      `All Invidious instances failed to provide a caption list. Last error: ${errorMessage}`
-    );
+    throw new Error(`Invidious fetch failed: ${errorMessage}`);
   }
   return [];
 };
 
+
+
+// Helper: Fetch transcript from our local/serverless backend
+const fetchCaptionsFromBackend = async (videoId: string): Promise<CaptionChoice[]> => {
+  try {
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    console.log('[Transcript] Attempting backend fetch for:', videoUrl);
+    const snippets = await fetchTranscript(videoUrl);
+
+    if (snippets && snippets.length > 0) {
+      return [{
+        label: 'English (Backend)',
+        language_code: 'en',
+        url: `backend-transcript:${videoId}` // Special marker
+      }];
+    }
+    throw new Error('Backend returned empty transcript');
+  } catch (error) {
+    throw new Error(`Backend fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+};
+
+// Main function: Try multiple sources with fallback
+export const fetchAvailableCaptionChoices = async (videoId: string): Promise<CaptionChoice[]> => {
+  if (!videoId) return [];
+
+  const errors: string[] = [];
+  let hasRateLimitError = false;
+
+  // Method 0: Try our Backend first (Primary Method)
+  try {
+    console.log('[Transcript] Attempting backend API...');
+    const choices = await fetchCaptionsFromBackend(videoId);
+    if (choices.length > 0) {
+      console.log(`[Transcript] ✓ Backend API succeeded with ${choices.length} caption(s)`);
+      return choices;
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    errors.push(`Backend API: ${errorMsg}`);
+    console.warn('[Transcript] ✗ Backend API failed:', errorMsg);
+  }
+
+  // Method 1: Try third-party API (fallback)
+  try {
+    console.log('[Transcript] Attempting youtube-transcript.io API...');
+    const choices = await fetchCaptionsFromThirdPartyAPI(videoId);
+    if (choices.length > 0) {
+      console.log(`[Transcript] ✓ Third-party API succeeded with ${choices.length} caption(s)`);
+      return choices;
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')) {
+      hasRateLimitError = true;
+    }
+    errors.push(`Third-party API: ${errorMsg}`);
+    console.warn('[Transcript] ✗ Third-party API failed:', errorMsg);
+  }
+
+  // Method 2: Try Invidious instances
+  try {
+    console.log('[Transcript] Attempting Invidious instances...');
+    const choices = await fetchCaptionsFromInvidious(videoId);
+    if (choices.length > 0) {
+      console.log(`[Transcript] ✓ Invidious fetch succeeded with ${choices.length} caption(s)`);
+      return choices;
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')) {
+      hasRateLimitError = true;
+    }
+    errors.push(`Invidious: ${errorMsg}`);
+    console.warn('[Transcript] ✗ Invidious fetch failed:', errorMsg);
+  }
+
+  // Method 3: Try direct YouTube scraping as last resort (for caption discovery only)
+  // Note: YouTube direct URLs often fail when fetching actual transcripts due to auth requirements
+  try {
+    console.log('[Transcript] Attempting direct YouTube fetch...');
+    const choices = await fetchCaptionsFromYouTubeDirect(videoId);
+    if (choices.length > 0) {
+      console.log(`[Transcript] ✓ Direct YouTube fetch succeeded with ${choices.length} caption(s)`);
+      console.warn('[Transcript] ⚠ Note: YouTube direct URLs may fail during transcript fetch due to rate limiting or authentication.');
+      return choices;
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')) {
+      hasRateLimitError = true;
+    }
+    errors.push(`Direct YouTube: ${errorMsg}`);
+    console.warn('[Transcript] ✗ Direct YouTube fetch failed:', errorMsg);
+  }
+
+  // If all methods failed, throw comprehensive error
+  let errorMessage = `All transcript sources failed. Errors:\n${errors.map((e, i) => `${i + 1}. ${e}`).join('\n')}`;
+
+
+  if (hasRateLimitError) {
+    errorMessage += '\n\nNote: Rate limiting detected. Please wait a few minutes before trying again.';
+  }
+
+  throw new Error(errorMessage);
+};
+
 export const fetchAndParseTranscript = async (url: string): Promise<TranscriptLine[]> => {
+  // Case 0: Custom backend marker
+  if (url.startsWith('backend-transcript:')) {
+    const videoId = url.replace('backend-transcript:', '');
+    try {
+      const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const snippets = await fetchTranscript(videoUrl);
+      return snippets.map(s => ({
+        text: s.text,
+        start: s.start,
+        duration: s.duration
+      }));
+    } catch (error) {
+      throw new Error(`Failed to fetch from backend API: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Handle special marker for third-party API
+  if (url.startsWith('youtube-transcript-api:')) {
+    const videoId = url.replace('youtube-transcript-api:', '');
+    try {
+      const apiUrl = `https://youtube-transcript.io/api/transcript?videoId=${videoId}`;
+      const content = await fetchViaProxy(apiUrl, 'youtube');
+
+      if (!content || content.trim() === '') {
+        throw new Error('Received empty transcript content from youtube-transcript.io');
+      }
+
+      const trimmedContent = content.trim();
+      if (trimmedContent.startsWith('<html') || trimmedContent.startsWith('<!DOCTYPE')) {
+        throw new Error('Third-party API returned an error page (likely rate limited or 500).');
+      }
+
+      const data = JSON.parse(content);
+
+      // Parse the transcript data from the API
+      if (Array.isArray(data.transcript)) {
+        return data.transcript.map((item: any) => ({
+          text: item.text || item.content || '',
+          start: parseFloat(item.start || item.offset || 0),
+          duration: parseFloat(item.duration || item.dur || 0),
+        }));
+      } else if (Array.isArray(data)) {
+        return data.map((item: any) => ({
+          text: item.text || item.content || '',
+          start: parseFloat(item.start || item.offset || 0),
+          duration: parseFloat(item.duration || item.dur || 0),
+        }));
+      }
+
+      throw new Error('Invalid transcript format from youtube-transcript.io');
+    } catch (error) {
+      throw new Error(`Failed to fetch from third-party API: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Handle YouTube direct URLs (baseUrl from ytInitialPlayerResponse)
+  if (url.includes('youtube.com') && !url.includes('/api/v1/')) {
+    try {
+      const content = await fetchViaProxy(url, 'youtube');
+
+      if (!content || content.trim() === '') {
+        throw new Error('Received empty transcript content from YouTube');
+      }
+
+      if (content.trim().startsWith('<html') || content.trim().startsWith('<!DOCTYPE')) {
+        throw new Error('YouTube returned an error page (likely rate limited or 404).');
+      }
+
+      // YouTube returns XML format, parse it
+      return parseInvidiousTranscript(content);
+    } catch (error) {
+      throw new Error(`Failed to fetch from YouTube direct: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Handle Invidious URLs (existing behavior)
   const content = await fetchViaProxy(url, 'youtube');
+
+  // Check if content is empty or invalid before parsing
+  if (!content || content.trim() === '') {
+    throw new Error('Received empty transcript content from server');
+  }
+
+  if (content.trim().startsWith('<html') || content.trim().startsWith('<!DOCTYPE')) {
+    throw new Error('Server returned an error page (likely rate limited or 500).');
+  }
+
   return parseInvidiousTranscript(content);
 };
 

@@ -45,6 +45,7 @@ export const ActionsMenuModal: React.FC<{ onOpenMindmap: () => void }> = ({ onOp
     setIsSyncDataModalOpen,
     isMobileView,
     setIsTrendingKeywordsModalOpen,
+    handleRefreshAllTranscripts,
   } = useAppContext();
 
   // This is now a mobile-only component.
@@ -70,6 +71,12 @@ export const ActionsMenuModal: React.FC<{ onOpenMindmap: () => void }> = ({ onOp
         onClick={createMenuAction(() => handleOpenRefreshOptionsModal())}
         icon={RefreshIcon}
         label="Refresh Feeds..."
+        disabled={isRefreshingAll}
+      />
+      <MenuButton
+        onClick={createMenuAction(handleRefreshAllTranscripts)}
+        icon={RefreshIcon}
+        label="Refresh All Transcripts"
         disabled={isRefreshingAll}
       />
       <MenuButton

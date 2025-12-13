@@ -242,7 +242,7 @@ export const fetchVideosDuration = async (
           }
         }
       }
-    } catch (error) {}
+    } catch (error) { }
   }
 
   return durationMap;
@@ -446,4 +446,44 @@ export const fetchSingleYouTubeVideoAsArticle = async (videoId: string): Promise
   throw new Error(
     `All Invidious instances failed to fetch video details. Last error: ${errorMessage}`
   );
+};
+
+export interface TranscriptSnippet {
+  text: string;
+  start: number;
+  duration: number;
+}
+
+export const fetchTranscript = async (url: string): Promise<TranscriptSnippet[]> => {
+  const response = await fetch('/api/transcript', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ url }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json();
+    throw new Error(errorBody.error || 'Failed to fetch transcript');
+  }
+
+  const data = await response.json();
+
+  // The Flask backend now returns { transcript: [...] }
+  if (data && data.transcript && Array.isArray(data.transcript)) {
+    return data.transcript;
+  }
+
+  // Backward compatibility: check for snippets
+  if (data && data.snippets && Array.isArray(data.snippets)) {
+    return data.snippets;
+  }
+
+  // Backward compatibility: direct array
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return [];
 };

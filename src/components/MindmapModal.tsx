@@ -122,7 +122,7 @@ const OutlineView: React.FC<{
                 <div className="flex items-center gap-3">
                   <div className="text-lg font-semibold text-white">{rootTopic.title}</div>
                   <span className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded-full">
-                    {rootArticleCount} {rootArticleCount === 1 ? 'video' : 'videos'}
+                    {rootArticleCount} {rootArticleCount === 1 ? 'article' : 'articles'}
                   </span>
                 </div>
                 <div
@@ -242,19 +242,16 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
     setIsClustering(true);
     setError(null);
     try {
-      const videos = articles.filter(a => {
-        if (a.isVideo) return true;
-        if (a.link && (a.link.includes('youtube.com') || a.link.includes('youtu.be'))) return true;
-        return false;
-      });
+      // Include all articles for grouping
+      const articlesToCluster = articles.filter(a => a.title && a.id);
 
-      if (videos.length === 0) {
-        setError('No videos found to cluster. Please add some YouTube videos first.');
+      if (articlesToCluster.length === 0) {
+        setError('No articles found to cluster. Please add some content first.');
         setIsClustering(false);
         return;
       }
 
-      const hierarchy = await generateMindmapHierarchy(videos, aiModel, defaultAiLanguage);
+      const hierarchy = await generateMindmapHierarchy(articlesToCluster, aiModel, defaultAiLanguage);
       setAiHierarchy(hierarchy);
       setExpandedTopics(new Set());
     } catch (error) {
@@ -270,14 +267,14 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
 
   // Auto-execute cluster with AI on first open if not already clustered
   React.useEffect(() => {
-    if (isOpen && !aiHierarchy && !isClustering && articles.filter(a => a.isVideo).length > 0) {
+    if (isOpen && !aiHierarchy && !isClustering && articles.length > 0) {
       handleClusterWithAI();
     }
   }, [isOpen, aiHierarchy, isClustering, articles]);
 
 
 
-  // Expand All: add all topic IDs to expanded set (show all videos)
+  // Expand All: add all topic IDs to expanded set (show all articles)
   const handleExpandAll = () => {
     if (!aiHierarchy) return;
 
@@ -298,7 +295,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
     setExpandedTopics(new Set(allTopicIds));
   };
 
-  // Collapse All: clear all expanded topics (hide all videos)
+  // Collapse All: clear all expanded topics (hide all articles)
   const handleCollapseAll = () => setExpandedTopics(new Set());
 
   // Toggle topic for outline view
@@ -383,7 +380,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
             <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search videos..."
+              placeholder="Search articles..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="pl-9 pr-4 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500 w-64"
@@ -400,7 +397,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
               {isClustering ? (
                 <>
                   <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                  <p className="text-gray-300 text-lg font-medium">Organizing videos with AI...</p>
+                  <p className="text-gray-300 text-lg font-medium">Organizing articles with AI...</p>
                   <p className="text-gray-500 text-sm mt-2">
                     Creating a smart hierarchy of your content
                   </p>
@@ -418,9 +415,9 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
                 </div>
               ) : (
                 <>
-                  <p className="text-gray-400 text-lg">No videos found</p>
+                  <p className="text-gray-400 text-lg">No articles found</p>
                   <p className="text-gray-500 text-sm mt-2">
-                    Add some videos to see them organized in the mindmap
+                    Add some content to see it organized in the mindmap
                   </p>
                 </>
               )}

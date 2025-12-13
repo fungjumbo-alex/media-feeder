@@ -775,6 +775,7 @@ export const Sidebar: React.FC<{
     aiHierarchy,
     isAiTopicsCollapsed,
     onToggleAiTopicsCollapse,
+    handleRefreshAllTranscripts,
   } = useAppContext();
 
   const [isActionsPopoverOpen, setIsActionsPopoverOpen] = useState(false);
@@ -1139,6 +1140,12 @@ export const Sidebar: React.FC<{
               onClick={createMenuAction(() => handleOpenRefreshOptionsModal())}
               icon={RefreshIcon}
               label="Refresh Feeds..."
+              disabled={isRefreshingAll}
+            />
+            <MenuButton
+              onClick={createMenuAction(handleRefreshAllTranscripts)}
+              icon={RefreshIcon}
+              label="Refresh All Transcripts"
               disabled={isRefreshingAll}
             />
             <MenuButton

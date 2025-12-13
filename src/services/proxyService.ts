@@ -6,20 +6,20 @@ import type { ProxyAttemptCallback, ProxyStats, FeedType } from '../types';
 export const PROXIES = [
   ...(import.meta.env.DEV
     ? [
-        {
-          name: 'Local Proxy',
-          buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
-          parseResponse: async (response: Response): Promise<string> => {
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(
-                `Local Proxy responded with status ${response.status}. Body: ${text}`
-              );
-            }
-            return response.text();
-          },
+      {
+        name: 'Local Proxy',
+        buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
+        parseResponse: async (response: Response): Promise<string> => {
+          if (!response.ok) {
+            const text = await response.text();
+            throw new Error(
+              `Local Proxy responded with status ${response.status}. Body: ${text}`
+            );
+          }
+          return response.text();
         },
-      ]
+      },
+    ]
     : []),
   {
     name: 'CodeTabs',
@@ -85,10 +85,12 @@ export const PROXIES = [
 ];
 
 // List of public Invidious instances, which can act as proxies for YouTube content.
+// Updated 2025-12-13: Removed non-working instances (403/500 errors)
 export const INVIDIOUS_INSTANCES = [
+  'https://invidious.nerdvpn.de',        // 99.82% uptime
+  'https://invidious.f5.si',             // 95.90% uptime
+  // Fallback instances
   'https://iv.melmac.space',
-  'https://inv.nadeko.net',
-  'https://yewtu.be',
   'https://invidious.drgns.space',
   'https://invidious.lunar.icu',
   'https://invidious.projectsegfau.lt',

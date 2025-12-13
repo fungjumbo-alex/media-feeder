@@ -11,6 +11,10 @@
         ],
         "rewrites": [
             {
+                "source": "/api/transcript",
+                "function": "transcript"
+            },
+            {
                 "source": "**",
                 "destination": "/index.html"
             }

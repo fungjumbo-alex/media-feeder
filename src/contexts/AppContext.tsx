@@ -641,6 +641,7 @@ interface AppContextType {
     sources?: WebSource[]
   ) => void;
   handleRefreshSingleFeed: (feedId: string) => Promise<void>;
+  handleRefreshAllTranscripts: () => Promise<void>;
   handleRefreshCurrentView: () => Promise<void>;
   handleRefreshMissingIcons: () => Promise<void>;
   handleGenerateDigest: () => void;
@@ -2631,20 +2632,20 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         }
       }
 
-      const allVideos = uniqueArticles
-        .filter(i => i.isVideo && i.pubDateTimestamp && i.pubDateTimestamp >= threeDaysAgo)
+      const recentArticles = uniqueArticles
+        .filter(i => i.pubDateTimestamp && i.pubDateTimestamp >= threeDaysAgo)
         .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
 
-      console.log(`[AutoGrouping] Found ${allVideos.length} recent videos for grouping.`);
+      console.log(`[AutoGrouping] Found ${recentArticles.length} recent articles for grouping.`);
 
-      if (allVideos.length < 5) {
-        console.log('[AutoGrouping] Not enough recent videos to generate a meaningful hierarchy.');
+      if (recentArticles.length < 5) {
+        console.log('[AutoGrouping] Not enough recent articles to generate a meaningful hierarchy.');
         return;
       }
 
       try {
         console.log('[AutoGrouping] Generating hierarchy...');
-        const hierarchy = await generateMindmapHierarchy(allVideos, aiModel, defaultAiLanguage);
+        const hierarchy = await generateMindmapHierarchy(recentArticles, aiModel, defaultAiLanguage);
         console.log('[AutoGrouping] Hierarchy generated successfully.');
         setAiHierarchy(hierarchy);
       } catch (error) {
@@ -4637,6 +4638,130 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     },
     [feeds, favoriteFeeds, batchRefreshHandler, setToast]
   );
+
+  const handleRefreshAllTranscripts = useCallback(async () => {
+    setIsRefreshingAll(true);
+    setRefreshProgress(0);
+    setToast({ message: 'Refreshing all transcripts...', type: 'success' });
+
+    try {
+      // 1. Collect all video articles that need processing
+      const allVideos: { feedId: string; article: Article }[] = [];
+      feeds.forEach(feed => {
+        feed.items.forEach(article => {
+          if (article.isVideo && article.link) {
+            allVideos.push({ feedId: feed.id, article });
+          }
+        });
+      });
+
+      // Sort videos by publication date (newest first)
+      allVideos.sort((a, b) => {
+        const dateA = a.article.pubDate ? new Date(a.article.pubDate).getTime() : 0;
+        const dateB = b.article.pubDate ? new Date(b.article.pubDate).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      const total = allVideos.length;
+      if (total === 0) {
+        setToast({ message: 'No videos found to refresh.', type: 'error' });
+        setIsRefreshingAll(false);
+        return;
+      }
+
+      let processedCount = 0;
+      let successCount = 0;
+      const CHUNK_SIZE = 1; // Process 1 at a time to avoid IP blocking
+
+      // We'll update a map of changed articles to apply at the end (or per chunk)
+      // Key: feedId, Value: Map<articleId, Article>
+      const feedUpdates = new Map<string, Map<string, Article>>();
+
+      const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+      for (let i = 0; i < total; i += CHUNK_SIZE) {
+        const chunk = allVideos.slice(i, i + CHUNK_SIZE);
+
+        // Add random delay between 2-5 seconds to simulate human behavior
+        if (i > 0) {
+          const delay = Math.floor(Math.random() * 3000) + 2000;
+          await wait(delay);
+        }
+
+        await Promise.all(
+          chunk.map(async ({ feedId, article }) => {
+            try {
+              const videoId = getYouTubeId(article.link!);
+              if (!videoId) return;
+
+              // Force fetch choices and transcript
+              const choices = await fetchAvailableCaptionChoices(videoId);
+              if (choices.length > 0) {
+                const transcript = await fetchAndParseTranscript(choices[0].url);
+                if (transcript && transcript.length > 0) {
+                  // Stage update
+                  if (!feedUpdates.has(feedId)) {
+                    feedUpdates.set(feedId, new Map());
+                  }
+                  feedUpdates.get(feedId)!.set(article.id, {
+                    ...article,
+                    transcript,
+                    transcriptAttempted: true,
+                  });
+                  successCount++;
+                }
+              }
+            } catch (e) {
+              console.warn(`Failed to refresh transcript for ${article.title}:`, e);
+              // Optionally mark as attempted failed?
+              if (!feedUpdates.has(feedId)) {
+                feedUpdates.set(feedId, new Map());
+              }
+              // Keep old transcript if exists, but mark attempted
+              feedUpdates.get(feedId)!.set(article.id, {
+                ...article,
+                transcriptAttempted: true,
+              });
+            }
+          })
+        );
+
+        processedCount += chunk.length;
+        setRefreshProgress((processedCount / total) * 100);
+
+        // Optional: Update state incrementally if needed, but doing it at end is cleaner providing the list isn't huge.
+        // For UI responsiveness on large sets, maybe update every few chunks?
+        // Let's update at the end for simplicity first.
+      }
+
+      // Apply updates
+      if (feedUpdates.size > 0) {
+        setFeeds(currentFeeds => {
+          return currentFeeds.map(feed => {
+            const updatesForFeed = feedUpdates.get(feed.id);
+            if (!updatesForFeed) return feed;
+
+            const newItems = feed.items.map(item => {
+              const updated = updatesForFeed.get(item.id);
+              return updated ? updated : item;
+            });
+            return { ...feed, items: newItems };
+          });
+        });
+      }
+
+      setToast({
+        message: `Transcript refresh complete. Updated ${successCount} videos.`,
+        type: 'success',
+      });
+    } catch (e) {
+      console.error('Error refreshing transcripts:', e);
+      setToast({ message: 'Error refreshing transcripts.', type: 'error' });
+    } finally {
+      setIsRefreshingAll(false);
+      setRefreshProgress(null);
+    }
+  }, [feeds, setToast]);
 
   const handleRefreshSingleFeed = useCallback(
     async (feedId: string) => {
@@ -6925,6 +7050,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     handleToggleReadLater,
     handleSummaryGenerated,
     handleRefreshSingleFeed,
+    handleRefreshAllTranscripts,
     handleRefreshCurrentView,
     handleRefreshMissingIcons,
     handleGenerateDigest,

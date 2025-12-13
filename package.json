@@ -31,8 +31,8 @@
     "jszip": "^3.10.1",
     "lz-string": "^1.5.0",
     "node-fetch": "^3.3.2",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
     "reactflow": "^11.11.4"
   },
   "devDependencies": {
