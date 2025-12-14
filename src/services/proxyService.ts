@@ -27,14 +27,6 @@ export const PROXIES = [
       ]
     : []),
   {
-    name: 'CodeTabs',
-    buildUrl: (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      if (!response.ok) throw new Error(`Proxy CodeTabs responded with status ${response.status}`);
-      return response.text();
-    },
-  },
-  {
     name: 'AllOrigins',
     buildUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
     parseResponse: async (response: Response): Promise<string> => {
@@ -98,7 +90,6 @@ export const INVIDIOUS_INSTANCES = [
   'https://invidious.nerdvpn.de',
   'https://invidious.f5.si',
   'https://inv.perditum.com',
-  // Fallback instances
   'https://invidious.drgns.space',
   'https://invidious.projectsegfau.lt',
 ];

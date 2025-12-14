@@ -7,6 +7,8 @@ const INVIDIOUS_INSTANCES = [
     'https://invidious.nerdvpn.de',
     'https://invidious.f5.si',
     'https://inv.perditum.com',
+    'https://invidious.drgns.space',
+    'https://invidious.projectsegfau.lt',
 ];
 
 const VIDEO_ID = 'jNQXAC9IVRw'; // "Me at the zoo"
