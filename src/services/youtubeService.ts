@@ -242,7 +242,9 @@ export const fetchVideosDuration = async (
           }
         }
       }
-    } catch (error) { }
+    } catch (error) {
+      /* ignore */
+    }
   }
 
   return durationMap;
@@ -454,36 +456,169 @@ export interface TranscriptSnippet {
   duration: number;
 }
 
+const parseVTT = (vttText: string): TranscriptSnippet[] => {
+  const lines = vttText.split(/\r?\n/);
+  const snippets: TranscriptSnippet[] = [];
+  let currentStart: number | null = null;
+  let currentEnd: number | null = null;
+  let currentText: string[] = [];
+
+  // Helper to parse timestamp to seconds
+  // Format: HH:MM:SS.mmm or MM:SS.mmm
+  const parseTimestamp = (timestamp: string): number => {
+    const parts = timestamp.split(':');
+    let seconds = 0;
+    if (parts.length === 3) {
+      seconds += parseInt(parts[0], 10) * 3600;
+      seconds += parseInt(parts[1], 10) * 60;
+      seconds += parseFloat(parts[2]);
+    } else if (parts.length === 2) {
+      seconds += parseInt(parts[0], 10) * 60;
+      seconds += parseFloat(parts[1]);
+    }
+    return seconds;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line === 'WEBVTT') continue;
+
+    // Check for timestamp line
+    // Format: 00:00:00.000 --> 00:00:00.000
+    const arrowIndex = line.indexOf('-->');
+    if (arrowIndex !== -1) {
+      // If we have a previous snippet accumulating, push it
+      if (currentStart !== null && currentEnd !== null && currentText.length > 0) {
+        snippets.push({
+          text: currentText.join(' ').replace(/<[^>]*>/g, ''), // Strip content tags if any
+          start: currentStart,
+          duration: currentEnd - currentStart,
+        });
+        currentText = [];
+      }
+
+      const startStr = line.substring(0, arrowIndex).trim();
+      const endStr = line
+        .substring(arrowIndex + 3)
+        .trim()
+        .split(' ')[0]; // Handle settings after timestamp
+      currentStart = parseTimestamp(startStr);
+      currentEnd = parseTimestamp(endStr);
+      continue;
+    }
+
+    // Accumulate text
+    if (currentStart !== null) {
+      currentText.push(line);
+    }
+  }
+
+  // Push last snippet
+  if (currentStart !== null && currentEnd !== null && currentText.length > 0) {
+    snippets.push({
+      text: currentText.join(' ').replace(/<[^>]*>/g, ''),
+      start: currentStart,
+      duration: currentEnd - currentStart,
+    });
+  }
+
+  return snippets;
+};
+
 export const fetchTranscript = async (url: string): Promise<TranscriptSnippet[]> => {
-  const response = await fetch('/api/transcript', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ url }),
-  });
+  // 1. Try local backend first
+  try {
+    const response = await fetch('/api/transcript', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url }),
+    });
 
-  if (!response.ok) {
-    const errorBody = await response.json();
-    throw new Error(errorBody.error || 'Failed to fetch transcript');
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.transcript && Array.isArray(data.transcript)) {
+        return data.transcript;
+      }
+      if (data && data.snippets && Array.isArray(data.snippets)) {
+        return data.snippets;
+      }
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (error) {
+    console.warn(`Local transcript fetch failed, trying fallback: ${error}`);
   }
 
-  const data = await response.json();
-
-  // The Flask backend now returns { transcript: [...] }
-  if (data && data.transcript && Array.isArray(data.transcript)) {
-    return data.transcript;
+  // 2. Fallback to Invidious instances
+  const videoId = getYouTubeId(url);
+  if (!videoId) {
+    throw new Error('Invalid YouTube URL');
   }
 
-  // Backward compatibility: check for snippets
-  if (data && data.snippets && Array.isArray(data.snippets)) {
-    return data.snippets;
+  let lastError: unknown = null;
+  for (const instance of INVIDIOUS_INSTANCES) {
+    try {
+      // Fetch available captions
+      const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
+      const content = await fetchViaProxy(captionsUrl, 'youtube');
+      const data = JSON.parse(content);
+
+      if (!data.captions || !Array.isArray(data.captions)) {
+        continue;
+      }
+
+      // Find English caption
+      // Prefer 'en' (English) or 'en-US', etc.
+      // Invidious API might return snake_case or camelCase depending on version/instance
+      const findCaption = (lang: string) =>
+        data.captions.find((c: any) => c.language_code === lang || c.languageCode === lang) ||
+        data.captions.find(
+          (c: any) => c.language_code?.startsWith(lang) || c.languageCode?.startsWith(lang)
+        );
+
+      const enCaption = findCaption('en') || data.captions[0];
+
+      if (enCaption) {
+        // Construct full URL for caption file
+        const captionFileUrl = `${instance}${enCaption.url}`;
+        let captionContent = await fetchViaProxy(captionFileUrl, 'youtube');
+
+        // Handle Data URI if returned by proxy/instance
+        if (captionContent.startsWith('data:')) {
+          const base64Marker = ';base64,';
+          const markerIndex = captionContent.indexOf(base64Marker);
+          if (markerIndex !== -1) {
+            const base64 = captionContent.substring(markerIndex + base64Marker.length);
+            try {
+              captionContent = atob(base64);
+            } catch (e) {
+              console.warn('Failed to decode base64 caption content', e);
+            }
+          } else {
+            // Try URL decoding if not base64? Or just remove prefix?
+            // Usually data URIs are base64 for this stuff.
+            // If text/vtt, it might be plain text after comma
+            const commaIndex = captionContent.indexOf(',');
+            if (commaIndex !== -1) {
+              captionContent = decodeURIComponent(captionContent.substring(commaIndex + 1));
+            }
+          }
+        }
+
+        const snippets = parseVTT(captionContent);
+        if (snippets.length > 0) {
+          return snippets;
+        }
+      }
+    } catch (error) {
+      console.warn(`Fallback fetch from ${instance} failed:`, error);
+      lastError = error;
+    }
   }
 
-  // Backward compatibility: direct array
-  if (Array.isArray(data)) {
-    return data;
-  }
-
-  return [];
+  const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`Failed to fetch transcript from all sources. Last error: ${errorMessage}`);
 };

@@ -6,35 +6,31 @@ import type { ProxyAttemptCallback, ProxyStats, FeedType } from '../types';
 export const PROXIES = [
   ...(import.meta.env.DEV
     ? [
-      {
-        name: 'Local Proxy',
-        buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
-        parseResponse: async (response: Response): Promise<string> => {
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(
-              `Local Proxy responded with status ${response.status}. Body: ${text}`
-            );
-          }
-          return response.text();
+        {
+          name: 'Local Proxy',
+          buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
+          parseResponse: async (response: Response): Promise<string> => {
+            if (!response.ok) {
+              const text = await response.text();
+              console.error(
+                `[Local Proxy] Error accessing ${response.url}:`,
+                response.status,
+                text
+              );
+              throw new Error(
+                `Local Proxy responded with status ${response.status}. Body: ${text}`
+              );
+            }
+            return response.text();
+          },
         },
-      },
-    ]
+      ]
     : []),
   {
     name: 'CodeTabs',
     buildUrl: (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
     parseResponse: async (response: Response): Promise<string> => {
       if (!response.ok) throw new Error(`Proxy CodeTabs responded with status ${response.status}`);
-      return response.text();
-    },
-  },
-  {
-    name: 'ThingProxy',
-    buildUrl: (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      if (!response.ok)
-        throw new Error(`Proxy ThingProxy responded with status ${response.status}`);
       return response.text();
     },
   },
@@ -57,6 +53,16 @@ export const PROXIES = [
         throw new Error('Proxy AllOrigins returned null/undefined content.');
       }
       return data.contents;
+    },
+  },
+  {
+    name: 'AllOriginsRaw',
+    buildUrl: (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    parseResponse: async (response: Response): Promise<string> => {
+      if (!response.ok) {
+        throw new Error(`Proxy AllOriginsRaw responded with status ${response.status}`);
+      }
+      return response.text();
     },
   },
   {
@@ -85,16 +91,16 @@ export const PROXIES = [
 ];
 
 // List of public Invidious instances, which can act as proxies for YouTube content.
-// Updated 2025-12-13: Removed non-working instances (403/500 errors)
+// Updated 2025-12-14: Added high uptime instances
 export const INVIDIOUS_INSTANCES = [
-  'https://invidious.nerdvpn.de',        // 99.82% uptime
-  'https://invidious.f5.si',             // 95.90% uptime
+  'https://inv.nadeko.net',
+  'https://yewtu.be',
+  'https://invidious.nerdvpn.de',
+  'https://invidious.f5.si',
+  'https://inv.perditum.com',
   // Fallback instances
-  'https://iv.melmac.space',
   'https://invidious.drgns.space',
-  'https://invidious.lunar.icu',
   'https://invidious.projectsegfau.lt',
-  'https://invidious.slipfox.xyz',
 ];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.

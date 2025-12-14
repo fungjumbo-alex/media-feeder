@@ -103,6 +103,7 @@ def get_transcript():
             'transcript': formatted_transcript
         })
     except Exception as e:
+        print(f"Error fetching transcript: {str(e)}") # Add logging
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
