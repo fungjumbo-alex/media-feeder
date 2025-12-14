@@ -3,12 +3,9 @@ import fetch from 'node-fetch';
 
 const INVIDIOUS_INSTANCES = [
     'https://inv.nadeko.net',
-    'https://yewtu.be',
-    'https://invidious.nerdvpn.de',
-    'https://invidious.f5.si',
-    'https://inv.perditum.com',
-    'https://invidious.drgns.space',
-    'https://invidious.projectsegfau.lt',
+    'https://iv.melmac.space', // Often reliable
+    'https://invidious.privacydev.net',
+    'https://vid.priv.au',
 ];
 
 const VIDEO_ID = 'jNQXAC9IVRw'; // "Me at the zoo"
@@ -22,7 +19,11 @@ async function testFetch() {
             const targetUrl = `${instance}/api/v1/captions/${VIDEO_ID}`;
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
-            const response = await fetch(proxyUrl);
+            const response = await fetch(proxyUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+            });
             if (response.ok) {
                 const proxyData = await response.json();
                 if (proxyData.contents) {

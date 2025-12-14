@@ -84,15 +84,9 @@ export const PROXIES = [
 
 // List of public Invidious instances, which can act as proxies for YouTube content.
 // Updated 2025-12-14: Added high uptime instances
-export const INVIDIOUS_INSTANCES = [
-  'https://inv.nadeko.net',
-  'https://yewtu.be',
-  'https://invidious.nerdvpn.de',
-  'https://invidious.f5.si',
-  'https://inv.perditum.com',
-  'https://invidious.drgns.space',
-  'https://invidious.projectsegfau.lt',
-];
+// List of public Invidious instances, which can act as proxies for YouTube content.
+// Updated 2025-12-14: Removed instances failing with 403/HTML responses
+export const INVIDIOUS_INSTANCES = ['https://inv.nadeko.net'];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.
 export const RSSHUB_INSTANCES = [
