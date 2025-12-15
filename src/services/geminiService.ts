@@ -317,83 +317,6 @@ const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
   }
 };
 
-// Helper: Fetch transcript data directly from YouTube page
-const fetchCaptionsFromYouTubeDirect = async (videoId: string): Promise<CaptionChoice[]> => {
-  try {
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const htmlContent = await fetchViaProxy(videoUrl, 'youtube');
-
-    if (htmlContent.includes('Before you continue to YouTube')) {
-      throw new Error(
-        'YouTube returned a consent page (cookies required). Proxy cannot bypass this.'
-      );
-    }
-
-    if (htmlContent.includes('Sign in to confirm you’re not a bot')) {
-      throw new Error('YouTube returned a bot check page.');
-    }
-
-    // Try multiple patterns to extract ytInitialPlayerResponse
-    let playerResponse = null;
-
-    // Pattern 1: var ytInitialPlayerResponse = {...};
-    let match = htmlContent.match(/var ytInitialPlayerResponse\s*=\s*({.+?});/);
-    if (match && match[1]) {
-      try {
-        playerResponse = JSON.parse(match[1]);
-      } catch (e) {
-        // Continue to next pattern
-      }
-    }
-
-    // Pattern 2: ytInitialPlayerResponse = {...}
-    if (!playerResponse) {
-      match = htmlContent.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
-      if (match && match[1]) {
-        try {
-          playerResponse = JSON.parse(match[1]);
-        } catch (e) {
-          // Continue to next pattern
-        }
-      }
-    }
-
-    // Pattern 3: Look for it in script tags
-    if (!playerResponse) {
-      const scriptMatch = htmlContent.match(/"ytInitialPlayerResponse"\s*:\s*({.+?})\s*}/);
-      if (scriptMatch && scriptMatch[1]) {
-        try {
-          playerResponse = JSON.parse(scriptMatch[1]);
-        } catch (e) {
-          // Continue
-        }
-      }
-    }
-
-    if (!playerResponse) {
-      // debug: log a snippet of html to see what we got
-      console.warn(`[Transcript] Direct fetch: HTML snippet: ${htmlContent.substring(0, 200)}...`);
-      throw new Error('Could not find ytInitialPlayerResponse in YouTube page');
-    }
-
-    const captionTracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-
-    if (!Array.isArray(captionTracks) || captionTracks.length === 0) {
-      return [];
-    }
-
-    return captionTracks.map((track: any) => ({
-      label: track.name?.simpleText || track.languageCode || 'Unknown',
-      language_code: track.languageCode,
-      url: track.baseUrl,
-    }));
-  } catch (error) {
-    throw new Error(
-      `YouTube direct fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
-  }
-};
-
 // Helper: Fetch captions from Invidious instances
 const fetchCaptionsFromInvidious = async (videoId: string): Promise<CaptionChoice[]> => {
   let lastError: unknown = null;
@@ -504,29 +427,6 @@ export const fetchAvailableCaptionChoices = async (videoId: string): Promise<Cap
     }
     errors.push(`Invidious: ${errorMsg}`);
     console.warn('[Transcript] ✗ Invidious fetch failed:', errorMsg);
-  }
-
-  // Method 3: Try direct YouTube scraping as last resort (for caption discovery only)
-  // Note: YouTube direct URLs often fail when fetching actual transcripts due to auth requirements
-  try {
-    console.log('[Transcript] Attempting direct YouTube fetch...');
-    const choices = await fetchCaptionsFromYouTubeDirect(videoId);
-    if (choices.length > 0) {
-      console.log(
-        `[Transcript] ✓ Direct YouTube fetch succeeded with ${choices.length} caption(s)`
-      );
-      console.warn(
-        '[Transcript] ⚠ Note: YouTube direct URLs may fail during transcript fetch due to rate limiting or authentication.'
-      );
-      return choices;
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    if (errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')) {
-      hasRateLimitError = true;
-    }
-    errors.push(`Direct YouTube: ${errorMsg}`);
-    console.warn('[Transcript] ✗ Direct YouTube fetch failed:', errorMsg);
   }
 
   // If all methods failed, throw comprehensive error
