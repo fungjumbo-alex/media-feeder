@@ -430,9 +430,7 @@ export const fetchSingleYouTubeVideoAsArticle = async (videoId: string): Promise
           description: data.description,
           pubDate: new Date(data.published * 1000).toISOString(),
           pubDateTimestamp: data.published * 1000,
-          imageUrl:
-            data.videoThumbnails?.find(t => t.quality === 'maxres')?.url ||
-            data.videoThumbnails?.[0]?.url,
+          imageUrl: `https://i.ytimg.com/vi/${data.videoId}/hqdefault.jpg`,
           content: data.descriptionHtml,
           feedTitle: data.author,
           isVideo: true,

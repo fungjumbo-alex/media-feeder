@@ -116,6 +116,27 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
             src={article.imageUrl}
             alt={article.title}
             className={`w-full h-full ${article.isReddit ? 'object-contain' : 'object-cover group-hover:scale-105 transition-transform duration-300'}`}
+            onError={e => {
+              const target = e.target as HTMLImageElement;
+              // If it's a video and not already trying the fallback
+              if (article.isVideo && article.id && !target.src.includes('i.ytimg.com')) {
+                // Fallback to standard YouTube thumbnail
+                target.src = `https://i.ytimg.com/vi/${article.id}/hqdefault.jpg`;
+              } else {
+                // Even fallback failed or not a video, show placeholder
+                target.style.display = 'none';
+                target.parentElement?.classList.add(
+                  'flex',
+                  'items-center',
+                  'justify-center',
+                  'bg-gray-700',
+                  'text-gray-500'
+                );
+                if (target.parentElement) {
+                  target.parentElement.innerText = 'No Image';
+                }
+              }
+            }}
           />
         ) : (
           <div className="w-full h-full bg-gray-700 flex items-center justify-center text-gray-500">
