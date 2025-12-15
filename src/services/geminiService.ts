@@ -1130,11 +1130,16 @@ export const generateMindmapHierarchy = async (
   }
 
   // Sort by date (newest first) to prioritize latest content
-  const articlesToProcess = articles.sort(
+  let articlesToProcess = articles.sort(
     (a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0)
   );
 
-  let systemInstruction = `You are a JSON generator. Your ONLY task is to group these articles into topics.
+  const MAX_RETRIES = 3;
+  let attempt = 0;
+
+  while (attempt < MAX_RETRIES) {
+    try {
+      let systemInstruction = `You are a JSON generator. Your ONLY task is to group these articles into topics.
     - Prioritize the latest/newest videos when forming groups or choosing representative titles.
     - Group articles that discuss the same or very similar events/topics.
 
@@ -1159,79 +1164,95 @@ IMPORTANT CONSTRAINTS:
 3. Do NOT repeat article IDs across multiple topics or subtopics.
 4. If an article doesn't fit well, put it in a "Miscellaneous" topic.`;
 
-  if (targetLanguage && targetLanguage !== 'original') {
-    systemInstruction += `\n\nIMPORTANT: All "title" fields in the JSON output MUST be translated into ${targetLanguage}.`;
-  }
+      if (targetLanguage && targetLanguage !== 'original') {
+        systemInstruction += `\n\nIMPORTANT: All "title" fields in the JSON output MUST be translated into ${targetLanguage}.`;
+      }
 
-  const articleList = articlesToProcess.map(a => `${a.id}|${a.title}`).join('\n');
+      const articleList = articlesToProcess.map(a => `${a.id}|${a.title}`).join('\n');
 
-  const contents = `Group these ${articlesToProcess.length} articles into 3-8 topics. The input format is ID|Title:\n${articleList}`;
+      // Reduced context for retry attempts
+      const contents = `Group these ${articlesToProcess.length} articles into 3-8 topics. The input format is ID|Title:\n${articleList}`;
 
-  console.log(
-    `[AI Clustering] Sending request to ${model} with ${contents.length} characters for ${articlesToProcess.length} articles`
-  );
+      console.log(
+        `[AI Clustering] Sending request to ${model} with ${contents.length} characters for ${articlesToProcess.length} articles (Attempt ${attempt + 1})`
+      );
 
-  const response = await generateContentWithRetry({
-    model,
-    contents,
-    config: {
-      systemInstruction,
-      maxOutputTokens: 16384,
-      thinkingConfig: {
-        thinkingBudget: 0, // Disable extended thinking to prevent token exhaustion
-      },
-    },
-  });
+      const response = await generateContentWithRetry({
+        model,
+        contents,
+        config: {
+          systemInstruction,
+          maxOutputTokens: 16384,
+          thinkingConfig: {
+            thinkingBudget: 0, // Disable extended thinking to prevent token exhaustion
+          },
+        },
+      });
 
-  // Check if response is valid
-  if (!response || !response.candidates || response.candidates.length === 0) {
-    console.error('Empty or invalid response from AI:', response);
-    throw new Error('AI returned an empty response. Please check your API key and quota.');
-  }
+      // Check if response is valid
+      if (!response || !response.candidates || response.candidates.length === 0) {
+        throw new Error('AI returned an empty response. Please check your API key and quota.');
+      }
 
-  // Extract text from the response
-  const candidate = response.candidates[0];
+      // Extract text from the response
+      const candidate = response.candidates[0];
 
-  // Check for MAX_TOKENS finish reason
-  if (candidate.finishReason === 'MAX_TOKENS') {
-    console.error('AI response hit MAX_TOKENS limit:', response);
-    throw new Error(
-      `The mindmap is too complex for the current token limit. Try reducing the number of articles or refresh to regenerate with a simpler structure.`
-    );
-  }
+      // Check for MAX_TOKENS finish reason
+      if (candidate.finishReason === 'MAX_TOKENS') {
+        throw new Error('MAX_TOKENS_LIMIT');
+      }
 
-  if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
-    console.error('No content in AI response:', response);
-    const reason = candidate.finishReason || 'UNKNOWN';
-    throw new Error(
-      `AI response has no content. Finish reason: ${reason}. The response may have been blocked or filtered.`
-    );
-  }
+      if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+        const reason = candidate.finishReason || 'UNKNOWN';
+        throw new Error(`AI response has no content. Finish reason: ${reason}.`);
+      }
 
-  let jsonString = candidate.content.parts[0].text || '{}';
+      let jsonString = candidate.content.parts[0].text || '{}';
+      jsonString = jsonString.replace(/```json\n/g, '').replace(/```/g, '');
 
-  // Clean up markdown code blocks if present
-  jsonString = jsonString.replace(/```json\n/g, '').replace(/```/g, '');
+      let hierarchyJson = JSON.parse(jsonString);
 
-  try {
-    let hierarchyJson = JSON.parse(jsonString);
+      // Robust parsing
+      if (Array.isArray(hierarchyJson)) {
+        hierarchyJson = { rootTopics: hierarchyJson };
+      }
 
-    // Robust parsing: if AI returned an array, wrap it in the expected object structure
-    if (Array.isArray(hierarchyJson)) {
-      hierarchyJson = { rootTopics: hierarchyJson };
+      if (!hierarchyJson.rootTopics || !Array.isArray(hierarchyJson.rootTopics)) {
+        throw new Error('AI returned an invalid format for the mindmap hierarchy.');
+      }
+
+      return hierarchyJson as MindmapHierarchy;
+    } catch (error: any) {
+      if (
+        (error.message &&
+          (error.message.includes('MAX_TOKENS') || error.message.includes('too complex'))) ||
+        error.message === 'MAX_TOKENS_LIMIT'
+      ) {
+        console.warn(`[AI Clustering] Hit token limit with ${articlesToProcess.length} articles.`);
+
+        attempt++;
+        if (attempt >= MAX_RETRIES) {
+          throw new Error(
+            'The mindmap is too complex even after reducing the dataset. Please try submitting fewer articles.'
+          );
+        }
+
+        // Reduce dataset by ~40% for next attempt, keeping newest
+        const newSize = Math.max(5, Math.floor(articlesToProcess.length * 0.6));
+        if (newSize >= articlesToProcess.length) {
+          throw error; // Cannot reduce further substantial amount
+        }
+
+        console.log(`[AI Clustering] Retrying with ${newSize} articles...`);
+        articlesToProcess = articlesToProcess.slice(0, newSize);
+        continue;
+      }
+
+      // If it's not a token limit error, rethrow immediately
+      console.error('Failed to parse AI response:', error);
+      throw new Error('Failed to generate mindmap hierarchy: ' + error.message);
     }
-
-    if (!hierarchyJson.rootTopics || !Array.isArray(hierarchyJson.rootTopics)) {
-      console.error('Invalid hierarchy structure:', hierarchyJson);
-      throw new Error('AI returned an invalid format for the mindmap hierarchy.');
-    }
-    if (hierarchyJson.rootTopics.length === 0) {
-      throw new Error('AI returned an empty hierarchy. Please try again with different articles.');
-    }
-    return hierarchyJson as MindmapHierarchy;
-  } catch (error) {
-    console.error('Failed to parse AI response:', error);
-    console.log('Raw response:', jsonString);
-    throw new Error('Failed to parse mindmap hierarchy from AI response.');
   }
+
+  throw new Error('Failed to generate mindmap.');
 };
