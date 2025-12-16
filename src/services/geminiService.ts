@@ -200,6 +200,7 @@ const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
       const base64 = content.substring(markerIndex + base64Marker.length);
       try {
         content = atob(base64);
+        console.log(`[Transcript] Decoded Data URI. Length: ${content.length}`);
       } catch (e) {
         console.warn('Failed to decode base64 transcript content', e);
       }
@@ -207,7 +208,13 @@ const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
       const commaIndex = content.indexOf(',');
       if (commaIndex !== -1) {
         content = decodeURIComponent(content.substring(commaIndex + 1));
+        console.log(`[Transcript] Decoded URI component. Length: ${content.length}`);
       }
+    }
+
+    if (!content || !content.trim()) {
+      console.warn('[Transcript] Decoded content is empty.');
+      return [];
     }
   }
 
