@@ -748,6 +748,7 @@ export const Sidebar: React.FC<{
     unreadReadLaterYtCount,
     unreadReadLaterRssCount,
     unreadAiSummaryYtCount,
+    unreadTranscriptYtCount,
     historyYtCount,
     historyRssCount,
     unreadFavoritesYtCount,
@@ -988,14 +989,24 @@ export const Sidebar: React.FC<{
             onCloseMindmap={onCloseMindmap}
           />
           {sidebarTab === 'yt' && (
-            <NavItem
-              type="ai-summary-yt"
-              icon={AiSummaryIcon}
-              label="YT with AI Summary"
-              count={unreadAiSummaryYtCount}
-              forceInactive={isMindmapOpen}
-              onCloseMindmap={onCloseMindmap}
-            />
+            <>
+              <NavItem
+                type="ai-summary-yt"
+                icon={AiSummaryIcon}
+                label="YT with AI Summary"
+                count={unreadAiSummaryYtCount}
+                forceInactive={isMindmapOpen}
+                onCloseMindmap={onCloseMindmap}
+              />
+              <NavItem
+                type="yt-transcripts"
+                icon={AiSummaryIcon}
+                label="YT with Transcript"
+                count={unreadTranscriptYtCount}
+                forceInactive={isMindmapOpen}
+                onCloseMindmap={onCloseMindmap}
+              />
+            </>
           )}
           <Tooltip text="AI Grouping" isVisible={isSidebarCollapsed && !isMobileView}>
             <button

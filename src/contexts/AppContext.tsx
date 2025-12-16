@@ -545,6 +545,7 @@ interface AppContextType {
   unreadFavoritesRssCount: number;
   unreadFavoritesCount: number;
   unreadAiSummaryYtCount: number;
+  unreadTranscriptYtCount: number;
   feedsForPublishedToday: Feed[];
   feedsForReadLater: Feed[];
   feedsForHistory: Feed[];
@@ -1935,6 +1936,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       fYt = 0,
       fRss = 0;
     let unreadAiSummaryYt = 0;
+    let unreadTranscriptYt = 0;
     const favoriteFeedIds = new Set(favoriteFeeds.map(f => f.id));
 
     const unreadArticles = allArticles.filter(a => !readArticleIds.has(a.id));
@@ -1957,8 +1959,13 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (isYtFeed) fYt++;
         else fRss++;
       }
-      if (isYtFeed && (article.summary || article.structuredSummary)) {
-        unreadAiSummaryYt++;
+      if (isYtFeed) {
+        if (article.summary || article.structuredSummary) {
+          unreadAiSummaryYt++;
+        }
+        if (article.transcript && article.transcript.length > 0) {
+          unreadTranscriptYt++;
+        }
       }
     }
 
@@ -1982,6 +1989,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       unreadFavoritesYtCount: fYt,
       unreadFavoritesRssCount: fRss,
       unreadAiSummaryYtCount: unreadAiSummaryYt,
+      unreadTranscriptYtCount: unreadTranscriptYt,
     };
   }, [allArticles, readArticleIds, readLaterArticleIds, favoriteFeeds, feedsById, articlesById]);
 
@@ -2178,8 +2186,15 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         );
         needsDeduplication = true;
         break;
+
       case 'ai-summary-yt':
         rawArticles = allArticles.filter(a => a.isVideo && a.structuredSummary);
+        needsDeduplication = true;
+        break;
+      case 'yt-transcripts':
+        rawArticles = allArticles.filter(
+          a => a.isVideo && a.transcript && a.transcript.length > 0
+        );
         needsDeduplication = true;
         break;
       case 'ai-topic':
@@ -2634,7 +2649,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
       const recentArticles = uniqueArticles
         .filter(i => i.pubDateTimestamp && i.pubDateTimestamp >= threeDaysAgo)
-        .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
+        .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0))
+        .slice(0, 400);
 
       console.log(`[AutoGrouping] Found ${recentArticles.length} recent articles for grouping.`);
 
@@ -6971,6 +6987,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     unreadFavoritesRssCount,
     unreadFavoritesCount,
     unreadAiSummaryYtCount,
+    unreadTranscriptYtCount: 0,
     feedsForPublishedToday,
     feedsForReadLater,
     feedsForHistory,

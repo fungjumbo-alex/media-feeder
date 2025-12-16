@@ -403,7 +403,7 @@ export const fetchAvailableCaptionChoices = async (videoId: string): Promise<Cap
     console.log('[Transcript] Attempting backend API...');
     const choices = await fetchCaptionsFromBackend(videoId);
     if (choices.length > 0) {
-      console.log(`[Transcript] ✓ Backend API succeeded with ${choices.length} caption(s)`);
+      console.log(`[Transcript] ✓ Primary fetch succeeded with ${choices.length} caption(s)`);
       return choices;
     }
   } catch (error) {
@@ -805,11 +805,11 @@ export const generateThematicDigest = async (
         const fullArticle = articlesByTitle.get(articleInfo.title);
         return fullArticle
           ? {
-              id: fullArticle.id,
-              feedId: fullArticle.feedId,
-              title: fullArticle.title,
-              link: fullArticle.link,
-            }
+            id: fullArticle.id,
+            feedId: fullArticle.feedId,
+            title: fullArticle.title,
+            link: fullArticle.link,
+          }
           : null;
       })
       .filter((a: any) => a !== null);
