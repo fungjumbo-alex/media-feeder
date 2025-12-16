@@ -774,10 +774,15 @@ export const ArticleModal: React.FC = () => {
         setTranscriptData(null);
         try {
           const transcript = await fetchAndParseTranscript(selectedCaptionUrl);
-          const choice = captionChoices?.find(c => c.url === selectedCaptionUrl);
-          setTranscriptData({ transcript, language: choice?.label });
-          lineRefs.current = [];
+          if (!transcript || transcript.length === 0) {
+            setTranscriptError('Transcript file was empty or could not be parsed.');
+          } else {
+            const choice = captionChoices?.find(c => c.url === selectedCaptionUrl);
+            setTranscriptData({ transcript, language: choice?.label });
+            lineRefs.current = [];
+          }
         } catch (e) {
+          console.error('Failed to load transcript:', e);
           setTranscriptError(e instanceof Error ? e.message : 'Failed to load transcript.');
           setIsSummarizing(false);
         } finally {

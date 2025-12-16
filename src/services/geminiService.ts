@@ -193,6 +193,7 @@ const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
 
   // Handle Data URI if returned by proxy/instance
   if (content.trim().startsWith('data:')) {
+    console.log('[Transcript] Decoding Data URI...');
     const base64Marker = ';base64,';
     const markerIndex = content.indexOf(base64Marker);
     if (markerIndex !== -1) {
