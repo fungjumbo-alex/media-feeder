@@ -6,25 +6,25 @@ import type { ProxyAttemptCallback, ProxyStats, FeedType } from '../types';
 export const PROXIES = [
   ...(import.meta.env.DEV
     ? [
-        {
-          name: 'Local Proxy',
-          buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
-          parseResponse: async (response: Response): Promise<string> => {
-            if (!response.ok) {
-              const text = await response.text();
-              console.error(
-                `[Local Proxy] Error accessing ${response.url}:`,
-                response.status,
-                text
-              );
-              throw new Error(
-                `Local Proxy responded with status ${response.status}. Body: ${text}`
-              );
-            }
-            return response.text();
-          },
+      {
+        name: 'Local Proxy',
+        buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
+        parseResponse: async (response: Response): Promise<string> => {
+          if (!response.ok) {
+            const text = await response.text();
+            console.error(
+              `[Local Proxy] Error accessing ${response.url}:`,
+              response.status,
+              text
+            );
+            throw new Error(
+              `Local Proxy responded with status ${response.status}. Body: ${text}`
+            );
+          }
+          return response.text();
         },
-      ]
+      },
+    ]
     : []),
   {
     name: 'AllOrigins',
@@ -86,7 +86,14 @@ export const PROXIES = [
 // Updated 2025-12-14: Added high uptime instances
 // List of public Invidious instances, which can act as proxies for YouTube content.
 // Updated 2025-12-14: Removed instances failing with 403/HTML responses
-export const INVIDIOUS_INSTANCES = ['https://inv.nadeko.net'];
+// Updated 2025-12-16: Added more reliable instances
+export const INVIDIOUS_INSTANCES = [
+  'https://inv.tux.pizza',
+  'https://vid.puffyan.us',
+  'https://invidious.jing.rocks',
+  'https://inv.nadeko.net',
+  'https://yt.artemislena.eu',
+];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.
 export const RSSHUB_INSTANCES = [
