@@ -191,6 +191,25 @@ const parseInvidiousTranscript = (content: string): TranscriptLine[] => {
     return [];
   }
 
+  // Handle Data URI if returned by proxy/instance
+  if (content.trim().startsWith('data:')) {
+    const base64Marker = ';base64,';
+    const markerIndex = content.indexOf(base64Marker);
+    if (markerIndex !== -1) {
+      const base64 = content.substring(markerIndex + base64Marker.length);
+      try {
+        content = atob(base64);
+      } catch (e) {
+        console.warn('Failed to decode base64 transcript content', e);
+      }
+    } else {
+      const commaIndex = content.indexOf(',');
+      if (commaIndex !== -1) {
+        content = decodeURIComponent(content.substring(commaIndex + 1));
+      }
+    }
+  }
+
   // Handle YouTube's XML format
   if (content.trim().startsWith('<?xml') || content.trim().startsWith('<transcript>')) {
     try {
