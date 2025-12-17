@@ -1,6 +1,6 @@
-import type { Context, Config } from '@netlify/functions';
+import type { Context } from '@netlify/functions';
 
-export default async (req: Request, context: Context) => {
+export default async (req: Request, _context: Context) => {
   const url = new URL(req.url);
   const targetUrl = url.searchParams.get('url');
 
