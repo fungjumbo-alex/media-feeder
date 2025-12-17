@@ -466,6 +466,10 @@ export const fetchAndParseRss = async (
 
   if (parserError) {
     if (isYouTube) {
+      console.error(
+        '[RSS Parser] Invidious returned content that failed to parse:',
+        content.substring(0, 500)
+      );
       throw new Error(
         `The Invidious instance returned an invalid feed. The content might be unavailable or private.`
       );

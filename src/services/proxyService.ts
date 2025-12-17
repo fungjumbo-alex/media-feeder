@@ -29,6 +29,11 @@ export const PROXIES = [
         console.error(`[App Proxy] Error accessing ${response.url}:`, response.status, text);
         throw new Error(`App Proxy responded with status ${response.status}. Body: ${text}`);
       }
+
+      console.log(`[App Proxy] Success for ${response.url}. Length: ${text.length}`);
+      if (text.length < 500) {
+        console.log(`[App Proxy] Content snippet:`, text);
+      }
       return text;
     },
   },
