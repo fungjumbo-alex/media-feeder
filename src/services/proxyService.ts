@@ -6,7 +6,7 @@ import type { ProxyAttemptCallback, ProxyStats, FeedType } from '../types';
 export const PROXIES = [
   {
     name: 'App Proxy',
-    buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
+    buildUrl: (url: string) => `/.netlify/functions/proxy?url=${encodeURIComponent(url)}`,
     parseResponse: async (response: Response): Promise<string> => {
       const text = await response.text();
       // Check for common error pages that return 200 OK
