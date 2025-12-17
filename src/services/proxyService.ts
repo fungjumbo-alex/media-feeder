@@ -8,12 +8,28 @@ export const PROXIES = [
     name: 'App Proxy',
     buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
     parseResponse: async (response: Response): Promise<string> => {
+      const text = await response.text();
+      // Check for common error pages that return 200 OK
+      const isConsentPage =
+        text.includes('Before you continue to YouTube') || text.includes('consent.google.com');
+      const isHtmlError =
+        text.trim().startsWith('<!DOCTYPE html') || text.trim().startsWith('<html');
+
+      // If we expect XML (RSS/Atom) but get HTML, it's likely an error or blocking page
+      // Exception: Some valid feeds might be wrapped in HTML (rare), but for YouTube/RSS it's usually bad
+      if (isConsentPage || (text.length < 500 && isHtmlError)) {
+        console.error(
+          `[App Proxy] potentially invalid content for ${response.url}:`,
+          text.substring(0, 100)
+        );
+        throw new Error(`App Proxy returned invalid content (likely consent page or error).`);
+      }
+
       if (!response.ok) {
-        const text = await response.text();
         console.error(`[App Proxy] Error accessing ${response.url}:`, response.status, text);
         throw new Error(`App Proxy responded with status ${response.status}. Body: ${text}`);
       }
-      return response.text();
+      return text;
     },
   },
   {
