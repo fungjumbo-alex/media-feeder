@@ -52,7 +52,3 @@ export default async (req: Request, context: Context) => {
     return new Response(`Proxy error: ${String(error)}`, { status: 500 });
   }
 };
-
-export const config: Config = {
-  path: '/api/proxy',
-};

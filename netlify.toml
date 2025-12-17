@@ -11,6 +11,11 @@
   to = "/.netlify/functions/transcript"
   status = 200
 
+[[redirects]]
+  from = "/api/proxy"
+  to = "/.netlify/functions/proxy"
+  status = 200
+
 
 
 [[redirects]]
