@@ -1,16 +1,15 @@
-import type { Context } from '@netlify/functions';
+import type { Handler } from '@netlify/functions';
 
-export default async (req: Request, _context: Context) => {
-  const url = new URL(req.url);
-  const targetUrl = url.searchParams.get('url');
+export const handler: Handler = async (event, _context) => {
+  const targetUrl = event.queryStringParameters?.url;
 
   if (!targetUrl) {
-    return new Response('Missing url query parameter', { status: 400 });
+    return { statusCode: 400, body: 'Missing url query parameter' };
   }
 
   try {
     // Add browser-like headers to avoid being blocked
-    const headers = {
+    const headers: Record<string, string> = {
       'User-Agent':
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept-Language': 'en-US,en;q=0.9',
@@ -31,28 +30,26 @@ export default async (req: Request, _context: Context) => {
       headers,
     });
 
-    // Create a new response with CORS headers
-    const newHeaders = new Headers(response.headers);
-    newHeaders.set('Access-Control-Allow-Origin', '*');
-    newHeaders.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    newHeaders.set('Access-Control-Allow-Headers', 'Content-Type');
+    const content = await response.text();
 
-    // Remove problematic headers
-    const restrictedHeaders = [
-      'content-encoding',
-      'content-length',
-      'transfer-encoding',
-      'connection',
-    ];
-    restrictedHeaders.forEach(header => newHeaders.delete(header));
+    // Create response headers
+    const responseHeaders: Record<string, string | number | boolean> = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Content-Type': response.headers.get('content-type') || 'text/plain',
+    };
 
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: newHeaders,
-    });
+    return {
+      statusCode: response.status,
+      body: content,
+      headers: responseHeaders,
+    };
   } catch (error) {
     console.error('Proxy error:', error);
-    return new Response(`Proxy error: ${String(error)}`, { status: 500 });
+    return {
+      statusCode: 500,
+      body: `Proxy error: ${String(error)}`,
+    };
   }
 };
