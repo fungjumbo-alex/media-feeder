@@ -4,28 +4,18 @@ import type { ProxyAttemptCallback, ProxyStats, FeedType } from '../types';
 // List of proxies to try in order.
 // Each proxy has a function to construct its URL and a function to parse its response.
 export const PROXIES = [
-  ...(import.meta.env.DEV
-    ? [
-      {
-        name: 'Local Proxy',
-        buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
-        parseResponse: async (response: Response): Promise<string> => {
-          if (!response.ok) {
-            const text = await response.text();
-            console.error(
-              `[Local Proxy] Error accessing ${response.url}:`,
-              response.status,
-              text
-            );
-            throw new Error(
-              `Local Proxy responded with status ${response.status}. Body: ${text}`
-            );
-          }
-          return response.text();
-        },
-      },
-    ]
-    : []),
+  {
+    name: 'App Proxy',
+    buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
+    parseResponse: async (response: Response): Promise<string> => {
+      if (!response.ok) {
+        const text = await response.text();
+        console.error(`[App Proxy] Error accessing ${response.url}:`, response.status, text);
+        throw new Error(`App Proxy responded with status ${response.status}. Body: ${text}`);
+      }
+      return response.text();
+    },
+  },
   {
     name: 'AllOrigins',
     buildUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
@@ -71,7 +61,7 @@ export const PROXIES = [
                 `Proxy corsproxy.io responded with status ${response.status}: ${errorJson.error.message}`
               );
             }
-          } catch (e) {
+          } catch {
             /* ignore json parsing error */
           }
         }
@@ -236,7 +226,8 @@ export const fetchViaProxy = async (
     };
     remainingProxies.sort((a, b) => getSuccessRate(b.name) - getSuccessRate(a.name));
 
-    const proxyToTry = remainingProxies.shift()!;
+    const proxyToTry = remainingProxies.shift();
+    if (!proxyToTry) continue;
 
     await wait(100);
     const result = await tryRequest(proxyToTry, url);

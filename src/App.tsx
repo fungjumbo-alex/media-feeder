@@ -173,7 +173,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const body = document.body;
-    const isBusy = isInitialLoad || isRefreshingAll || isViewLoading || !!refreshingFeedId;
+    const isBusy = isInitialLoad || isViewLoading;
 
     if (isBusy) {
       body.classList.add('wait-cursor');
@@ -184,7 +184,7 @@ const App: React.FC = () => {
     return () => {
       body.classList.remove('wait-cursor');
     };
-  }, [isInitialLoad, isRefreshingAll, isViewLoading, refreshingFeedId]);
+  }, [isInitialLoad, isViewLoading]);
 
   // Variable declarations needed by keyboard shortcuts
   const currentFeed =
@@ -201,6 +201,7 @@ const App: React.FC = () => {
     document.querySelectorAll('.keyboard-selected').forEach(el => {
       el.classList.remove('keyboard-selected');
     });
+    // eslint-disable-next-line
     setSelectedArticleIndex(-1);
   }, [articlesToShow]);
 
@@ -851,7 +852,7 @@ const App: React.FC = () => {
           ) : (
             <FeedContent
               articles={articlesToShow}
-              isLoading={isInitialLoad || isRefreshingAll || isViewLoading}
+              isLoading={isInitialLoad || isViewLoading}
               emptyMessage={emptyMessage}
               onOpenArticle={handleOpenArticle}
               readArticleIds={readArticleIds}
