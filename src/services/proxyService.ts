@@ -17,10 +17,11 @@ export const PROXIES = [
 
       // If we expect XML (RSS/Atom) but get HTML, it's likely an error or blocking page
       // Exception: Some valid feeds might be wrapped in HTML (rare), but for YouTube/RSS it's usually bad
-      if (isConsentPage || (text.length < 500 && isHtmlError)) {
+      // 3000 chars covers the 1781 bytes "Before you continue" page
+      if (isConsentPage || (text.length < 3000 && isHtmlError)) {
         console.error(
           `[App Proxy] potentially invalid content for ${response.url}:`,
-          text.substring(0, 100)
+          text.substring(0, 500)
         );
         throw new Error(`App Proxy returned invalid content (likely consent page or error).`);
       }
@@ -31,7 +32,7 @@ export const PROXIES = [
       }
 
       console.log(`[App Proxy] Success for ${response.url}. Length: ${text.length}`);
-      if (text.length < 500) {
+      if (text.length < 3000) {
         console.log(`[App Proxy] Content snippet:`, text);
       }
       return text;
