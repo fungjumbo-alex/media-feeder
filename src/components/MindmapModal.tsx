@@ -89,19 +89,19 @@ const OutlineView: React.FC<{
       {hierarchy.rootTopics.map((rootTopic, rootIndex) => {
         const rootId = `root-${rootIndex}`;
         const isRootExpanded = expandedTopics.has(rootId);
-        const rootArticleCount = rootTopic.subTopics.reduce(
-          (sum, sub) => sum + sub.articleIds.length,
-          rootTopic.articleIds.length
+        const rootArticleCount = (rootTopic.subTopics || []).reduce(
+          (sum, sub) => sum + (sub.articleIds?.length || 0),
+          rootTopic.articleIds?.length || 0
         );
 
         // Filter visibility based on search
         const rootMatches = matchesSearch(rootTopic.title);
         const hasMatchingContent =
           rootMatches ||
-          rootTopic.subTopics.some(
+          (rootTopic.subTopics || []).some(
             sub =>
               matchesSearch(sub.title) ||
-              sub.articleIds.some(id => {
+              (sub.articleIds || []).some(id => {
                 const article = articleMap.get(id);
                 return article && matchesSearch(article.title);
               })
@@ -133,8 +133,8 @@ const OutlineView: React.FC<{
             {/* Sub-topics and Articles */}
             {isRootExpanded && (
               <div className="bg-gray-850">
-                {rootTopic.subTopics.length > 0 ? (
-                  rootTopic.subTopics.map((subTopic, subIndex) => {
+                {(rootTopic.subTopics || []).length > 0 ? (
+                  (rootTopic.subTopics || []).map((subTopic, subIndex) => {
                     const subId = `${rootId}-sub-${subIndex}`;
                     const isSubExpanded = expandedTopics.has(subId);
                     const subMatches = matchesSearch(subTopic.title);
@@ -200,7 +200,7 @@ const OutlineView: React.FC<{
                         : 'bg-gray-900'
                     }
                   >
-                    {Array.from(new Set(rootTopic.articleIds)).map(articleId => {
+                    {Array.from(new Set(rootTopic.articleIds || [])).map(articleId => {
                       const article = articleMap.get(articleId);
                       if (!article) return null;
 

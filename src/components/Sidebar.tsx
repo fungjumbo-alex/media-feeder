@@ -187,8 +187,6 @@ const SidebarFeedIcon: React.FC<{ feed: Feed; count: number; onCloseMindmap?: ()
     return (feed.title || 'F').charAt(0).toUpperCase();
   }, [feed.title]);
 
-
-
   return (
     <Tooltip text={feed.title} isVisible={true}>
       <button
@@ -207,7 +205,9 @@ const SidebarFeedIcon: React.FC<{ feed: Feed; count: number; onCloseMindmap?: ()
             onError={() => setHasError(true)}
           />
         ) : (
-          <div className={`w-full h-full flex items-center justify-center rounded ${fallbackColor}`}>
+          <div
+            className={`w-full h-full flex items-center justify-center rounded ${fallbackColor}`}
+          >
             <span className="font-bold text-white/80 text-lg">{initial}</span>
           </div>
         )}
@@ -342,9 +342,9 @@ const TagWithFeeds: React.FC<{
 
   const isActive = isFavorites
     ? currentView.type === 'favorites' &&
-    (currentView.value === tagType || (currentView.value === 'yt' && tagType === 'youtube'))
+      (currentView.value === tagType || (currentView.value === 'yt' && tagType === 'youtube'))
     : currentView.type === 'tag' &&
-    JSON.stringify(currentView.value) === JSON.stringify({ name: tag, type: tagType });
+      JSON.stringify(currentView.value) === JSON.stringify({ name: tag, type: tagType });
 
   if (isFavorites && feedsForDisplay.length === 0) {
     return null;
@@ -503,7 +503,6 @@ const ViewWithFeeds: React.FC<{
   );
 };
 
-
 const TopicItem: React.FC<{
   title: string;
   articleIds: string[];
@@ -530,18 +529,18 @@ const TopicItem: React.FC<{
     // However, articleIds for a topic is usually small.
     // But we do this for EVERY topic item.
     // If we have articlesById map in context, that's best.
-    // Let's check if articlesById is exposed in useAppContext. 
-    // If not, we iterate articleIds and find in allArticles. 
+    // Let's check if articlesById is exposed in useAppContext.
+    // If not, we iterate articleIds and find in allArticles.
     // Given the previous code used allArticles.filter(id set), it implies allArticles iteration.
 
     // Let's filter the input articleIds.
     // We need to check if the article exists AND matches tab.
-    // Since we don't have a map, we have to iterate allArticles? 
+    // Since we don't have a map, we have to iterate allArticles?
     // NO! That would be terrible for performance in a list.
     // We should iterate articleIds and check against a Map.
     // DOES appContext provide a map?
     // Let's assume for now we use allArticles.
-    // Wait, the previous `filteredArticles` logic iterated `allArticles`. 
+    // Wait, the previous `filteredArticles` logic iterated `allArticles`.
     // Here we are inside `TopicItem`. If we iterate `allArticles` for every topic, it will lag.
 
     // Ideally we rely on the parent or `AiTopicsList` to pre-calculate, or we get a Map.
@@ -554,11 +553,11 @@ const TopicItem: React.FC<{
     const isYtTab = sidebarTab === 'yt';
 
     // Optimization: Build a Set of valid IDs for the current tab ONCE in the parent list?
-    // That's much better. But `AiTopicsList` is the parent. 
+    // That's much better. But `AiTopicsList` is the parent.
     // Let's move this logic to `AiTopicsList` if possible?
     // But `TopicItem` is recursive.
 
-    // Let's stick to doing it here but verify if we can use a Map. 
+    // Let's stick to doing it here but verify if we can use a Map.
     // `useAppContext` typically exposes state.
 
     return articleIds.filter(id => {
@@ -571,18 +570,19 @@ const TopicItem: React.FC<{
     }).length;
   }, [articleIds, allArticles, sidebarTab, feedsById]);
 
-
   // Check if this topic is active
   const isSelfActive =
-    currentView.type === 'ai-topic' &&
-    (currentView.value as { title: string })?.title === title;
+    currentView.type === 'ai-topic' && (currentView.value as { title: string })?.title === title;
 
   // Check if any subtopic is active (recursive check helper)
   const isChildActive = useMemo(() => {
     if (!hasSubTopics || !subTopics) return false;
     const checkActive = (subs: { title: string }[]): boolean => {
       return subs.some(sub => {
-        if (currentView.type === 'ai-topic' && (currentView.value as { title: string })?.title === sub.title) {
+        if (
+          currentView.type === 'ai-topic' &&
+          (currentView.value as { title: string })?.title === sub.title
+        ) {
           return true;
         }
         return false;
@@ -591,12 +591,12 @@ const TopicItem: React.FC<{
     return checkActive(subTopics);
   }, [currentView, subTopics, hasSubTopics]);
 
-
   // Initialize expanded state
   const [isExpanded, setIsExpanded] = useState(isChildActive);
 
   useEffect(() => {
     if (isChildActive) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsExpanded(true);
     }
   }, [isChildActive]);
@@ -613,18 +613,23 @@ const TopicItem: React.FC<{
 
   const paddingLeft = (depth + 1) * 12;
 
-  // Render even if validArticleCount is 0? 
+  // Render even if validArticleCount is 0?
   // User might want to see topics even if empty in current view?
   // Or maybe gray them out?
   // For now just show the count.
+  // UPDATE: User requested to hide topics with no articles.
+  if (validArticleCount === 0) {
+    return null;
+  }
 
   return (
     <div className="w-full">
       <div
-        className={`flex items-center w-full pr-2 py-1.5 text-sm rounded-md transition-colors ${isSelfActive
-          ? 'bg-gray-700 text-white'
-          : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
-          }`}
+        className={`flex items-center w-full pr-2 py-1.5 text-sm rounded-md transition-colors ${
+          isSelfActive
+            ? 'bg-gray-700 text-white'
+            : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
+        }`}
         style={{ paddingLeft: `${paddingLeft}px` }}
       >
         {hasSubTopics && (
@@ -709,6 +714,64 @@ const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindma
   );
 };
 
+const SidebarSection: React.FC<{
+  title: string;
+  isCollapsed: boolean;
+  onToggle: () => void;
+  isSidebarCollapsed: boolean;
+  children: React.ReactNode;
+}> = ({ title, isCollapsed, onToggle, isSidebarCollapsed, children }) => (
+  <div>
+    {!isSidebarCollapsed && (
+      <button
+        onClick={onToggle}
+        className="flex items-center justify-between w-full text-xs font-bold text-gray-500 uppercase tracking-wider px-3 py-2 hover:text-gray-300"
+      >
+        <span>{title}</span>
+        <ChevronRightIcon
+          className={`w-4 h-4 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}
+        />
+      </button>
+    )}
+    <div
+      className={`transition-all duration-300 ${isCollapsed && !isSidebarCollapsed ? 'hidden' : ''}`}
+    >
+      {children}
+    </div>
+  </div>
+);
+
+const TagsList: React.FC<{
+  tags: string[];
+  unreadTagCounts: Record<string, number>;
+  tagType: 'youtube' | 'rss';
+  onCloseMindmap: () => void;
+}> = ({ tags, unreadTagCounts, tagType, onCloseMindmap }) => {
+  const { unreadFavoritesYtCount, unreadFavoritesRssCount } = useAppContext();
+  const unreadFavs = tagType === 'youtube' ? unreadFavoritesYtCount : unreadFavoritesRssCount;
+
+  return (
+    <>
+      <TagWithFeeds
+        key={`${tagType}-__FAVORITES__`}
+        tag="__FAVORITES__"
+        unreadCount={unreadFavs}
+        tagType={tagType}
+        onCloseMindmap={onCloseMindmap}
+      />
+      {tags.map(tag => (
+        <TagWithFeeds
+          key={`${tagType}-${tag}`}
+          tag={tag}
+          unreadCount={unreadTagCounts[tag] || 0}
+          tagType={tagType}
+          onCloseMindmap={onCloseMindmap}
+        />
+      ))}
+    </>
+  );
+};
+
 export const Sidebar: React.FC<{
   onOpenMindmap: () => void;
   isMindmapOpen: boolean;
@@ -751,8 +814,6 @@ export const Sidebar: React.FC<{
     unreadTranscriptYtCount,
     historyYtCount,
     historyRssCount,
-    unreadFavoritesYtCount,
-    unreadFavoritesRssCount,
     enableRssAndReddit,
     isMobileView,
     noteFolders,
@@ -805,62 +866,6 @@ export const Sidebar: React.FC<{
     }
   };
 
-  const SidebarSection: React.FC<{
-    title: string;
-    isCollapsed: boolean;
-    onToggle: () => void;
-    children: React.ReactNode;
-  }> = ({ title, isCollapsed, onToggle, children }) => (
-    <div>
-      {!isSidebarCollapsed && (
-        <button
-          onClick={onToggle}
-          className="flex items-center justify-between w-full text-xs font-bold text-gray-500 uppercase tracking-wider px-3 py-2 hover:text-gray-300"
-        >
-          <span>{title}</span>
-          <ChevronRightIcon
-            className={`w-4 h-4 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}
-          />
-        </button>
-      )}
-      <div
-        className={`transition-all duration-300 ${isCollapsed && !isSidebarCollapsed ? 'hidden' : ''}`}
-      >
-        {children}
-      </div>
-    </div>
-  );
-
-  const TagsList: React.FC<{
-    tags: string[];
-    unreadTagCounts: Record<string, number>;
-    tagType: 'youtube' | 'rss';
-  }> = ({ tags, unreadTagCounts, tagType }) => {
-    const unreadFavs = tagType === 'youtube' ? unreadFavoritesYtCount : unreadFavoritesRssCount;
-
-    return (
-      <>
-        <TagWithFeeds
-          key={`${tagType}-__FAVORITES__`}
-          tag="__FAVORITES__"
-          unreadCount={unreadFavs}
-          tagType={tagType}
-          onCloseMindmap={onCloseMindmap}
-        />
-        {tags.map(tag => (
-          <TagWithFeeds
-            key={`${tagType}-${tag}`}
-            tag={tag}
-            unreadCount={unreadTagCounts[tag] || 0}
-            tagType={tagType}
-            onCloseMindmap={onCloseMindmap}
-          />
-        ))}
-      </>
-    );
-  };
-
-
   const ytFeeds = useMemo(() => sortedFeeds.filter(isYouTubeFeed), [sortedFeeds]);
   const nonYtFeeds = useMemo(() => sortedFeeds.filter(feed => !isYouTubeFeed(feed)), [sortedFeeds]);
 
@@ -880,10 +885,11 @@ export const Sidebar: React.FC<{
 
   return (
     <aside
-      className={`bg-gray-800 text-gray-300 flex flex-col transition-all duration-300 ease-in-out z-30 ${isMobileView
-        ? `fixed h-full ${isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0 w-64 shadow-xl'}`
-        : `flex-shrink-0 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`
-        }`}
+      className={`bg-gray-800 text-gray-300 flex flex-col transition-all duration-300 ease-in-out z-30 ${
+        isMobileView
+          ? `fixed h-full ${isSidebarCollapsed ? '-translate-x-full' : 'translate-x-0 w-64 shadow-xl'}`
+          : `flex-shrink-0 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`
+      }`}
     >
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-700 flex-shrink-0">
         {!isSidebarCollapsed && (
@@ -950,6 +956,7 @@ export const Sidebar: React.FC<{
           title="Views"
           isCollapsed={isViewsCollapsed}
           onToggle={onToggleViewsCollapse}
+          isSidebarCollapsed={isSidebarCollapsed}
         >
           <NavItem
             type="all-subscriptions"
@@ -1011,13 +1018,16 @@ export const Sidebar: React.FC<{
           <Tooltip text="AI Grouping" isVisible={isSidebarCollapsed && !isMobileView}>
             <button
               onClick={onOpenMindmap}
-              className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-colors ${isMindmapOpen
-                ? 'bg-gray-700 text-white'
-                : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
-                }`}
+              className={`flex items-center w-full px-3 py-2 text-sm rounded-md transition-colors ${
+                isMindmapOpen
+                  ? 'bg-gray-700 text-white'
+                  : 'text-gray-400 hover:bg-gray-700/50 hover:text-white'
+              }`}
             >
               <GridViewIcon className="w-5 h-5" />
-              {!isSidebarCollapsed && <span className="ml-3 flex-1 truncate text-left">AI Grouping</span>}
+              {!isSidebarCollapsed && (
+                <span className="ml-3 flex-1 truncate text-left">AI Grouping</span>
+              )}
             </button>
           </Tooltip>
         </SidebarSection>
@@ -1027,6 +1037,7 @@ export const Sidebar: React.FC<{
             title="AI Topics"
             isCollapsed={isAiTopicsCollapsed}
             onToggle={onToggleAiTopicsCollapse}
+            isSidebarCollapsed={isSidebarCollapsed}
           >
             <AiTopicsList onCloseMindmap={onCloseMindmap} />
           </SidebarSection>
@@ -1037,11 +1048,13 @@ export const Sidebar: React.FC<{
             title="YouTube Tags"
             isCollapsed={isYoutubeTagsCollapsed}
             onToggle={onToggleYoutubeTagsCollapse}
+            isSidebarCollapsed={isSidebarCollapsed}
           >
             <TagsList
               tags={youtubeTags}
               unreadTagCounts={youtubeUnreadTagCounts}
               tagType="youtube"
+              onCloseMindmap={onCloseMindmap}
             />
           </SidebarSection>
         )}
@@ -1051,8 +1064,14 @@ export const Sidebar: React.FC<{
               title="RSS Tags"
               isCollapsed={isRssTagsCollapsed}
               onToggle={onToggleRssTagsCollapse}
+              isSidebarCollapsed={isSidebarCollapsed}
             >
-              <TagsList tags={rssTags} unreadTagCounts={rssUnreadTagCounts} tagType="rss" />
+              <TagsList
+                tags={rssTags}
+                unreadTagCounts={rssUnreadTagCounts}
+                tagType="rss"
+                onCloseMindmap={onCloseMindmap}
+              />
             </SidebarSection>
           )}
 
@@ -1062,6 +1081,7 @@ export const Sidebar: React.FC<{
               title="Channels"
               isCollapsed={isYoutubeFeedsCollapsed}
               onToggle={onToggleYoutubeFeedsCollapse}
+              isSidebarCollapsed={isSidebarCollapsed}
             >
               <FeedsList
                 feeds={ytFeeds}
@@ -1073,6 +1093,7 @@ export const Sidebar: React.FC<{
               title="Playlists"
               isCollapsed={isYoutubePlaylistsCollapsed}
               onToggle={onToggleYoutubePlaylistsCollapse}
+              isSidebarCollapsed={isSidebarCollapsed}
             >
               <FeedsList
                 feeds={ytFeeds}
@@ -1087,6 +1108,7 @@ export const Sidebar: React.FC<{
               title="Notes"
               isCollapsed={isNotesCollapsed}
               onToggle={onToggleNotesCollapse}
+              isSidebarCollapsed={isSidebarCollapsed}
             >
               <div className="space-y-1">
                 {noteFolders.map(folder => (
@@ -1116,15 +1138,25 @@ export const Sidebar: React.FC<{
                   title="Reddit Feeds"
                   isCollapsed={isRedditFeedsCollapsed}
                   onToggle={onToggleRedditFeedsCollapse}
+                  isSidebarCollapsed={isSidebarCollapsed}
                 >
-                  <FeedsList feeds={redditFeeds} typeFilter={() => true} onCloseMindmap={onCloseMindmap} />
+                  <FeedsList
+                    feeds={redditFeeds}
+                    typeFilter={() => true}
+                    onCloseMindmap={onCloseMindmap}
+                  />
                 </SidebarSection>
                 <SidebarSection
                   title="Other RSS Feeds"
                   isCollapsed={isRssFeedsCollapsed}
                   onToggle={onToggleRssFeedsCollapse}
+                  isSidebarCollapsed={isSidebarCollapsed}
                 >
-                  <FeedsList feeds={rssFeeds} typeFilter={() => true} onCloseMindmap={onCloseMindmap} />
+                  <FeedsList
+                    feeds={rssFeeds}
+                    typeFilter={() => true}
+                    onCloseMindmap={onCloseMindmap}
+                  />
                 </SidebarSection>
               </>
             )}
