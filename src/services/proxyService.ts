@@ -109,6 +109,10 @@ export const INVIDIOUS_INSTANCES = [
   'https://inv.tux.pizza',
   'https://yewtu.be',
   'https://invidious.no-logs.com',
+  'https://invidious.io.lol',
+  'https://invidious.waterpigs.me',
+  'https://invidious.lunar.icu',
+  'https://inv.zzls.xyz',
 ];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.

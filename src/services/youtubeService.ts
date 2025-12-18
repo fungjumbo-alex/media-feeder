@@ -591,96 +591,90 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   console.log(`[Transcript] Starting Invidious fallback for videoId: ${videoId}`);
   let lastError: unknown = null;
 
-  console.log(`%c[Transcript] Speed Optimization (V5-TURBO): Shuffling ${INVIDIOUS_INSTANCES.length} instances...`, "color: #00ff00; font-weight: bold;");
+  console.log(`%c[Transcript] V6-ULTRA: Racing ${INVIDIOUS_INSTANCES.length} instances...`, "color: #00ffff; font-weight: bold;");
 
-  // Shuffle all instances to avoid hitting the same one first every time
-  const instancesToTry = [...INVIDIOUS_INSTANCES]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 10); // Try up to 10 instances (but faster)
+  const shuffled = [...INVIDIOUS_INSTANCES].sort(() => Math.random() - 0.5);
 
-  console.log(`[Transcript] Instances to try: ${instancesToTry.length}`);
+  // Helper to validate if a response is HTML (indicating a block/error)
+  const isHtml = (text: string) => {
+    const t = text.trim().toLowerCase();
+    return t.startsWith('<!doctype html') || t.startsWith('<html');
+  };
 
-  for (let i = 0; i < instancesToTry.length; i++) {
-    const instance = instancesToTry[i];
+  // Helper to try a single instance (returns data or throws to signal failure for race)
+  const tryInstance = async (instance: string) => {
+    const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout for race
+
     try {
-      console.log(`[Transcript] [Attempt ${i + 1}/${instancesToTry.length}] Trying: ${instance}`);
-
-      // Fetch available captions
-      const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        console.warn(`[Transcript] ${instance} captions list request timed out after 15s`);
-        controller.abort();
-      }, 15000);
-
       const content = await fetchViaProxy(captionsUrl, 'youtube', undefined, undefined, undefined, undefined, {
         signal: controller.signal
       } as any);
 
       clearTimeout(timeoutId);
 
-      if (!content) {
-        console.warn(`[Transcript] instance ${instance} returned no content for captions list.`);
-        continue;
+      if (!content || isHtml(content)) {
+        throw new Error('Blocked or No Content');
       }
 
-      let data;
-      try {
-        data = JSON.parse(content);
-      } catch (e) {
-        // Hardening: Check if content is actually HTML (typical error/block page)
-        if (content.trim().startsWith('<!DOCTYPE html>') || content.trim().startsWith('<html')) {
-          console.warn(`[Transcript] Instance ${instance} returned HTML instead of JSON (likely blocked). Skipping...`);
-        } else {
-          console.warn(`[Transcript] Instance ${instance} returned invalid JSON:`, content.substring(0, 100));
-        }
-        continue;
-      }
-
+      const data = JSON.parse(content);
       const captionsArray = Array.isArray(data) ? data : (data.captions || []);
-      if (captionsArray.length === 0) {
-        console.warn(`[Transcript] Instance ${instance} has no captions for this video.`);
-        continue;
-      }
+
+      if (captionsArray.length === 0) throw new Error('No Captions');
 
       // Find English caption
       const findCaption = (lang: string) =>
         captionsArray.find((c: any) => c.language_code === lang || c.languageCode === lang) ||
-        captionsArray.find(
-          (c: any) => (c.language_code || c.languageCode)?.startsWith(lang)
-        );
+        captionsArray.find((c: any) => (c.language_code || c.languageCode)?.startsWith(lang));
 
       const enCaption = findCaption('en') || captionsArray[0];
+      if (!enCaption) throw new Error('No valid track');
 
-      if (enCaption) {
-        console.log(`[Transcript] Found caption track: ${enCaption.label || enCaption.language_code} at ${enCaption.url}`);
-        // Construct full URL for caption file
-        const captionFileUrl = enCaption.url.startsWith('http') ? enCaption.url : `${instance}${enCaption.url}`;
+      return { instance, enCaption };
+    } catch (e) {
+      clearTimeout(timeoutId);
+      throw e;
+    }
+  };
 
-        const contentController = new AbortController();
-        const contentTimeoutId = setTimeout(() => {
-          console.warn(`[Transcript] ${instance} caption content request timed out after 15s`);
-          contentController.abort();
-        }, 15000);
+  // Polyfill-like helper to avoid TS target version issues
+  const raceAny = async <T>(promises: Promise<T>[]): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      let rejected = 0;
+      promises.forEach(p => {
+        p.then(resolve).catch(() => {
+          rejected++;
+          if (rejected === promises.length) reject(new Error('All failed'));
+        });
+      });
+    });
+  };
 
-        let captionContent = await fetchViaProxy(captionFileUrl, 'youtube', undefined, undefined, undefined, undefined, {
-          signal: contentController.signal
-        } as any);
+  // We race in batches of 4 to avoid overwhelming the proxy/Netlify
+  const batchSize = 4;
+  for (let i = 0; i < shuffled.length; i += batchSize) {
+    const batch = shuffled.slice(i, i + batchSize);
+    console.log(`[Transcript] Racing Batch ${Math.floor(i / batchSize) + 1}: ${batch.join(', ')}`);
 
-        clearTimeout(contentTimeoutId);
+    try {
+      // Race the batch to find the first working bridge
+      const { instance: winnerInstance, enCaption } = await raceAny(batch.map(inst => tryInstance(inst)));
 
-        if (!captionContent) {
-          console.warn(`[Transcript] Failed to fetch caption content from ${captionFileUrl}`);
-          continue;
-        }
+      console.log(`%c[Transcript] RACE WINNER: ${winnerInstance}`, "color: #00ff00; font-weight: bold;");
 
-        // Hardening: Skip if caption content is HTML (likely an error page)
-        if (captionContent.trim().startsWith('<!DOCTYPE html>') || captionContent.trim().startsWith('<html')) {
-          console.warn(`[Transcript] Instance ${instance} returned HTML captions (likely blocked/redirect). Skipping...`);
-          continue;
-        }
+      // Now fetch the actual content from the winner
+      const captionFileUrl = enCaption.url.startsWith('http') ? enCaption.url : `${winnerInstance}${enCaption.url}`;
+      const contentController = new AbortController();
+      const contentTimeoutId = setTimeout(() => contentController.abort(), 20000);
 
+      let captionContent = await fetchViaProxy(captionFileUrl, 'youtube', undefined, undefined, undefined, undefined, {
+        signal: contentController.signal
+      } as any);
+
+      clearTimeout(contentTimeoutId);
+
+      if (captionContent && !isHtml(captionContent)) {
         // Handle Data URI if returned by proxy/instance
         if (captionContent.startsWith('data:')) {
           const base64Marker = ';base64,';
@@ -702,15 +696,15 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
 
         const snippets = parseVTT(captionContent);
         if (snippets.length > 0) {
-          console.log(`[Transcript] Successfully parsed ${snippets.length} snippets from ${instance}`);
+          console.log(`[Transcript] Successfully parsed ${snippets.length} snippets from ${winnerInstance}`);
           return snippets;
         }
-        console.warn(`[Transcript] Parsed 0 snippets from ${instance} content.`);
+        console.warn(`[Transcript] Parsed 0 snippets from ${winnerInstance} content.`);
       } else {
-        console.warn(`[Transcript] No suitable captions found on ${instance}`);
+        console.warn(`[Transcript] No suitable captions found on ${winnerInstance}`);
       }
     } catch (error) {
-      console.warn(`[Transcript] Fallback fetch from ${instance} failed:`, error);
+      console.warn(`[Transcript] Batch ${Math.floor(i / batchSize) + 1} failed or all were blocked.`, error);
       lastError = error;
     }
   }
