@@ -1,5 +1,5 @@
-import type { YouTubeSubscription, Feed, Article, YouTubeComment } from '../types';
 import { INVIDIOUS_INSTANCES, fetchViaProxy } from './proxyService';
+import type { YouTubeSubscription, Feed, Article, YouTubeComment, TranscriptLine, CaptionChoice } from '../types';
 
 interface InvidiousVideoDetails {
   videoId: string;
@@ -68,6 +68,7 @@ interface YouTubeApiVideosResponse {
     id: string;
     contentDetails: {
       duration: string; // ISO 8601 format, e.g., "PT15M33S"
+      caption?: 'true' | 'false';
     };
   }>;
 }
@@ -198,8 +199,8 @@ export const fetchYouTubeComments = async (videoId: string): Promise<YouTubeComm
 export const fetchVideosDuration = async (
   videoIds: string[],
   accessToken: string
-): Promise<Map<string, number>> => {
-  const durationMap = new Map<string, number>();
+): Promise<Map<string, { duration: number; hasCaption: boolean }>> => {
+  const durationMap = new Map<string, { duration: number; hasCaption: boolean }>();
 
   if (videoIds.length === 0) {
     return durationMap;
@@ -237,7 +238,10 @@ export const fetchVideosDuration = async (
           if (item.contentDetails?.duration) {
             const durationSeconds = parseISO8601Duration(item.contentDetails.duration);
             if (durationSeconds !== null) {
-              durationMap.set(item.id, durationSeconds);
+              durationMap.set(item.id, {
+                duration: durationSeconds,
+                hasCaption: item.contentDetails.caption === 'true',
+              });
             }
           }
         }
@@ -391,15 +395,19 @@ export const fetchPlaylistAsFeed = async (
   // Sort by position
   allItems.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-  // 3. Fetch video durations for all items
+  // 3. Fetch video durations AND caption info for all items
   const videoIds = allItems.map(item => item.id);
-  const durations = await fetchVideosDuration(videoIds, accessToken);
+  const durationsAndCaptions = await fetchVideosDuration(videoIds, accessToken);
 
-  // Update items with duration
-  const itemsWithDuration = allItems.map(item => ({
-    ...item,
-    duration: durations.get(item.id) || null,
-  }));
+  // Update items with duration and hasCaption
+  const itemsWithDuration = allItems.map(item => {
+    const data = durationsAndCaptions.get(item.id);
+    return {
+      ...item,
+      duration: data?.duration || null,
+      hasCaption: data?.hasCaption || false,
+    };
+  });
 
   return {
     id: `https://www.youtube.com/playlist?list=${playlistId}`,
@@ -448,15 +456,11 @@ export const fetchSingleYouTubeVideoAsArticle = async (videoId: string): Promise
   );
 };
 
-export interface TranscriptSnippet {
-  text: string;
-  start: number;
-  duration: number;
-}
+// Replaced TranscriptSnippet with TranscriptLine from types
 
-const parseVTT = (vttText: string): TranscriptSnippet[] => {
+const parseVTT = (vttText: string): TranscriptLine[] => {
   const lines = vttText.split(/\r?\n/);
-  const snippets: TranscriptSnippet[] = [];
+  const snippets: TranscriptLine[] = [];
   let currentStart: number | null = null;
   let currentEnd: number | null = null;
   let currentText: string[] = [];
@@ -523,66 +527,142 @@ const parseVTT = (vttText: string): TranscriptSnippet[] => {
   return snippets;
 };
 
-export const fetchTranscript = async (url: string): Promise<TranscriptSnippet[]> => {
-  // 1. Try local backend first
-  try {
-    const response = await fetch('/api/transcript', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ url }),
-    });
+export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> => {
+  const isYoutubeUrl = url.includes('youtube.com/') || url.includes('youtu.be/');
+  const videoId = getYouTubeId(url);
 
-    if (response.ok) {
-      const data = await response.json();
-      if (data && data.transcript && Array.isArray(data.transcript)) {
-        return data.transcript;
+  // 1. Try local backend first ONLY for YouTube URLs
+  if (isYoutubeUrl) {
+    try {
+      console.log('[Transcript] Attempting backend fetch for YouTube URL:', url);
+      const response = await fetch(`/api/transcript?t=${Date.now()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.error) {
+          console.warn(`[Transcript] Backend logic error: ${data.error}`);
+        } else {
+          // Standardize response format check
+          const transcript = data.transcript || data.snippets || (Array.isArray(data) ? data : null);
+          if (transcript && Array.isArray(transcript)) {
+            console.log(`[Transcript] Found transcript in backend response (${transcript.length} lines)`);
+            return transcript;
+          }
+        }
+      } else {
+        try {
+          const errorData = await response.json();
+          console.warn(`[Transcript] Backend failed (${response.status}): ${errorData.error || 'Unknown error'}`);
+        } catch (e) {
+          console.warn(`[Transcript] Backend failed (${response.status}). Trying fallback...`);
+        }
       }
-      if (data && data.snippets && Array.isArray(data.snippets)) {
-        return data.snippets;
-      }
-      if (Array.isArray(data)) {
-        return data;
-      }
+    } catch (error) {
+      console.warn(`[Transcript] Backend fetch exception, trying fallback: ${error}`);
     }
-  } catch (error) {
-    console.warn(`Local transcript fetch failed, trying fallback: ${error}`);
+  } else {
+    console.log('[Transcript] URL is NOT a YouTube URL, skipping backend scraper and using proxy:', url);
   }
 
   // 2. Fallback to Invidious instances
-  const videoId = getYouTubeId(url);
   if (!videoId) {
-    throw new Error('Invalid YouTube URL');
+    // If it's already an external transcript URL (not a video URL), try fetching it via proxy directly
+    if (url.includes('/api/v1/captions/') || url.includes('.vtt') || url.includes('.srt')) {
+      console.log('[Transcript] URL appears to be a direct caption link, fetching via proxy...');
+      try {
+        const content = await fetchViaProxy(url, 'youtube');
+        if (content) {
+          const snippets = parseVTT(content);
+          if (snippets.length > 0) return snippets;
+        }
+      } catch (e) {
+        console.warn(`[Transcript] Direct caption fetch failed: ${e}`);
+      }
+    }
+    throw new Error('Could not identify Video ID or valid caption source from URL.');
   }
 
+  console.log(`[Transcript] Starting Invidious fallback for videoId: ${videoId}`);
   let lastError: unknown = null;
-  for (const instance of INVIDIOUS_INSTANCES) {
+
+  // Try only top 5 instances for speed
+  const instancesToTry = (INVIDIOUS_INSTANCES || []).slice(0, 5);
+  console.log(`[Transcript] Instances to try: ${instancesToTry.length}`);
+
+  for (const instance of instancesToTry) {
     try {
+      console.log(`[Transcript] Trying Invidious instance: ${instance}`);
+
       // Fetch available captions
       const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
-      const content = await fetchViaProxy(captionsUrl, 'youtube');
-      const data = JSON.parse(content);
 
-      if (!data.captions || !Array.isArray(data.captions)) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.warn(`[Transcript] ${instance} captions list request timed out after 30s`);
+        controller.abort();
+      }, 30000);
+
+      const content = await fetchViaProxy(captionsUrl, 'youtube', undefined, undefined, undefined, undefined, {
+        signal: controller.signal
+      } as any);
+
+      clearTimeout(timeoutId);
+
+      if (!content) {
+        console.warn(`[Transcript] instance ${instance} returned no content for captions list.`);
+        continue;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(content);
+      } catch (e) {
+        console.warn(`[Transcript] Instance ${instance} returned invalid JSON:`, content.substring(0, 100));
+        continue;
+      }
+
+      const captionsArray = Array.isArray(data) ? data : (data.captions || []);
+      if (captionsArray.length === 0) {
+        console.warn(`[Transcript] Instance ${instance} has no captions for this video.`);
         continue;
       }
 
       // Find English caption
-      // Prefer 'en' (English) or 'en-US', etc.
-      // Invidious API might return snake_case or camelCase depending on version/instance
       const findCaption = (lang: string) =>
-        data.captions.find((c: any) => c.language_code === lang || c.languageCode === lang) ||
-        data.captions.find(
-          (c: any) => c.language_code?.startsWith(lang) || c.languageCode?.startsWith(lang)
+        captionsArray.find((c: any) => c.language_code === lang || c.languageCode === lang) ||
+        captionsArray.find(
+          (c: any) => (c.language_code || c.languageCode)?.startsWith(lang)
         );
 
-      const enCaption = findCaption('en') || data.captions[0];
+      const enCaption = findCaption('en') || captionsArray[0];
 
       if (enCaption) {
+        console.log(`[Transcript] Found caption track: ${enCaption.label || enCaption.language_code} at ${enCaption.url}`);
         // Construct full URL for caption file
-        const captionFileUrl = `${instance}${enCaption.url}`;
-        let captionContent = await fetchViaProxy(captionFileUrl, 'youtube');
+        const captionFileUrl = enCaption.url.startsWith('http') ? enCaption.url : `${instance}${enCaption.url}`;
+
+        const contentController = new AbortController();
+        const contentTimeoutId = setTimeout(() => {
+          console.warn(`[Transcript] ${instance} caption content request timed out after 30s`);
+          contentController.abort();
+        }, 30000);
+
+        let captionContent = await fetchViaProxy(captionFileUrl, 'youtube', undefined, undefined, undefined, undefined, {
+          signal: contentController.signal
+        } as any);
+
+        clearTimeout(contentTimeoutId);
+
+        if (!captionContent) {
+          console.warn(`[Transcript] Failed to fetch caption content from ${captionFileUrl}`);
+          continue;
+        }
 
         // Handle Data URI if returned by proxy/instance
         if (captionContent.startsWith('data:')) {
@@ -593,12 +673,9 @@ export const fetchTranscript = async (url: string): Promise<TranscriptSnippet[]>
             try {
               captionContent = atob(base64);
             } catch (e) {
-              console.warn('Failed to decode base64 caption content', e);
+              console.warn('[Transcript] Failed to decode base64 caption content', e);
             }
           } else {
-            // Try URL decoding if not base64? Or just remove prefix?
-            // Usually data URIs are base64 for this stuff.
-            // If text/vtt, it might be plain text after comma
             const commaIndex = captionContent.indexOf(',');
             if (commaIndex !== -1) {
               captionContent = decodeURIComponent(captionContent.substring(commaIndex + 1));
@@ -608,15 +685,63 @@ export const fetchTranscript = async (url: string): Promise<TranscriptSnippet[]>
 
         const snippets = parseVTT(captionContent);
         if (snippets.length > 0) {
+          console.log(`[Transcript] Successfully parsed ${snippets.length} snippets from ${instance}`);
           return snippets;
         }
+        console.warn(`[Transcript] Parsed 0 snippets from ${instance} content.`);
+      } else {
+        console.warn(`[Transcript] No suitable captions found on ${instance}`);
       }
     } catch (error) {
-      console.warn(`Fallback fetch from ${instance} failed:`, error);
+      console.warn(`[Transcript] Fallback fetch from ${instance} failed:`, error);
       lastError = error;
     }
   }
 
   const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+  console.error(`[Transcript] FAILED after trying all sources: ${errorMessage}`);
   throw new Error(`Failed to fetch transcript from all sources. Last error: ${errorMessage}`);
+};
+
+export const getTranscriptChoices = async (videoId: string): Promise<CaptionChoice[]> => {
+  if (!videoId) return [];
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // Method 1: Backend
+  try {
+    const snippets = await fetchTranscript(url);
+    if (snippets && snippets.length > 0) {
+      return [{
+        label: 'English (Backend)',
+        language_code: 'en',
+        url: `backend-transcript:${videoId}`
+      }];
+    }
+  } catch (e) {
+    console.warn(`[Transcript] getTranscriptChoices: Backend attempt failed: ${e}`);
+  }
+
+  // Method 2: Invidious list
+  let lastError: any = null;
+  for (const instance of (INVIDIOUS_INSTANCES || []).slice(0, 3)) {
+    try {
+      const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
+      const content = await fetchViaProxy(captionsUrl, 'youtube');
+      const data = JSON.parse(content);
+      const captionsArray = Array.isArray(data) ? data : (data.captions || []);
+
+      if (captionsArray.length > 0) {
+        return captionsArray.map((c: any) => ({
+          label: c.label || c.language_code || 'English',
+          language_code: c.language_code || 'en',
+          url: c.url.startsWith('http') ? c.url : `${instance}${c.url}`
+        }));
+      }
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  if (lastError) throw lastError;
+  return [];
 };

@@ -767,31 +767,41 @@ export const ArticleModal: React.FC = () => {
   }, [videoId]);
 
   useEffect(() => {
-    if (selectedCaptionUrl) {
-      const fetchTranscript = async () => {
+    if (captionChoices && captionChoices.length > 0) {
+      const fetchTranscriptResiliently = async () => {
         setIsFetchingTranscript(true);
         setTranscriptError(null);
         setTranscriptData(null);
-        try {
-          const transcript = await fetchAndParseTranscript(selectedCaptionUrl);
-          if (!transcript || transcript.length === 0) {
-            setTranscriptError('Transcript file was empty or could not be parsed.');
-          } else {
-            const choice = captionChoices?.find(c => c.url === selectedCaptionUrl);
-            setTranscriptData({ transcript, language: choice?.label });
-            lineRefs.current = [];
+
+        let lastError: any = null;
+        // Try each choice in order
+        for (const choice of captionChoices) {
+          try {
+            console.log(`[Transcript] Trying choice: ${choice.label} (${choice.url})`);
+            setSelectedCaptionUrl(choice.url); // Keep UI in sync
+            const transcript = await fetchAndParseTranscript(choice.url);
+
+            if (transcript && transcript.length > 0) {
+              setTranscriptData({ transcript, language: choice.label });
+              lineRefs.current = [];
+              setIsFetchingTranscript(false);
+              return; // Success!
+            }
+          } catch (e) {
+            console.warn(`[Transcript] Choice ${choice.label} failed:`, e);
+            lastError = e;
           }
-        } catch (e) {
-          console.error('Failed to load transcript:', e);
-          setTranscriptError(e instanceof Error ? e.message : 'Failed to load transcript.');
-          setIsSummarizing(false);
-        } finally {
-          setIsFetchingTranscript(false);
         }
+
+        // If we get here, all choices failed
+        const errorMsg = lastError instanceof Error ? lastError.message : 'Failed to load any available transcript tracks.';
+        setTranscriptError(errorMsg);
+        setIsFetchingTranscript(false);
       };
-      fetchTranscript();
+
+      fetchTranscriptResiliently();
     }
-  }, [selectedCaptionUrl, captionChoices]);
+  }, [captionChoices]);
 
   const handleLikeClick = () => {
     if (!article || !article.isVideo) return;

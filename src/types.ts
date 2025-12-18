@@ -52,6 +52,7 @@ export interface Article {
   isReddit?: boolean;
   transcript?: TranscriptLine[];
   transcriptAttempted?: boolean;
+  hasCaption?: boolean;
 }
 
 export interface Feed {

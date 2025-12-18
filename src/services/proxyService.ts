@@ -6,7 +6,7 @@ import type { ProxyAttemptCallback, ProxyStats, FeedType } from '../types';
 export const PROXIES = [
   {
     name: 'App Proxy',
-    buildUrl: (url: string) => `/.netlify/functions/proxy?url=${encodeURIComponent(url)}`,
+    buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}&t=${Date.now()}`,
     parseResponse: async (response: Response): Promise<string> => {
       const text = await response.text();
       // Check for common error pages that return 200 OK
@@ -99,12 +99,14 @@ export const PROXIES = [
 // List of public Invidious instances, which can act as proxies for YouTube content.
 // Updated 2025-12-14: Removed instances failing with 403/HTML responses
 // Updated 2025-12-16: Added more reliable instances
+// Updated 2025-12-18: Added high uptime instances from api.invidious.io
 export const INVIDIOUS_INSTANCES = [
-  'https://inv.tux.pizza',
-  'https://vid.puffyan.us',
-  'https://invidious.jing.rocks',
+  'https://inv.perditum.com',
   'https://inv.nadeko.net',
-  'https://yt.artemislena.eu',
+  'https://inv.tux.pizza',
+  'https://yewtu.be',
+  'https://invidious.pvp.world',
+  'https://invidious.no-logs.com',
 ];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.
@@ -165,6 +167,7 @@ export const fetchViaProxy = async (
   let lastError: unknown = null;
   const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
   const currentStats: ProxyStats = JSON.parse(JSON.stringify(proxyStats || {}));
+  console.log(`[Proxy] Initializing fetchViaProxy for ${url}. proxies available: ${proxiesToUse.length} (${proxiesToUse.map(p => p.name).join(', ')})`);
 
   // Helper to try a specific proxy/instance combination
   const tryRequest = async (
@@ -175,11 +178,19 @@ export const fetchViaProxy = async (
     if (disabledProxies?.has(compositeKey)) return null;
 
     try {
+      console.log(`[Proxy] Trying ${proxy.name} for: ${targetUrl.substring(0, 100)}${targetUrl.length > 100 ? '...' : ''}`);
       const controller = new AbortController();
+
+      // Respect passed-in signal if any, or use default 30s
+      const timeoutMs = 30000;
       const timeoutId = setTimeout(
-        () => controller.abort('signal is aborted without reason'),
-        30000
+        () => {
+          console.warn(`[Proxy] ${proxy.name} timed out after ${timeoutMs}ms`);
+          controller.abort('timeout');
+        },
+        timeoutMs
       );
+
       const proxyUrl = proxy.buildUrl(targetUrl);
 
       const mergedOptions: RequestInit = {
@@ -187,17 +198,40 @@ export const fetchViaProxy = async (
         signal: controller.signal,
       };
 
+      // Handle the case where the external signal is already aborted
+      if (fetchOptions.signal?.aborted) {
+        throw new Error('Signal already aborted');
+      }
+
+      // If an external signal is provided, listen for its abort to trigger ours
+      if (fetchOptions.signal) {
+        if (fetchOptions.signal.aborted) {
+          controller.abort('external');
+        } else {
+          fetchOptions.signal.addEventListener('abort', () => {
+            console.warn(`[Proxy] External signal aborted for ${proxy.name}`);
+            controller.abort('external');
+          }, { once: true });
+        }
+      }
+
       const response = await fetch(proxyUrl, mergedOptions);
       clearTimeout(timeoutId);
 
+      if (!response.ok) {
+        console.warn(`[Proxy] ${proxy.name} returned status ${response.status} for ${targetUrl}`);
+        throw new Error(`Proxy ${proxy.name} responded with status ${response.status}.`);
+      }
+
       const content = await proxy.parseResponse(response);
 
-      if (response.ok) {
-        onAttempt?.(proxy.name, 'success', feedType);
-        return content;
-      }
-      throw new Error('Proxy returned empty or invalid content.');
+      onAttempt?.(proxy.name, 'success', feedType);
+      console.log(`[Proxy] ${proxy.name} success! Content length: ${content.length}`);
+      return content;
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`[Proxy] ${proxy.name} failed: ${errorMsg}`);
+
       let specificError = error;
       if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
         specificError = new Error(

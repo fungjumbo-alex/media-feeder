@@ -4,21 +4,6 @@
 
 [functions]
   directory = "netlify/functions"
-  external_node_modules = ["youtube-transcript-api"]
-
-[[redirects]]
-  from = "/api/transcript"
-  to = "/.netlify/functions/transcript"
-  status = 200
-
-[[redirects]]
-  from = "/api/proxy"
-  to = "/.netlify/functions/proxy"
-  status = 200
 
 
 
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200

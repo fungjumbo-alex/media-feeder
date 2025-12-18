@@ -32,55 +32,62 @@ export default defineConfig(({ mode }) => {
       {
         name: 'local-proxy-middleware',
         configureServer(server) {
-          server.middlewares.use('/api/proxy', async (req, res, next) => {
-            const url = new URL(req.url!, `http://${req.headers.host}`);
-            const targetUrl = url.searchParams.get('url');
+          server.middlewares.use(async (req, res, next) => {
+            if (req.url?.startsWith('/api/proxy') || req.url?.startsWith('/.netlify/functions/proxy')) {
+              // Extract the target URL from the query parameter 'url'
+              const urlIdx = req.url.indexOf('?');
+              const queryString = urlIdx !== -1 ? req.url.substring(urlIdx + 1) : '';
+              const searchParams = new URLSearchParams(queryString);
+              const targetUrl = searchParams.get('url');
 
-            if (!targetUrl) {
-              res.statusCode = 400;
-              res.end('Missing url query parameter');
-              return;
-            }
+              if (!targetUrl) {
+                res.statusCode = 400;
+                res.end('Missing url query parameter');
+                return;
+              }
 
-            try {
-              // Use dynamic import for node-fetch if needed, or global fetch if Node 18+
-              // Assuming Node 18+ or node-fetch is available.
-              // Add browser-like headers to avoid being blocked
-              const fetchOptions = {
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                  'Accept-Language': 'en-US,en;q=0.9',
-                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                  'Referer': 'https://www.youtube.com/',
-                  'Origin': 'https://www.youtube.com',
-                  'Sec-Fetch-Dest': 'empty',
-                  'Sec-Fetch-Mode': 'cors',
-                  'Sec-Fetch-Site': 'cross-site',
-                }
-              };
+              try {
+                // Use dynamic import for node-fetch if needed, or global fetch if Node 18+
+                // Assuming Node 18+ or node-fetch is available.
+                // Add browser-like headers to avoid being blocked
+                const fetchOptions = {
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Referer': 'https://www.youtube.com/',
+                    'Origin': 'https://www.youtube.com',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'cross-site',
+                  }
+                };
 
-              const fetch = (await import('node-fetch')).default;
-              const response = await fetch(targetUrl, fetchOptions);
+                const fetch = (await import('node-fetch')).default;
+                const response = await fetch(targetUrl, fetchOptions);
 
-              // Forward headers, but exclude those that might cause issues
-              const excludedHeaders = ['content-encoding', 'content-length', 'transfer-encoding', 'connection'];
-              response.headers.forEach((value, key) => {
-                if (!excludedHeaders.includes(key.toLowerCase())) {
-                  res.setHeader(key, value);
-                }
-              });
+                // Forward headers, but exclude those that might cause issues
+                const excludedHeaders = ['content-encoding', 'content-length', 'transfer-encoding', 'connection'];
+                response.headers.forEach((value, key) => {
+                  if (!excludedHeaders.includes(key.toLowerCase())) {
+                    res.setHeader(key, value);
+                  }
+                });
 
-              // Set CORS headers to allow local dev
-              res.setHeader('Access-Control-Allow-Origin', '*');
+                // Set CORS headers to allow local dev
+                res.setHeader('Access-Control-Allow-Origin', '*');
 
-              res.statusCode = response.status;
+                res.statusCode = response.status;
 
-              const arrayBuffer = await response.arrayBuffer();
-              res.end(Buffer.from(arrayBuffer));
-            } catch (error) {
-              console.error('Proxy error:', error);
-              res.statusCode = 500;
-              res.end('Proxy error: ' + String(error));
+                const arrayBuffer = await response.arrayBuffer();
+                res.end(Buffer.from(arrayBuffer));
+              } catch (error) {
+                console.error('Proxy error:', error);
+                res.statusCode = 500;
+                res.end('Proxy error: ' + String(error));
+              }
+            } else {
+              next();
             }
           });
         }

@@ -290,6 +290,7 @@ const getInitialView = (): CurrentView => {
     'about',
     'help',
     'ai-summary-yt',
+    'yt-transcripts',
   ];
   if (validTypes.includes(type)) return { type };
 
@@ -1963,7 +1964,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (article.summary || article.structuredSummary) {
           unreadAiSummaryYt++;
         }
-        if (article.transcript && article.transcript.length > 0) {
+        if ((article.transcript && article.transcript.length > 0) || article.hasCaption) {
           unreadTranscriptYt++;
         }
       }
@@ -2193,7 +2194,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         break;
       case 'yt-transcripts':
         rawArticles = allArticles.filter(
-          a => a.isVideo && a.transcript && a.transcript.length > 0
+          a => a.isVideo && ((a.transcript && a.transcript.length > 0) || a.hasCaption)
         );
         needsDeduplication = true;
         break;
@@ -4497,13 +4498,17 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                         .map(item => item.id);
 
                       if (videoIds.length > 0) {
-                        const durations = await fetchVideosDuration(videoIds, accessToken);
+                        const durationsAndCaptions = await fetchVideosDuration(
+                          videoIds,
+                          accessToken
+                        );
 
                         playlistFeed.items = playlistFeed.items.map(item => {
-                          const duration = durations.get(item.id);
+                          const data = durationsAndCaptions.get(item.id);
                           return {
                             ...item,
-                            duration: duration || item.duration,
+                            duration: data?.duration || item.duration,
+                            hasCaption: data?.hasCaption || false,
                           };
                         });
                       }
@@ -4533,13 +4538,17 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                       .map(item => item.id);
 
                     if (videoIds.length > 0) {
-                      const durations = await fetchVideosDuration(videoIds, accessToken);
+                      const durationsAndCaptions = await fetchVideosDuration(
+                        videoIds,
+                        accessToken
+                      );
 
                       rssFeed.items = rssFeed.items.map(item => {
-                        const duration = durations.get(item.id);
+                        const data = durationsAndCaptions.get(item.id);
                         return {
                           ...item,
-                          duration: duration || item.duration,
+                          duration: data?.duration || item.duration,
+                          hasCaption: data?.hasCaption || false,
                         };
                       });
                     }
@@ -4836,13 +4845,17 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 .map(item => item.id);
 
               if (videoIds.length > 0) {
-                const durations = await fetchVideosDuration(videoIds, accessToken);
+                const durationsAndCaptions = await fetchVideosDuration(
+                  videoIds,
+                  accessToken
+                );
 
                 newFeedData.items = newFeedData.items.map(item => {
-                  const duration = durations.get(item.id);
+                  const data = durationsAndCaptions.get(item.id);
                   return {
                     ...item,
-                    duration: duration || item.duration,
+                    duration: data?.duration || item.duration,
+                    hasCaption: data?.hasCaption || false,
                   };
                 });
               }

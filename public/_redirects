@@ -1,2 +1,9 @@
-# Fallback redirects
+# API Functions (Forced)
+/api/transcript  /.netlify/functions/transcript  200!
+/api/proxy       /.netlify/functions/proxy       200!
+
+# Prevent SPA fallback for API calls (so we see the real error)
+/api/*  /404.html  404
+
+# SPA Fallback
 /*  /index.html  200
