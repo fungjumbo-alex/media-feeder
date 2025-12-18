@@ -101,11 +101,13 @@ export const PROXIES = [
 // Updated 2025-12-16: Added more reliable instances
 // Updated 2025-12-18: Added high uptime instances from api.invidious.io
 export const INVIDIOUS_INSTANCES = [
+  'https://iv.ggtyler.dev',
+  'https://invidious.projectsegfau.lt',
+  'https://invidious.privacydev.net',
   'https://inv.perditum.com',
   'https://inv.nadeko.net',
   'https://inv.tux.pizza',
   'https://yewtu.be',
-  'https://invidious.pvp.world',
   'https://invidious.no-logs.com',
 ];
 

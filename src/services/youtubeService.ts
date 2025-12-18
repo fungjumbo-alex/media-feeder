@@ -604,9 +604,9 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.warn(`[Transcript] ${instance} captions list request timed out after 30s`);
+        console.warn(`[Transcript] ${instance} captions list request timed out after 45s`);
         controller.abort();
-      }, 30000);
+      }, 45000);
 
       const content = await fetchViaProxy(captionsUrl, 'youtube', undefined, undefined, undefined, undefined, {
         signal: controller.signal
@@ -649,9 +649,9 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
 
         const contentController = new AbortController();
         const contentTimeoutId = setTimeout(() => {
-          console.warn(`[Transcript] ${instance} caption content request timed out after 30s`);
+          console.warn(`[Transcript] ${instance} caption content request timed out after 45s`);
           contentController.abort();
-        }, 30000);
+        }, 45000);
 
         let captionContent = await fetchViaProxy(captionFileUrl, 'youtube', undefined, undefined, undefined, undefined, {
           signal: contentController.signal
