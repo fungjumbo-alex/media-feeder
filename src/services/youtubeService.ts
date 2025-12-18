@@ -591,22 +591,28 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   console.log(`[Transcript] Starting Invidious fallback for videoId: ${videoId}`);
   let lastError: unknown = null;
 
-  // Try only top 5 instances for speed
-  const instancesToTry = (INVIDIOUS_INSTANCES || []).slice(0, 5);
+  console.log(`%c[Transcript] Speed Optimization (V5-TURBO): Shuffling ${INVIDIOUS_INSTANCES.length} instances...`, "color: #00ff00; font-weight: bold;");
+
+  // Shuffle all instances to avoid hitting the same one first every time
+  const instancesToTry = [...INVIDIOUS_INSTANCES]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 10); // Try up to 10 instances (but faster)
+
   console.log(`[Transcript] Instances to try: ${instancesToTry.length}`);
 
-  for (const instance of instancesToTry) {
+  for (let i = 0; i < instancesToTry.length; i++) {
+    const instance = instancesToTry[i];
     try {
-      console.log(`[Transcript] Trying Invidious instance: ${instance}`);
+      console.log(`[Transcript] [Attempt ${i + 1}/${instancesToTry.length}] Trying: ${instance}`);
 
       // Fetch available captions
       const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.warn(`[Transcript] ${instance} captions list request timed out after 45s`);
+        console.warn(`[Transcript] ${instance} captions list request timed out after 15s`);
         controller.abort();
-      }, 45000);
+      }, 15000);
 
       const content = await fetchViaProxy(captionsUrl, 'youtube', undefined, undefined, undefined, undefined, {
         signal: controller.signal
@@ -654,9 +660,9 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
 
         const contentController = new AbortController();
         const contentTimeoutId = setTimeout(() => {
-          console.warn(`[Transcript] ${instance} caption content request timed out after 45s`);
+          console.warn(`[Transcript] ${instance} caption content request timed out after 15s`);
           contentController.abort();
-        }, 45000);
+        }, 15000);
 
         let captionContent = await fetchViaProxy(captionFileUrl, 'youtube', undefined, undefined, undefined, undefined, {
           signal: contentController.signal
