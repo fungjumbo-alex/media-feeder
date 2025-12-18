@@ -623,7 +623,12 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
       try {
         data = JSON.parse(content);
       } catch (e) {
-        console.warn(`[Transcript] Instance ${instance} returned invalid JSON:`, content.substring(0, 100));
+        // Hardening: Check if content is actually HTML (typical error/block page)
+        if (content.trim().startsWith('<!DOCTYPE html>') || content.trim().startsWith('<html')) {
+          console.warn(`[Transcript] Instance ${instance} returned HTML instead of JSON (likely blocked). Skipping...`);
+        } else {
+          console.warn(`[Transcript] Instance ${instance} returned invalid JSON:`, content.substring(0, 100));
+        }
         continue;
       }
 
@@ -661,6 +666,12 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
 
         if (!captionContent) {
           console.warn(`[Transcript] Failed to fetch caption content from ${captionFileUrl}`);
+          continue;
+        }
+
+        // Hardening: Skip if caption content is HTML (likely an error page)
+        if (captionContent.trim().startsWith('<!DOCTYPE html>') || captionContent.trim().startsWith('<html')) {
+          console.warn(`[Transcript] Instance ${instance} returned HTML captions (likely blocked/redirect). Skipping...`);
           continue;
         }
 

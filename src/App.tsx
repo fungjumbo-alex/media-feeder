@@ -173,7 +173,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // CRITICAL: If you see "IJyIUayD" in logs, you are NOT on the new version.
-    console.log(`%c[Build] STATUS: V3-FINAL (${new Date().toLocaleTimeString()})`, "color: #ffffff; font-weight: bold; background: #800080; padding: 5px; border-radius: 4px;");
+    console.log(`%c[Build] STATUS: V4-STABLE (${new Date().toLocaleTimeString()})`, "color: #ffffff; font-weight: bold; background: #800080; padding: 5px; border-radius: 4px;");
 
     const body = document.body;
     const isBusy = isInitialLoad || isViewLoading;
