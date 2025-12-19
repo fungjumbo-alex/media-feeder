@@ -6160,17 +6160,6 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const onToggleNotesCollapse = useCallback(() => setIsNotesCollapsed(prev => !prev), []);
   const onToggleAiTopicsCollapse = useCallback(() => setIsAiTopicsCollapsed(prev => !prev), []);
 
-  useEffect(() => {
-    try {
-      if (aiHierarchy) {
-        localStorage.setItem('media-feeder-ai-hierarchy', JSON.stringify(aiHierarchy));
-      } else {
-        localStorage.removeItem('media-feeder-ai-hierarchy');
-      }
-    } catch (e) {
-      console.warn('Failed to save AI hierarchy to local storage:', e);
-    }
-  }, [aiHierarchy]);
 
   const onToggleTagExpansion = useCallback((tag: string, tagType: 'youtube' | 'rss') => {
     const compositeKey = `${tagType}-${tag}`;
