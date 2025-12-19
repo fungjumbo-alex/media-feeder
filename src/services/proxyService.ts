@@ -100,6 +100,7 @@ export const PROXIES = [
 // Updated 2025-12-14: Removed instances failing with 403/HTML responses
 // Updated 2025-12-16: Added more reliable instances
 // Updated 2025-12-18: Added high uptime instances from api.invidious.io
+// Updated 2025-12-19: Removed slow/timing out instances, added high uptime ones
 export const INVIDIOUS_INSTANCES = [
   'https://invidious.ducks.cloud',
   'https://inv.venom.is',
@@ -109,7 +110,9 @@ export const INVIDIOUS_INSTANCES = [
   'https://inv.tux.pizza',
   'https://yewtu.be',
   'https://invidious.no-logs.com',
-  'https://invidious.io.lol',
+  'https://iv.melmac.space',
+  'https://invidious.projectsegfau.lt',
+  'https://invidious.privacydev.net',
   'https://invidious.waterpigs.me',
   'https://invidious.lunar.icu',
   'https://inv.zzls.xyz',
@@ -187,8 +190,8 @@ export const fetchViaProxy = async (
       console.log(`[Proxy] Trying ${proxy.name} for: ${targetUrl.substring(0, 100)}${targetUrl.length > 100 ? '...' : ''}`);
       const controller = new AbortController();
 
-      // Respect passed-in signal if any, or use default 30s
-      const timeoutMs = 30000;
+      // Respect passed-in signal if any, or use default 15s (reduced from 30s)
+      const timeoutMs = 15000;
       const timeoutId = setTimeout(
         () => {
           console.warn(`[Proxy] ${proxy.name} timed out after ${timeoutMs}ms`);
