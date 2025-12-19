@@ -5,6 +5,16 @@ import type { ProxyAttemptCallback, ProxyStats, FeedType } from '../types';
 // Each proxy has a function to construct its URL and a function to parse its response.
 export const PROXIES = [
   {
+    name: 'Browser Direct',
+    buildUrl: (url: string) => url,
+    parseResponse: async (response: Response): Promise<string> => {
+      if (!response.ok) {
+        throw new Error(`Browser Direct responded with status ${response.status}`);
+      }
+      return response.text();
+    },
+  },
+  {
     name: 'App Proxy',
     buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}&t=${Date.now()}`,
     parseResponse: async (response: Response): Promise<string> => {
@@ -297,15 +307,17 @@ export const fetchViaProxy = async (
     await wait(100);
     const result = await tryRequest(proxyToTry, url);
     if (result !== null) {
+      console.log(`[Proxy] Successful retrieval using ${proxyToTry.name}`);
       // If successful and it's a YouTube request, store the successful config
       if (feedType === 'youtube') {
-        // Extract instance URL from the request URL
         const instance = INVIDIOUS_INSTANCES.find(inst => url.startsWith(inst));
         if (instance) {
           setStoredConfig(proxyToTry.name, instance);
         }
       }
       return result;
+    } else {
+      console.warn(`[Proxy] ${proxyToTry.name} failed (returned null), trying next alternate...`);
     }
   }
 
