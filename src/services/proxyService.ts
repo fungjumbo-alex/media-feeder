@@ -9,9 +9,12 @@ export const checkForBotChallenge = (text: string): string | null => {
   const normalizedText = text.toLowerCase();
 
   // YouTube Consent Page
+  // V16 Hardening: Only flag as block if the actual video data (ytInitialPlayerResponse) is missing.
+  // We've found that some successful loads still contain these strings in scripts/metadata.
   if (
-    normalizedText.includes('before you continue to youtube') ||
-    normalizedText.includes('consent.google.com')
+    (normalizedText.includes('before you continue to youtube') ||
+      normalizedText.includes('consent.google.com')) &&
+    !text.includes('ytInitialPlayerResponse')
   ) {
     return 'YouTube Consent Page';
   }

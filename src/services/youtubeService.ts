@@ -641,7 +641,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   let lastError: unknown = null;
 
   console.log(
-    `%c[Build] STATUS: V15-ULTRA (20:29:48) Racing ${INVIDIOUS_INSTANCES.length} instances...`,
+    `%c[Build] STATUS: V16-ULTRA (20:36:48) Racing ${INVIDIOUS_INSTANCES.length} instances...`,
     'color: #00ffff; font-weight: bold;'
   );
 
