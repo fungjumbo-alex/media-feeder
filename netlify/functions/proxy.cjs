@@ -27,7 +27,7 @@ exports.handler = async function (event, context) {
       ...(isYouTube && {
         'Referer': 'https://www.youtube.com/',
         'Origin': 'https://www.youtube.com',
-        'Cookie': 'CONSENT=YES+cb.20210328-17-p0.en+FX+417',
+        'Cookie': 'SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; CONSENT=YES+yt.20210328-17-p0.en+FX+417',
       }),
     };
 
