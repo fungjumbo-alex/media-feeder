@@ -121,11 +121,19 @@ exports.handler = async function (event, context) {
         };
 
     } catch (e) {
-        console.error(`[Backend] Error: ${e.message}`);
+        console.error(`[Backend] Error for ${event.body}: ${e.message}`);
+
+        // Use 429 for bot detection to signal to frontend that this IP is compromised
+        const isBotBlock = e.message.includes('Bot detection') || e.message.includes('blocking this server');
+        const statusCode = isBotBlock ? 429 : 500;
+
         return {
-            statusCode: 500,
+            statusCode: statusCode,
             headers,
-            body: JSON.stringify({ error: e.message })
+            body: JSON.stringify({
+                error: e.message,
+                code: isBotBlock ? 'IP_BLOCKED' : 'GENERIC_ERROR'
+            })
         };
     }
 };

@@ -8,6 +8,9 @@ import type {
   CaptionChoice,
 } from '../types';
 
+// Helper for proxies that are likely to work from cloud environments (Netlify/Firebase)
+const THIRD_PARTY_PROXIES = [PROXIES[1], PROXIES[2], PROXIES[4], PROXIES[5]];
+
 interface InvidiousVideoDetails {
   videoId: string;
   title: string;
@@ -479,6 +482,46 @@ export const fetchSingleYouTubeVideoAsArticle = async (videoId: string): Promise
 
 // Replaced TranscriptSnippet with TranscriptLine from types
 
+/**
+ * Parses YouTube JSON3 format or Invidious caption format
+ */
+const parseJSON3OrInvidious = (content: string): TranscriptLine[] => {
+  try {
+    const data = JSON.parse(content);
+
+    // Pattern 1: YouTube JSON3 (events based)
+    if (data.events) {
+      return data.events
+        .filter((e: any) => e.segs)
+        .map((e: any) => ({
+          start: e.tStartMs / 1000,
+          duration: (e.dDurationMs || 0) / 1000,
+          text: e.segs
+            .map((s: any) => s.utf8)
+            .join(' ')
+            .trim(),
+        }))
+        .filter((line: any) => line.text.length > 0);
+    }
+
+    // Pattern 2: Invidious / Generic Array
+    if (Array.isArray(data)) {
+      return data
+        .map((item: any) => ({
+          start: item.start || 0,
+          duration: item.duration || 0,
+          text: (item.text || '').trim(),
+        }))
+        .filter(line => line.text.length > 0);
+    }
+
+    return [];
+  } catch (e) {
+    console.warn('[Transcript] JSON parse failed in parseJSON3OrInvidious:', e);
+    return [];
+  }
+};
+
 const parseVTT = (vttText: string): TranscriptLine[] => {
   const lines = vttText.split(/\r?\n/);
   const snippets: TranscriptLine[] = [];
@@ -622,25 +665,35 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
     }
   }
 
-  // 2. Fallback to Invidious instances
-  if (!videoId) {
-    // If it's already an external transcript URL (not a video URL), try fetching it via proxy directly
-    if (url.includes('/api/v1/captions/') || url.includes('.vtt') || url.includes('.srt')) {
-      console.log('[Transcript] URL appears to be a direct caption link, fetching via proxy...');
-      try {
-        const { content } = await fetchViaProxy(url, 'youtube');
-        if (content) {
-          const snippets = parseVTT(content);
-          if (snippets.length > 0) return snippets;
-          throw new Error('No snippets found in caption file.');
+  // 1.8 NEW: If it's already an external transcript URL (not a video URL),
+  // try fetching it via proxy directly before doing anything else.
+  if (url.includes('/api/v1/captions/') || url.includes('.vtt') || url.includes('.srt')) {
+    console.log('[Transcript] URL appears to be a direct caption link, fetching via proxy...');
+    try {
+      const { content } = await fetchViaProxy(url, 'youtube');
+      if (content) {
+        const snippets =
+          url.includes('fmt=json3') || url.includes('/api/v1/captions/')
+            ? parseJSON3OrInvidious(content)
+            : parseVTT(content);
+        if (snippets.length > 0) {
+          console.log(
+            `[Transcript] Successfully fetched and parsed direct caption link (${snippets.length} lines)`
+          );
+          return snippets;
         }
-        throw new Error('Empty response from caption source.');
-      } catch (e) {
-        throw new Error(
-          `Direct caption fetch failed: ${e instanceof Error ? e.message : String(e)}`
-        );
+        throw new Error('No snippets found in caption file.');
       }
+      throw new Error('Empty response from caption source.');
+    } catch (e) {
+      console.warn(
+        `[Transcript] Direct caption fetch failed: ${e instanceof Error ? e.message : String(e)}. Falling back to broad search...`
+      );
+      // Don't throw here, let it fall back to Invidious race if it's a YouTube video
     }
+  }
+
+  if (!videoId) {
     throw new Error('Could not identify Video ID or valid caption source from URL.');
   }
 
@@ -673,7 +726,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
         undefined,
         undefined,
         undefined,
-        undefined,
+        THIRD_PARTY_PROXIES,
         {
           signal: controller.signal,
         } as any
@@ -709,7 +762,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
         undefined,
         undefined,
         undefined,
-        undefined,
+        THIRD_PARTY_PROXIES,
         {
           signal: controller.signal,
         } as any
@@ -884,7 +937,7 @@ export const getDirectScrapeChoices = async (
     undefined,
     undefined,
     undefined,
-    [PROXIES[1], PROXIES[2], PROXIES[4], PROXIES[5]]
+    THIRD_PARTY_PROXIES
   );
 
   if (!html || !html.includes('ytInitialPlayerResponse')) {
@@ -931,7 +984,7 @@ export const fetchDirectScrapeTranscript = async (
   // but allow falling back to others if it's now being rate-limited (429).
   const proxiesToTry = successfulProxy
     ? [successfulProxy, ...PROXIES.filter(p => p.name !== successfulProxyName)]
-    : PROXIES;
+    : THIRD_PARTY_PROXIES;
 
   const { content: vttContent } = await fetchViaProxy(
     vttUrl,
@@ -985,24 +1038,8 @@ export const fetchDirectScrapeTranscript = async (
   );
 
   if (jsonContent && jsonContent.length > 50 && !jsonContent.startsWith('<!doctype')) {
-    try {
-      const data = JSON.parse(jsonContent);
-      if (data.events) {
-        return data.events
-          .filter((e: any) => e.segs)
-          .map((e: any) => ({
-            start: e.tStartMs / 1000,
-            duration: (e.dDurationMs || 0) / 1000,
-            text: e.segs
-              .map((s: any) => s.utf8)
-              .join(' ')
-              .trim(),
-          }))
-          .filter((line: any) => line.text.length > 0);
-      }
-    } catch (e) {
-      console.warn('[Transcript] JSON3 parse failed:', e);
-    }
+    const snippets = parseJSON3OrInvidious(jsonContent);
+    if (snippets.length > 0) return snippets;
   }
 
   // Final Fallback: SRV1 (XML) - Often the most permissive
@@ -1121,7 +1158,7 @@ export const getTranscriptChoices = async (videoId: string): Promise<CaptionChoi
           undefined,
           undefined,
           undefined,
-          [PROXIES[1]]
+          THIRD_PARTY_PROXIES
         );
         if (!content || (!content.startsWith('[') && !content.startsWith('{'))) continue;
 
