@@ -641,7 +641,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   let lastError: unknown = null;
 
   console.log(
-    `%c[Transcript] V12-ULTRA: Racing ${INVIDIOUS_INSTANCES.length} instances...`,
+    `%c[Build] STATUS: V14-ULTRA (20:25:48) Racing ${INVIDIOUS_INSTANCES.length} instances...`,
     'color: #00ffff; font-weight: bold;'
   );
 
@@ -841,7 +841,8 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
  * Extracts ytInitialPlayerResponse from the watch page to find caption URLs.
  */
 export const scrapeYouTubePage = async (videoId: string): Promise<TranscriptLine[]> => {
-  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  // Use ucbcb=1 to bypass the cookie banner / consent page
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}&ucbcb=1`;
 
   // Use a broad search but prioritize proxies that handle HTML well
   const html = await fetchViaProxy(watchUrl, 'youtube', undefined, undefined, undefined, [
