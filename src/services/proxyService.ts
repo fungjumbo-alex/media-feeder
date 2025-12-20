@@ -137,28 +137,22 @@ export const PROXIES = [
     name: 'corsproxy.io',
     buildUrl: (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
     parseResponse: async (response: Response): Promise<string> => {
+      // ... same implementation ...
       if (!response.ok) {
-        const errorBody = await response.text().catch(() => null);
-        if (errorBody) {
-          try {
-            const errorJson = JSON.parse(errorBody);
-            if (errorJson?.error?.message) {
-              throw new Error(
-                `Proxy corsproxy.io responded with status ${response.status}: ${errorJson.error.message}`
-              );
-            }
-          } catch {
-            /* ignore json parsing error */
-          }
-        }
         throw new Error(`Proxy corsproxy.io responded with status ${response.status}`);
       }
       const text = await response.text();
       const botReason = checkForBotChallenge(text);
-      if (botReason) {
-        throw new Error(`Proxy corsproxy.io blocked by ${botReason}.`);
-      }
+      if (botReason) throw new Error(`Proxy corsproxy.io blocked by ${botReason}.`);
       return text;
+    },
+  },
+  {
+    name: 'cors.sh',
+    buildUrl: (url: string) => `https://proxy.cors.sh/${url}`,
+    parseResponse: async (response: Response): Promise<string> => {
+      if (!response.ok) throw new Error(`Proxy cors.sh responded with status ${response.status}`);
+      return await response.text();
     },
   },
 ];
@@ -256,87 +250,69 @@ export const fetchViaProxy = async (
         `[Proxy] Attempting ${proxy.name} for: ${targetUrl.substring(0, 100)}${targetUrl.length > 100 ? '...' : ''}`
       );
       const controller = new AbortController();
-
-      // Respect passed-in signal if any, or use default 15s (reduced from 30s)
       const timeoutMs = 15000;
       const timeoutId = setTimeout(() => {
-        console.warn(`[Proxy] ${proxy.name} request timed out after ${timeoutMs}ms`);
         controller.abort('timeout');
       }, timeoutMs);
 
-      const proxyUrl = proxy.buildUrl(targetUrl);
-
-      const mergedOptions: RequestInit = {
-        ...fetchOptions,
-        signal: controller.signal,
+      // Listener for external signal to abort this internal attempt
+      const onExternalAbort = () => {
+        controller.abort('external');
       };
 
-      // If the external signal is aborted, we definitely should stop
-      if (fetchOptions.signal?.aborted) {
-        throw new Error('Signal already aborted');
-      }
-
-      // If an external signal is provided, listen for its abort to trigger ours
       if (fetchOptions.signal) {
         if (fetchOptions.signal.aborted) {
-          controller.abort('external');
+          onExternalAbort();
         } else {
-          fetchOptions.signal.addEventListener(
-            'abort',
-            () => {
-              console.warn(`[Proxy] External signal aborted for ${proxy.name}`);
-              controller.abort('external');
-            },
-            { once: true }
-          );
+          fetchOptions.signal.addEventListener('abort', onExternalAbort, { once: true });
         }
       }
 
-      const response = await fetch(proxyUrl, mergedOptions);
-      clearTimeout(timeoutId);
+      try {
+        const proxyUrl = proxy.buildUrl(targetUrl);
+        const response = await fetch(proxyUrl, {
+          ...fetchOptions,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        console.warn(
-          `[Proxy] ${proxy.name} backend returned status ${response.status} for ${targetUrl}`
-        );
-        throw new Error(`Proxy ${proxy.name} responded with status ${response.status}.`);
+        if (!response.ok) {
+          throw new Error(`Proxy ${proxy.name} responded with status ${response.status}.`);
+        }
+
+        const content = await proxy.parseResponse(response);
+        onAttempt?.(proxy.name, 'success', feedType);
+        return content;
+      } finally {
+        clearTimeout(timeoutId);
+        if (fetchOptions.signal) {
+          fetchOptions.signal.removeEventListener('abort', onExternalAbort);
+        }
       }
-
-      const content = await proxy.parseResponse(response);
-
-      onAttempt?.(proxy.name, 'success', feedType);
-      console.log(`[Proxy] ${proxy.name} SUCCESS! Content length: ${content.length}`);
-      return content;
     } catch (error) {
-      let specificError = error;
-      if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
-        specificError = new Error(
-          `Network/CORS error for proxy '${proxy.name}'. It may be offline, blocked by an ad-blocker, or have invalid CORS headers.`
-        );
-      }
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const isAbort = errorMsg.includes('abort') || errorMsg.includes('timeout');
 
-      const finalErrorMsg =
-        specificError instanceof Error ? specificError.message : String(specificError);
-      console.warn(`[Proxy] ${proxy.name} FAILED: ${finalErrorMsg}`);
-
-      lastError = specificError;
+      console.warn(`[Proxy] ${proxy.name} FAILED: ${errorMsg}`);
+      lastError = error;
       onAttempt?.(proxy.name, 'failure', feedType);
 
-      // If the error was a signal abort (timeout), we should stop the whole loop
-      if (finalErrorMsg.includes('Signal already aborted') || finalErrorMsg.includes('timeout')) {
-        throw specificError;
-      }
-
-      if (!currentStats[proxy.name]) {
+      // Log stats
+      if (!currentStats[proxy.name])
         currentStats[proxy.name] = {
           youtube: { success: 0, failure: 0 },
           rss: { success: 0, failure: 0 },
         };
-      }
-      if (!currentStats[proxy.name][feedType]) {
+      if (!currentStats[proxy.name][feedType])
         currentStats[proxy.name][feedType] = { success: 0, failure: 0 };
-      }
       currentStats[proxy.name][feedType].failure++;
+
+      // If the EXTERNAL signal was the one that aborted, we MUST stop trying further proxies
+      if (fetchOptions.signal?.aborted) {
+        throw error;
+      }
+
+      // If it was just an interval timeout or a proxy error, catch it and the loop will try the next proxy
       return null;
     }
   };

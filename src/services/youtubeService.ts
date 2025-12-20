@@ -1,4 +1,4 @@
-import { INVIDIOUS_INSTANCES, fetchViaProxy } from './proxyService';
+import { INVIDIOUS_INSTANCES, fetchViaProxy, PROXIES } from './proxyService';
 import type {
   YouTubeSubscription,
   Feed,
@@ -149,7 +149,6 @@ const handleYouTubeError = async (response: Response, defaultMessage: string): P
     errorBody = await response.json();
   } catch (e) {
     // If the body can't be parsed, we can't get more details.
-    // This might happen for non-JSON error responses, like the caption download.
     const textError = await response.text().catch(() => '');
     if (textError) {
       throw new Error(`${defaultMessage}: ${textError} (Status: ${response.status})`);
@@ -626,7 +625,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   let lastError: unknown = null;
 
   console.log(
-    `%c[Transcript] V11-HARDENED: Racing ${INVIDIOUS_INSTANCES.length} instances...`,
+    `%c[Transcript] V12-ULTRA: Racing ${INVIDIOUS_INSTANCES.length} instances...`,
     'color: #00ffff; font-weight: bold;'
   );
 
@@ -779,13 +778,16 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
             }
 
             const snippets = parseVTT(captionContent);
-            if (snippets.length > 0) {
+            if (snippets.length > 5) {
+              // Expect at least 5 snippets for a real transcript
               console.log(
                 `[Transcript] Successfully parsed ${snippets.length} snippets from ${winnerInstance}`
               );
               return snippets;
             }
-            console.warn(`[Transcript] Parsed 0 snippets from ${winnerInstance} content.`);
+            console.warn(
+              `[Transcript] Parsed too few snippets (${snippets.length}) from ${winnerInstance} content.`
+            );
           } else {
             const errorType = !captionContent ? 'Empty' : 'HTML/Blocked';
             console.warn(`[Transcript] ${errorType} content returned from ${winnerInstance}`);
@@ -838,12 +840,16 @@ export const getTranscriptChoices = async (videoId: string): Promise<CaptionChoi
     console.warn(`[Transcript] getTranscriptChoices: Backend attempt failed: ${e}`);
   }
 
-  // Method 2: Invidious list
+  // Method 2: Invidious list (Extended search)
   let lastError: any = null;
-  for (const instance of (INVIDIOUS_INSTANCES || []).slice(0, 10)) {
+  for (const instance of (INVIDIOUS_INSTANCES || []).slice(0, 15)) {
     try {
       const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
-      const content = await fetchViaProxy(captionsUrl, 'youtube');
+      const content = await fetchViaProxy(captionsUrl, 'youtube', undefined, undefined, undefined, [
+        PROXIES[1], // App Proxy
+        PROXIES[2], // AllOrigins
+        PROXIES[4], // corsproxy.io
+      ]);
       const data = JSON.parse(content);
       const captionsArray = Array.isArray(data) ? data : data.captions || [];
 
