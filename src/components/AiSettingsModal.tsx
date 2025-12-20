@@ -13,7 +13,10 @@ import {
   InfoIcon,
   HelpIcon,
   ChevronDownIcon,
+  ActivityIcon,
 } from './icons';
+import { ConnectionTester } from './ConnectionTester';
+import { ErrorBoundary } from './ErrorBoundary';
 import { TRANSLATION_LANGUAGES } from '../types';
 
 export const AiSettingsModal: React.FC = () => {
@@ -205,7 +208,9 @@ export const AiSettingsModal: React.FC = () => {
               <div className="border-t border-gray-600/50 pt-4">
                 <div className="flex justify-between items-center">
                   <div>
-                    <h4 className="font-semibold text-gray-100">Auto-transcribe videos on refresh</h4>
+                    <h4 className="font-semibold text-gray-100">
+                      Auto-transcribe videos on refresh
+                    </h4>
                     <p className="text-xs text-gray-400 mt-1">
                       Automatically fetch transcripts for new YouTube videos after a refresh.
                     </p>
@@ -290,7 +295,8 @@ export const AiSettingsModal: React.FC = () => {
                 <div>
                   <h4 className="font-semibold text-gray-100">Time window for auto AI tasks</h4>
                   <p className="text-xs text-gray-400 mt-1 mb-3">
-                    Limit auto-transcription and auto-summary to articles published within the last X days.
+                    Limit auto-transcription and auto-summary to articles published within the last
+                    X days.
                   </p>
                   <div className="flex items-center gap-3">
                     <label htmlFor="time-window-input" className="text-sm text-gray-300">
@@ -302,7 +308,7 @@ export const AiSettingsModal: React.FC = () => {
                       min="1"
                       max="365"
                       value={autoAiTimeWindowDays}
-                      onChange={(e) => {
+                      onChange={e => {
                         const val = parseInt(e.target.value, 10);
                         if (!isNaN(val) && val >= 1 && val <= 365) {
                           setAutoAiTimeWindowDays(val);
@@ -542,6 +548,16 @@ export const AiSettingsModal: React.FC = () => {
                   Open
                 </button>
               </div>
+            </div>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-400 mb-3 border-b border-gray-700 pb-2 flex items-center gap-2">
+              <ActivityIcon className="w-4 h-4" /> Connection Status
+            </h3>
+            <div className="bg-gray-700/50 p-4 rounded-lg">
+              <ErrorBoundary>
+                <ConnectionTester />
+              </ErrorBoundary>
             </div>
           </div>
         </div>

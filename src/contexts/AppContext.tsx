@@ -71,9 +71,14 @@ import type {
 } from '../types';
 import { ZOOM_LEVELS, AVAILABLE_MODELS } from '../types';
 import * as LZString from 'lz-string';
-import { fetchViaProxy, PROXIES } from '../services/proxyService';
 import { createEpub } from '../utils/epubUtils';
 import { formatTranscriptTime } from '../utils/dateUtils';
+import {
+  fetchViaProxy,
+  PROXIES,
+  testAllSources,
+  type SourceTestResult,
+} from '../services/proxyService';
 
 const FEEDS_STORAGE_KEY = 'media-feeder-feeds-v3';
 const ARTICLE_TAGS_KEY = 'media-feeder-article-tags-v1';
@@ -404,14 +409,14 @@ interface AppContextType {
   setSelectedArticle: React.Dispatch<React.SetStateAction<Article | null>>;
   currentView: CurrentView;
   contentView:
-  | 'articles'
-  | 'feedsGrid'
-  | 'inactiveFeeds'
-  | 'dump'
-  | 'privacyPolicy'
-  | 'about'
-  | 'help'
-  | 'notes';
+    | 'articles'
+    | 'feedsGrid'
+    | 'inactiveFeeds'
+    | 'dump'
+    | 'privacyPolicy'
+    | 'about'
+    | 'help'
+    | 'notes';
   readArticleIds: Map<string, number>;
   readLaterArticleIds: Set<string>;
   likedVideoIds: Set<string>;
@@ -813,9 +818,16 @@ interface AppContextType {
   handleSuccessfulApiCall: () => void;
   isAiDisabled: boolean;
   aiHierarchy: MindmapHierarchy | null;
+  ytAiHierarchy: MindmapHierarchy | null;
+  setYtAiHierarchy: React.Dispatch<React.SetStateAction<MindmapHierarchy | null>>;
+  nonYtAiHierarchy: MindmapHierarchy | null;
+  setNonYtAiHierarchy: React.Dispatch<React.SetStateAction<MindmapHierarchy | null>>;
   setAiHierarchy: React.Dispatch<React.SetStateAction<MindmapHierarchy | null>>;
   isAiTopicsCollapsed: boolean;
   onToggleAiTopicsCollapse: () => void;
+  isTestingSources: boolean;
+  sourceTestResults: SourceTestResult[];
+  handleTestAllSources: () => Promise<void>;
 }
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -1335,6 +1347,12 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [aiHierarchy, setAiHierarchy] = useState<MindmapHierarchy | null>(() =>
     getStoredData('media-feeder-ai-hierarchy', null)
   );
+  const [ytAiHierarchy, setYtAiHierarchy] = useState<MindmapHierarchy | null>(() =>
+    getStoredData('media-feeder-yt-ai-hierarchy', null)
+  );
+  const [nonYtAiHierarchy, setNonYtAiHierarchy] = useState<MindmapHierarchy | null>(() =>
+    getStoredData('media-feeder-non-yt-ai-hierarchy', null)
+  );
   const [isAiTopicsCollapsed, setIsAiTopicsCollapsed] = useState<boolean>(() =>
     getStoredData('media-feeder-ai-topics-collapsed', false)
   );
@@ -1355,6 +1373,22 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [isAiDisabled, setIsAiDisabled] = useState<boolean>(() =>
     getStoredData(AI_DISABLED_KEY, false)
   );
+  const [isTestingSources, setIsTestingSources] = useState(false);
+  const [sourceTestResults, setSourceTestResults] = useState<SourceTestResult[]>([]);
+
+  const handleTestAllSources = useCallback(async () => {
+    setIsTestingSources(true);
+    setSourceTestResults([]);
+    try {
+      await testAllSources(result => {
+        setSourceTestResults(prev => [...prev, result]);
+      });
+    } catch (e: any) {
+      setToast({ message: `Testing failed: ${e.message}`, type: 'error' });
+    } finally {
+      setIsTestingSources(false);
+    }
+  }, [setToast]);
   useEffect(() => {
     trendingKeywordsRef.current = trendingKeywords;
   }, [trendingKeywords]);
@@ -2082,15 +2116,15 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     | 'about'
     | 'help'
     | 'notes' = useMemo(() => {
-      if (currentView.type === 'all-subscriptions') return 'feedsGrid';
-      if (currentView.type === 'inactive-feeds') return 'inactiveFeeds';
-      if (currentView.type === 'dump') return 'dump';
-      if (currentView.type === 'privacy-policy') return 'privacyPolicy';
-      if (currentView.type === 'about') return 'about';
-      if (currentView.type === 'help') return 'help';
-      if (currentView.type === 'note-folder') return 'notes';
-      return 'articles';
-    }, [currentView]);
+    if (currentView.type === 'all-subscriptions') return 'feedsGrid';
+    if (currentView.type === 'inactive-feeds') return 'inactiveFeeds';
+    if (currentView.type === 'dump') return 'dump';
+    if (currentView.type === 'privacy-policy') return 'privacyPolicy';
+    if (currentView.type === 'about') return 'about';
+    if (currentView.type === 'help') return 'help';
+    if (currentView.type === 'note-folder') return 'notes';
+    return 'articles';
+  }, [currentView]);
 
   const youtubeFeeds = useMemo(
     () => sortedFeeds.filter(feed => feed.url.toLowerCase().includes('youtube.com')),
@@ -2111,7 +2145,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     let needsDeduplication = false;
 
     switch (viewForFiltering.type) {
-      case 'feed':
+      case 'feed': {
         const feedToDisplay = feedsById.get(viewForFiltering.value || '');
         if (feedToDisplay) {
           const articleIdsInFeed = new Set(feedToDisplay.items.map(i => i.id));
@@ -2125,6 +2159,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           rawArticles = [];
         }
         break;
+      }
       case 'search':
         if (!viewForFiltering.value) {
           rawArticles = [];
@@ -2169,16 +2204,17 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           .map(id => articlesById.get(id))
           .filter((a): a is Article => !!a);
         break;
-      case 'favorites':
+      case 'favorites': {
         const favoriteFeedIds = new Set(favoriteFeeds.map(f => f.id));
         rawArticles = allArticles.filter(a => favoriteFeedIds.has(a.feedId));
         needsDeduplication = true;
         break;
+      }
       case 'tag':
         rawArticles = filterArticlesForTag(allArticles, viewForFiltering.value, feedsById);
         needsDeduplication = true;
         break;
-      case 'published-today':
+      case 'published-today': {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayTimestamp = today.getTime();
@@ -2187,6 +2223,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         );
         needsDeduplication = true;
         break;
+      }
 
       case 'ai-summary-yt':
         rawArticles = allArticles.filter(a => a.isVideo && a.structuredSummary);
@@ -2198,28 +2235,33 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         );
         needsDeduplication = true;
         break;
-      case 'ai-topic':
+      case 'ai-topic': {
         let targetIds = new Set<string>();
         const val = viewForFiltering.value;
         if (val && typeof val === 'object' && Array.isArray(val.articleIds)) {
           targetIds = new Set(val.articleIds);
-        } else if (typeof val === 'string' && aiHierarchy) {
-          const ids = findArticleIdsForTopic(aiHierarchy, val);
+        } else if (typeof val === 'string' && (aiHierarchy || ytAiHierarchy || nonYtAiHierarchy)) {
+          const ids = (aiHierarchy ? findArticleIdsForTopic(aiHierarchy, val) : [])
+            .concat(ytAiHierarchy ? findArticleIdsForTopic(ytAiHierarchy, val) : [])
+            .concat(nonYtAiHierarchy ? findArticleIdsForTopic(nonYtAiHierarchy, val) : []);
           targetIds = new Set(ids);
         } else if (
           val &&
           typeof val === 'object' &&
           val.title &&
           typeof val.title === 'string' &&
-          aiHierarchy
+          (aiHierarchy || ytAiHierarchy || nonYtAiHierarchy)
         ) {
           // Fallback if articleIds is missing but title is present in object
-          const ids = findArticleIdsForTopic(aiHierarchy, val.title);
+          const ids = (aiHierarchy ? findArticleIdsForTopic(aiHierarchy, val.title) : [])
+            .concat(ytAiHierarchy ? findArticleIdsForTopic(ytAiHierarchy, val.title) : [])
+            .concat(nonYtAiHierarchy ? findArticleIdsForTopic(nonYtAiHierarchy, val.title) : []);
           targetIds = new Set(ids);
         }
         rawArticles = allArticles.filter(a => targetIds.has(a.id));
         needsDeduplication = true;
         break;
+      }
       default:
         rawArticles = [];
     }
@@ -2317,7 +2359,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     favoritesOrderYt,
     favoritesOrderRss,
     sidebarTab,
-    aiHierarchy
+    aiHierarchy,
   ]);
 
   const notesForView = useMemo(() => {
@@ -2346,13 +2388,15 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         return 'History';
       case 'favorites':
         return 'Favorites';
-      case 'tag':
+      case 'tag': {
         const tagValue = currentView.value;
         const tagName = typeof tagValue === 'object' && tagValue.name ? tagValue.name : tagValue;
         return `#${tagName}`;
-      case 'note-folder':
+      }
+      case 'note-folder': {
         const folder = noteFolders.find(f => f.id === currentView.value);
         return folder ? folder.name : 'Notes';
+      }
       case 'published-today':
         return 'Published Today';
       case 'ai-summary-yt':
@@ -2485,7 +2529,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const runInBackgroundTranscription = useCallback(
     async (feedsToProcess: Feed[]) => {
-      console.log('[AutoTranscript] Checking if auto-transcription is valid...', { autoTranscribeOnRefresh });
+      console.log('[AutoTranscript] Checking if auto-transcription is valid...', {
+        autoTranscribeOnRefresh,
+      });
       if (!autoTranscribeOnRefresh) {
         console.log('[AutoTranscript] Skipped: disabled.');
         return;
@@ -2502,7 +2548,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         .filter(a => a.pubDateTimestamp && a.pubDateTimestamp >= cutoffTime)
         .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
 
-      console.log(`[AutoTranscript] Found ${videosToTranscribe.length} videos eligible for transcription (filtered by last ${autoAiTimeWindowDays} days).`);
+      console.log(
+        `[AutoTranscript] Found ${videosToTranscribe.length} videos eligible for transcription (filtered by last ${autoAiTimeWindowDays} days).`
+      );
 
       if (videosToTranscribe.length === 0) return;
 
@@ -2533,7 +2581,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
       // Update feeds with transcripts and mark all as attempted
       if (updates.size > 0 || attemptedIds.size > 0) {
-        console.log(`[AutoTranscript] Updating ${updates.size} articles with transcripts, marking ${attemptedIds.size} as attempted.`);
+        console.log(
+          `[AutoTranscript] Updating ${updates.size} articles with transcripts, marking ${attemptedIds.size} as attempted.`
+        );
         setFeeds(currentFeeds =>
           currentFeeds.map(feed => ({
             ...feed,
@@ -2546,7 +2596,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 };
               }
               return item;
-            })
+            }),
           }))
         );
       }
@@ -2573,7 +2623,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         .filter(a => a.pubDateTimestamp && a.pubDateTimestamp >= cutoffTime)
         .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0));
 
-      console.log(`[AutoSummary] Found ${videosToSummarize.length} videos eligible for summary (filtered by last ${autoAiTimeWindowDays} days).`);
+      console.log(
+        `[AutoSummary] Found ${videosToSummarize.length} videos eligible for summary (filtered by last ${autoAiTimeWindowDays} days).`
+      );
 
       if (videosToSummarize.length === 0) {
         return;
@@ -2656,13 +2708,19 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       console.log(`[AutoGrouping] Found ${recentArticles.length} recent articles for grouping.`);
 
       if (recentArticles.length < 5) {
-        console.log('[AutoGrouping] Not enough recent articles to generate a meaningful hierarchy.');
+        console.log(
+          '[AutoGrouping] Not enough recent articles to generate a meaningful hierarchy.'
+        );
         return;
       }
 
       try {
         console.log('[AutoGrouping] Generating hierarchy...');
-        const hierarchy = await generateMindmapHierarchy(recentArticles, aiModel, defaultAiLanguage);
+        const hierarchy = await generateMindmapHierarchy(
+          recentArticles,
+          aiModel,
+          defaultAiLanguage
+        );
         console.log('[AutoGrouping] Hierarchy generated successfully.');
         setAiHierarchy(hierarchy);
       } catch (error) {
@@ -3485,6 +3543,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         const looksLikeSimpleCode = /^[a-zA-Z0-9]{4,}$/.test(url);
 
         if (isJson) {
+          // JSON content is handled by the caller or specialized logic
         } else if (!looksLikeUrl && looksLikeSimpleCode) {
           try {
             const code = url;
@@ -3804,7 +3863,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     let needsDeduplication = false;
 
     switch (viewForFiltering.type) {
-      case 'feed':
+      case 'feed': {
         const feedToDisplay = feedsById.get(viewForFiltering.value || '');
         if (feedToDisplay) {
           const articleIdsInFeed = new Set(feedToDisplay.items.map(i => i.id));
@@ -3818,6 +3877,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           rawArticles = [];
         }
         break;
+      }
       case 'search':
         if (!viewForFiltering.value) {
           rawArticles = [];
@@ -3840,16 +3900,17 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           .map(id => articlesById.get(id))
           .filter((a): a is Article => !!a);
         break;
-      case 'favorites':
+      case 'favorites': {
         const favoriteFeedIds = new Set(favoriteFeeds.map(f => f.id));
         rawArticles = allArticles.filter(a => favoriteFeedIds.has(a.feedId));
         needsDeduplication = true;
         break;
+      }
       case 'tag':
         rawArticles = filterArticlesForTag(allArticles, viewForFiltering.value, feedsById);
         needsDeduplication = true;
         break;
-      case 'published-today':
+      case 'published-today': {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayTimestamp = today.getTime();
@@ -3858,32 +3919,38 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         );
         needsDeduplication = true;
         break;
+      }
       case 'ai-summary-yt':
         rawArticles = allArticles.filter(a => a.isVideo && a.structuredSummary);
         needsDeduplication = true;
         break;
-      case 'ai-topic':
+      case 'ai-topic': {
         let targetIds = new Set<string>();
         const val = viewForFiltering.value;
         if (val && typeof val === 'object' && Array.isArray(val.articleIds)) {
           targetIds = new Set(val.articleIds);
-        } else if (typeof val === 'string' && aiHierarchy) {
-          const ids = findArticleIdsForTopic(aiHierarchy, val);
+        } else if (typeof val === 'string' && (aiHierarchy || ytAiHierarchy || nonYtAiHierarchy)) {
+          const ids = (aiHierarchy ? findArticleIdsForTopic(aiHierarchy, val) : [])
+            .concat(ytAiHierarchy ? findArticleIdsForTopic(ytAiHierarchy, val) : [])
+            .concat(nonYtAiHierarchy ? findArticleIdsForTopic(nonYtAiHierarchy, val) : []);
           targetIds = new Set(ids);
         } else if (
           val &&
           typeof val === 'object' &&
           val.title &&
           typeof val.title === 'string' &&
-          aiHierarchy
+          (aiHierarchy || ytAiHierarchy || nonYtAiHierarchy)
         ) {
           // Fallback if articleIds is missing but title is present in object
-          const ids = findArticleIdsForTopic(aiHierarchy, val.title);
+          const ids = (aiHierarchy ? findArticleIdsForTopic(aiHierarchy, val.title) : [])
+            .concat(ytAiHierarchy ? findArticleIdsForTopic(ytAiHierarchy, val.title) : [])
+            .concat(nonYtAiHierarchy ? findArticleIdsForTopic(nonYtAiHierarchy, val.title) : []);
           targetIds = new Set(ids);
         }
         rawArticles = allArticles.filter(a => targetIds.has(a.id));
         needsDeduplication = true;
         break;
+      }
       default:
         rawArticles = [];
     }
@@ -3983,8 +4050,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       return {
         hasNextArticle: false,
         hasPreviousArticle: false,
-        onNextArticle: () => { },
-        onPreviousArticle: () => { },
+        onNextArticle: () => {},
+        onPreviousArticle: () => {},
       };
     const currentIndex = articlesForNavigation.findIndex(a => a.id === selectedArticle.id);
     const hasNextArticle = currentIndex >= 0 && currentIndex < articlesForNavigation.length - 1;
@@ -4204,7 +4271,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const handleGoogleSignOut = useCallback(() => {
     if (accessToken) {
-      google.accounts.oauth2.revoke(accessToken, () => { });
+      google.accounts.oauth2.revoke(accessToken, () => {});
     }
     if (tokenRefreshTimerRef.current) {
       clearTimeout(tokenRefreshTimerRef.current);
@@ -4217,8 +4284,6 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     localStorage.removeItem('gapi_user_profile');
     setToast({ message: 'You have been signed out.', type: 'success' });
   }, [accessToken, setToast]);
-
-
 
   const handleUploadToDrive = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -4538,10 +4603,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                       .map(item => item.id);
 
                     if (videoIds.length > 0) {
-                      const durationsAndCaptions = await fetchVideosDuration(
-                        videoIds,
-                        accessToken
-                      );
+                      const durationsAndCaptions = await fetchVideosDuration(videoIds, accessToken);
 
                       rssFeed.items = rssFeed.items.map(item => {
                         const data = durationsAndCaptions.get(item.id);
@@ -4584,23 +4646,26 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           });
         }
 
-
         console.log('[Refresh] Refresh complete. Triggering background tasks...');
         console.log(`[Refresh] New articles found: ${allNewArticles.length}`);
 
         // Chain background tasks: Transcription -> Summary
-        // Updated to use currentFeeds (all articles) instead of just new ones
+        // Updated to use feeds from state (all articles) instead of just new ones
+        console.log('[Refresh] Triggering background transcription sequence...');
+        // Get current feeds directly - don't wrap in setFeeds
         setFeeds(currentFeeds => {
-          console.log('[Refresh] Triggering background transcription sequence...');
           // Fire and forget (it is async)
           runInBackgroundTranscription(currentFeeds).then(() => {
-            console.log('[Refresh] Transcription task finished (or skipped). Starting summary generation...');
+            console.log(
+              '[Refresh] Transcription task finished (or skipped). Starting summary generation...'
+            );
             runInBackgroundSummaryGeneration(currentFeeds);
           });
 
           console.log('[Refresh] Triggering background grouping...');
           runInBackgroundGrouping(currentFeeds);
 
+          // CRITICAL: Return currentFeeds unchanged - feeds were already updated by processBatchResults
           return currentFeeds;
         });
 
@@ -4845,10 +4910,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 .map(item => item.id);
 
               if (videoIds.length > 0) {
-                const durationsAndCaptions = await fetchVideosDuration(
-                  videoIds,
-                  accessToken
-                );
+                const durationsAndCaptions = await fetchVideosDuration(videoIds, accessToken);
 
                 newFeedData.items = newFeedData.items.map(item => {
                   const data = durationsAndCaptions.get(item.id);
@@ -4886,8 +4948,6 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         const deduplicatedArticles = Array.from(
           new Map(combinedArticles.map(a => [a.id, a])).values()
         );
-
-
 
         const sortedAndCleanedArticles = deduplicatedArticles
           .map(({ order, ...rest }) => rest)
@@ -6160,7 +6220,6 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const onToggleNotesCollapse = useCallback(() => setIsNotesCollapsed(prev => !prev), []);
   const onToggleAiTopicsCollapse = useCallback(() => setIsAiTopicsCollapsed(prev => !prev), []);
 
-
   const onToggleTagExpansion = useCallback((tag: string, tagType: 'youtube' | 'rss') => {
     const compositeKey = `${tagType}-${tag}`;
     setExpandedTags(prev => {
@@ -6870,6 +6929,14 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   useEffect(() => {
     safeSetLocalStorage('media-feeder-ai-hierarchy', aiHierarchy);
   }, [aiHierarchy, safeSetLocalStorage]);
+
+  useEffect(() => {
+    safeSetLocalStorage('media-feeder-yt-ai-hierarchy', ytAiHierarchy);
+  }, [ytAiHierarchy, safeSetLocalStorage]);
+
+  useEffect(() => {
+    safeSetLocalStorage('media-feeder-non-yt-ai-hierarchy', nonYtAiHierarchy);
+  }, [nonYtAiHierarchy, safeSetLocalStorage]);
   useEffect(() => {
     safeSetLocalStorage('media-feeder-ai-topics-collapsed', isAiTopicsCollapsed);
   }, [isAiTopicsCollapsed, safeSetLocalStorage]);
@@ -6918,6 +6985,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setIsImportTextModalOpen,
     isProxyStatsModalOpen,
     setIsProxyStatsModalOpen,
+    isTestingSources,
+    sourceTestResults,
+    handleTestAllSources,
     isCacheInfoModalOpen,
     setIsCacheInfoModalOpen,
     isExportTextModalOpen,
@@ -6970,7 +7040,6 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     feedsById,
 
     // AI
-    aiHierarchy,
     commentsState,
     handleFetchComments,
     handleFetchArticleDetails,
@@ -7212,7 +7281,12 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     handleQuotaError,
     handleSuccessfulApiCall,
     isAiDisabled,
+    aiHierarchy,
     setAiHierarchy,
+    ytAiHierarchy,
+    setYtAiHierarchy,
+    nonYtAiHierarchy,
+    setNonYtAiHierarchy,
     isAiTopicsCollapsed,
     onToggleAiTopicsCollapse,
   };

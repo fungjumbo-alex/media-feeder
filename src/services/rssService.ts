@@ -1,6 +1,6 @@
 import type { Feed, Article, ProxyAttemptCallback, ProxyStats, FeedType } from '../types';
 import { fetchViaProxy } from './proxyService';
-import { INVIDIOUS_INSTANCES, RSSHUB_INSTANCES } from './proxyService';
+import { RSSHUB_INSTANCES } from './proxyService';
 
 // --- Helper for YouTube fetching via Invidious ---
 const fetchYouTubeRssViaInvidious = async (
@@ -90,39 +90,47 @@ const fetchYouTubeRssViaInvidious = async (
     throw new Error('Could not discover a Channel or Playlist ID from the provided YouTube URL.');
   }
 
-  // Now fetch feed from Invidious
-  let lastError: unknown = null;
-  for (const instance of INVIDIOUS_INSTANCES) {
-    try {
-      const invidiousFeedUrl = playlistId
-        ? `${instance}/feed/playlist/${playlistId}`
-        : `${instance}/feed/channel/${channelId!}`;
+  // Now fetch feed directly from YouTube's RSS
+  // YouTube provides RSS feeds at: https://www.youtube.com/feeds/videos.xml?channel_id={channelId}
+  // This is more reliable than Invidious instances which often have bot protection
+  const youtubeRssFeedUrl = playlistId
+    ? `https://www.youtube.com/feeds/videos.xml?playlist_id=${playlistId}`
+    : `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId!}`;
 
-      const content = await fetchViaProxy(
-        invidiousFeedUrl,
-        'youtube',
-        onProxyAttempt,
-        disabledProxies,
-        proxyStats
-      );
-      if (content) {
-        const doc = parser.parseFromString(content, 'application/xml');
-        if (!doc.querySelector('parsererror')) {
-          return {
-            content,
-            discoveredUrl: invidiousFeedUrl,
-            pageIconUrl,
-            discoveredChannelId: channelId,
-          };
-        }
-        throw new Error('Invidious instance returned non-XML content.');
-      }
-    } catch (error) {
-      lastError = error;
-    }
+  console.log(`[YouTube RSS] Fetching directly from YouTube: ${youtubeRssFeedUrl}`);
+
+  const content = await fetchViaProxy(
+    youtubeRssFeedUrl,
+    'youtube',
+    onProxyAttempt,
+    disabledProxies,
+    proxyStats
+  );
+
+  if (!content) {
+    throw new Error('Failed to fetch YouTube RSS feed');
   }
-  const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
-  throw new Error(`All Invidious instances failed to provide a feed. Last error: ${errorMessage}`);
+
+  const doc = parser.parseFromString(content, 'application/xml');
+  const parserError = doc.querySelector('parsererror');
+
+  if (parserError) {
+    console.error('[YouTube RSS] Invalid XML returned:', content.substring(0, 500));
+    throw new Error('YouTube RSS returned invalid XML');
+  }
+
+  const hasFeedTag = doc.querySelector('feed') !== null;
+  if (!hasFeedTag || content.length < 500) {
+    console.error('[YouTube RSS] Not a valid feed:', content.substring(0, 200));
+    throw new Error('YouTube RSS did not return a valid feed');
+  }
+
+  return {
+    content,
+    discoveredUrl: youtubeRssFeedUrl,
+    pageIconUrl,
+    discoveredChannelId: channelId,
+  };
 };
 
 // --- Helper for Bilibili fetching via RSSHub ---

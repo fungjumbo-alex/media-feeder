@@ -105,27 +105,11 @@ export const PROXIES = [
 ];
 
 // List of public Invidious instances, which can act as proxies for YouTube content.
-// Updated 2025-12-14: Added high uptime instances
-// List of public Invidious instances, which can act as proxies for YouTube content.
-// Updated 2025-12-14: Removed instances failing with 403/HTML responses
-// Updated 2025-12-16: Added more reliable instances
-// Updated 2025-12-18: Added high uptime instances from api.invidious.io
-// Updated 2025-12-19: Removed slow/timing out instances, added high uptime ones
+// Updated 2025-12-20: Removed yewtu.be (403 Forbidden on feed requests) and broken instances
+// Status: invidious.nerdvpn.de (100% uptime, working), invidious.f5.si (97.9% uptime, working)
 export const INVIDIOUS_INSTANCES = [
-  'https://invidious.ducks.cloud',
-  'https://inv.venom.is',
-  'https://invidious.nerdvpn.de',
-  'https://inv.perditum.com',
-  'https://inv.nadeko.net',
-  'https://inv.tux.pizza',
-  'https://yewtu.be',
-  'https://invidious.no-logs.com',
-  'https://iv.melmac.space',
-  'https://invidious.projectsegfau.lt',
-  'https://invidious.privacydev.net',
-  'https://invidious.waterpigs.me',
-  'https://invidious.lunar.icu',
-  'https://inv.zzls.xyz',
+  'https://invidious.nerdvpn.de', // 🇺🇦 UA - 100% uptime - VERIFIED WORKING
+  'https://invidious.f5.si', // 🇯🇵 JP - 97.9% uptime - VERIFIED WORKING
 ];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.
@@ -186,7 +170,9 @@ export const fetchViaProxy = async (
   let lastError: unknown = null;
   const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
   const currentStats: ProxyStats = JSON.parse(JSON.stringify(proxyStats || {}));
-  console.log(`[Proxy] Initializing fetchViaProxy for ${url}. proxies available: ${proxiesToUse.length} (${proxiesToUse.map(p => p.name).join(', ')})`);
+  console.log(
+    `[Proxy] Initializing fetchViaProxy for ${url}. proxies available: ${proxiesToUse.length} (${proxiesToUse.map(p => p.name).join(', ')})`
+  );
 
   // Helper to try a specific proxy/instance combination
   const tryRequest = async (
@@ -197,18 +183,17 @@ export const fetchViaProxy = async (
     if (disabledProxies?.has(compositeKey)) return null;
 
     try {
-      console.log(`[Proxy] Trying ${proxy.name} for: ${targetUrl.substring(0, 100)}${targetUrl.length > 100 ? '...' : ''}`);
+      console.log(
+        `[Proxy] Trying ${proxy.name} for: ${targetUrl.substring(0, 100)}${targetUrl.length > 100 ? '...' : ''}`
+      );
       const controller = new AbortController();
 
       // Respect passed-in signal if any, or use default 15s (reduced from 30s)
       const timeoutMs = 15000;
-      const timeoutId = setTimeout(
-        () => {
-          console.warn(`[Proxy] ${proxy.name} timed out after ${timeoutMs}ms`);
-          controller.abort('timeout');
-        },
-        timeoutMs
-      );
+      const timeoutId = setTimeout(() => {
+        console.warn(`[Proxy] ${proxy.name} timed out after ${timeoutMs}ms`);
+        controller.abort('timeout');
+      }, timeoutMs);
 
       const proxyUrl = proxy.buildUrl(targetUrl);
 
@@ -227,10 +212,14 @@ export const fetchViaProxy = async (
         if (fetchOptions.signal.aborted) {
           controller.abort('external');
         } else {
-          fetchOptions.signal.addEventListener('abort', () => {
-            console.warn(`[Proxy] External signal aborted for ${proxy.name}`);
-            controller.abort('external');
-          }, { once: true });
+          fetchOptions.signal.addEventListener(
+            'abort',
+            () => {
+              console.warn(`[Proxy] External signal aborted for ${proxy.name}`);
+              controller.abort('external');
+            },
+            { once: true }
+          );
         }
       }
 
@@ -331,4 +320,146 @@ export const fetchViaProxy = async (
   throw new Error(
     `Failed to fetch content after trying all available proxies. Last error: ${errorMessage}`
   );
+};
+
+export interface SourceTestResult {
+  name: string;
+  type: 'proxy' | 'invidious' | 'rsshub';
+  status: 'ok' | 'error';
+  latency: number;
+  message?: string;
+}
+
+/**
+ * Tests the availability and latency of all configured download sources.
+ */
+export const testAllSources = async (
+  onProgress?: (result: SourceTestResult) => void
+): Promise<SourceTestResult[]> => {
+  const results: SourceTestResult[] = [];
+  const TEST_RSS_URL =
+    'https://www.youtube.com/feeds/videos.xml?channel_id=UCBJycsmduvYEL83R_U4JriQ'; // MKBHD
+
+  const testProxy = async (proxy: (typeof PROXIES)[0]): Promise<SourceTestResult> => {
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const proxyUrl = proxy.buildUrl(TEST_RSS_URL);
+      const response = await fetch(proxyUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      const text = await proxy.parseResponse(response);
+      if (text && text.length > 0) {
+        return {
+          name: proxy.name,
+          type: 'proxy',
+          status: 'ok',
+          latency: Date.now() - start,
+        };
+      }
+      throw new Error('Empty response');
+    } catch (error) {
+      return {
+        name: proxy.name,
+        type: 'proxy',
+        status: 'error',
+        latency: Date.now() - start,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  const testInvidious = async (instance: string): Promise<SourceTestResult> => {
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      // Test the FEED endpoint (not video API) since that's what actually matters
+      // Using MKBHD's channel as a stable test case
+      const url = `${instance}/feed/channel/UCBJycsmduvYEL83R_U4JriQ`;
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const text = await response.text();
+        // Verify it's actually XML feed content
+        if (text && text.includes('<?xml') && text.includes('<feed')) {
+          return {
+            name: instance,
+            type: 'invidious',
+            status: 'ok',
+            latency: Date.now() - start,
+          };
+        }
+      }
+      throw new Error(`Status ${response.status}`);
+    } catch (error) {
+      return {
+        name: instance,
+        type: 'invidious',
+        status: 'error',
+        latency: Date.now() - start,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  const testRssHub = async (instance: string): Promise<SourceTestResult> => {
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      // Test with a simple Bilibili user feed if possible, or just the root/health
+      const url = `${instance}/bilibili/user/video/2267573`; // Random active user
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        return {
+          name: instance,
+          type: 'rsshub',
+          status: 'ok',
+          latency: Date.now() - start,
+        };
+      }
+      throw new Error(`Status ${response.status}`);
+    } catch (error) {
+      return {
+        name: instance,
+        type: 'rsshub',
+        status: 'error',
+        latency: Date.now() - start,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  // Run tests in parallel with a limited concurrency or just sequentially for better progress reporting
+  // Proxies
+  for (const proxy of PROXIES) {
+    const res = await testProxy(proxy);
+    results.push(res);
+    onProgress?.(res);
+  }
+
+  // Invidious (shuffled for better distribution in case many fail)
+  const shuffledInvidious = [...INVIDIOUS_INSTANCES].sort(() => Math.random() - 0.5);
+  for (const inst of shuffledInvidious) {
+    const res = await testInvidious(inst);
+    results.push(res);
+    onProgress?.(res);
+  }
+
+  // RSSHub
+  for (const inst of RSSHUB_INSTANCES) {
+    const res = await testRssHub(inst);
+    results.push(res);
+    onProgress?.(res);
+  }
+
+  return results;
 };

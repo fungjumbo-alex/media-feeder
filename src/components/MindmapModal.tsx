@@ -226,7 +226,15 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
   articles,
   onOpenArticle,
 }) => {
-  const { aiModel, defaultAiLanguage, aiHierarchy, setAiHierarchy } = useAppContext();
+  const {
+    aiModel,
+    defaultAiLanguage,
+    ytAiHierarchy,
+    setYtAiHierarchy,
+    nonYtAiHierarchy,
+    setNonYtAiHierarchy,
+  } = useAppContext();
+  const [activeTab, setActiveTab] = useState<'yt' | 'web'>('yt');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
   const [articleViewMode, setArticleViewMode] = useState<'list' | 'thumbnail'>('list');
@@ -234,18 +242,26 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
   const [isClustering, setIsClustering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleClusterWithAI = async () => {
+  const currentHierarchy = activeTab === 'yt' ? ytAiHierarchy : nonYtAiHierarchy;
+
+  const handleClusterWithAI = async (tabToCluster?: 'yt' | 'web') => {
+    const targetTab = tabToCluster || activeTab;
     setIsClustering(true);
     setError(null);
     try {
-      // Include all articles for grouping, limited to latest 400 to avoid token limits
+      const isVideoType = targetTab === 'yt';
       const articlesToCluster = articles
         .filter(a => a.title && a.id)
+        .filter(a =>
+          isVideoType
+            ? a.feedId.startsWith('yt-') || a.isVideo
+            : !a.feedId.startsWith('yt-') && !a.isVideo
+        )
         .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0))
         .slice(0, 400);
 
       if (articlesToCluster.length === 0) {
-        setError('No articles found to cluster. Please add some content first.');
+        setError(`No ${isVideoType ? 'YouTube' : 'web'} articles found to cluster.`);
         setIsClustering(false);
         return;
       }
@@ -253,9 +269,15 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
       const hierarchy = await generateMindmapHierarchy(
         articlesToCluster,
         aiModel,
+        isVideoType ? 'YouTube' : 'Web Articles',
         defaultAiLanguage
       );
-      setAiHierarchy(hierarchy);
+
+      if (isVideoType) {
+        setYtAiHierarchy(hierarchy);
+      } else {
+        setNonYtAiHierarchy(hierarchy);
+      }
       setExpandedTopics(new Set());
     } catch (error) {
       console.error('[Mindmap] Failed to cluster with AI:', error);
@@ -268,38 +290,30 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
     }
   };
 
-  // Auto-execute cluster with AI on first open if not already clustered
+  // Auto-execute cluster with AI on first open if active tab not already clustered
   React.useEffect(() => {
-    if (isOpen && !aiHierarchy && !isClustering && articles.length > 0) {
+    if (isOpen && !currentHierarchy && !isClustering && articles.length > 0) {
       handleClusterWithAI();
     }
-  }, [isOpen, aiHierarchy, isClustering, articles]);
+  }, [isOpen, currentHierarchy, isClustering, articles, activeTab]);
 
-  // Expand All: add all topic IDs to expanded set (show all articles)
   const handleExpandAll = () => {
-    if (!aiHierarchy) return;
+    if (!currentHierarchy) return;
 
     const allTopicIds: string[] = [];
-
-    // Traverse the hierarchy to get ALL topic IDs (roots and sub-topics)
-    aiHierarchy.rootTopics.forEach((rootTopic, rootIndex) => {
+    currentHierarchy.rootTopics.forEach((rootTopic, rootIndex) => {
       const rootId = `root-${rootIndex}`;
       allTopicIds.push(rootId);
-
-      // Add all sub-topic IDs
       rootTopic.subTopics.forEach((_, subIndex) => {
         const subId = `${rootId}-sub-${subIndex}`;
         allTopicIds.push(subId);
       });
     });
-
     setExpandedTopics(new Set(allTopicIds));
   };
 
-  // Collapse All: clear all expanded topics (hide all articles)
   const handleCollapseAll = () => setExpandedTopics(new Set());
 
-  // Toggle topic for outline view
   const handleToggleTopic = (topicId: string) => {
     setExpandedTopics(prev => {
       const next = new Set(prev);
@@ -318,9 +332,32 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
     <div className="fixed inset-0 bg-gray-900/95 backdrop-blur-sm z-50 flex flex-col">
       {/* Header */}
       <div className="relative flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
-        <h2 className="text-xl font-bold text-white">AI Grouping</h2>
+        <div className="flex items-center gap-6">
+          <h2 className="text-xl font-bold text-white">AI Grouping</h2>
+          <div className="flex bg-gray-800 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveTab('yt')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                activeTab === 'yt'
+                  ? 'bg-indigo-600 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              YouTube
+            </button>
+            <button
+              onClick={() => setActiveTab('web')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                activeTab === 'web'
+                  ? 'bg-indigo-600 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Web Articles
+            </button>
+          </div>
+        </div>
 
-        {/* Close button - always visible on mobile */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 hover:bg-gray-800 rounded-full transition-colors z-10"
@@ -355,7 +392,8 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
           <div className="flex gap-2 mr-4">
             <button
               onClick={() => {
-                setAiHierarchy(null);
+                if (activeTab === 'yt') setYtAiHierarchy(null);
+                else setNonYtAiHierarchy(null);
                 setExpandedTopics(new Set());
               }}
               disabled={isClustering}
@@ -392,14 +430,14 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
 
       {/* Outline View */}
       <div className="flex-1 min-h-0 relative">
-        {!aiHierarchy ? (
+        {!currentHierarchy ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center">
               {isClustering ? (
                 <>
                   <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                   <p className="text-gray-300 text-lg font-medium">
-                    Organizing articles with AI...
+                    Organizing {activeTab === 'yt' ? 'YouTube' : 'Web'} articles with AI...
                   </p>
                   <p className="text-gray-500 text-sm mt-2">
                     Creating a smart hierarchy of your content
@@ -410,7 +448,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
                   <div className="text-red-400 text-lg font-medium mb-2">Clustering Failed</div>
                   <p className="text-gray-300 text-sm">{error}</p>
                   <button
-                    onClick={handleClusterWithAI}
+                    onClick={() => handleClusterWithAI()}
                     className="mt-4 px-4 py-2 bg-red-700 hover:bg-red-600 text-white rounded-md text-sm font-medium transition-colors"
                   >
                     Try Again
@@ -420,7 +458,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
                 <>
                   <p className="text-gray-400 text-lg">No articles found</p>
                   <p className="text-gray-500 text-sm mt-2">
-                    Add some content to see it organized in the mindmap
+                    Add some {activeTab === 'yt' ? 'YouTube' : 'web'} content to see it organized
                   </p>
                 </>
               )}
@@ -428,7 +466,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
           </div>
         ) : (
           <OutlineView
-            hierarchy={aiHierarchy}
+            hierarchy={currentHierarchy}
             articles={articles}
             expandedTopics={expandedTopics}
             onToggleTopic={handleToggleTopic}

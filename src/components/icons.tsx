@@ -1246,3 +1246,43 @@ export const CalendarIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <line x1="3" y1="10" x2="21" y2="10" />
   </svg>
 );
+
+export const BugIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...props}
+  >
+    <rect width="8" height="14" x="8" y="6" rx="4" />
+    <path d="m19 7-3 3" />
+    <path d="m5 7 3 3" />
+    <path d="m19 19-3-3" />
+    <path d="m5 19 3-3" />
+    <path d="M2 12h6" />
+    <path d="M16 12h6" />
+  </svg>
+);
+
+export const ActivityIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...props}
+  >
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  </svg>
+);

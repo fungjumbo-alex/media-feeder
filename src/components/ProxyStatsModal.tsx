@@ -1,6 +1,15 @@
 import React from 'react';
 import { useAppContext } from '../contexts/AppContext';
-import { XIcon, BarChartIcon, TrashIcon, YouTubeIcon, RssIcon } from './icons';
+import {
+  XIcon,
+  BarChartIcon,
+  TrashIcon,
+  YouTubeIcon,
+  RssIcon,
+  RefreshIcon,
+  CheckCircleIcon,
+  XSquareIcon,
+} from './icons';
 import type { FeedType } from '../types';
 
 const ProxyTypeStats: React.FC<{
@@ -72,6 +81,9 @@ export const ProxyStatsModal: React.FC = () => {
     setRefreshBatchSize,
     refreshDelaySeconds,
     setRefreshDelaySeconds,
+    isTestingSources,
+    sourceTestResults,
+    handleTestAllSources,
   } = useAppContext();
 
   const isOpen = isProxyStatsModalOpen;
@@ -174,6 +186,66 @@ export const ProxyStatsModal: React.FC = () => {
                 <p className="text-xs text-gray-500 mt-1">Wait time between batches.</p>
               </div>
             </div>
+          </div>
+
+          <div className="bg-gray-700/50 p-4 rounded-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-semibold text-gray-100 text-lg">Availability Check</h3>
+              <button
+                onClick={handleTestAllSources}
+                disabled={isTestingSources}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
+              >
+                <RefreshIcon className={`w-3.5 h-3.5 ${isTestingSources ? 'animate-spin' : ''}`} />
+                {isTestingSources ? 'Testing...' : 'Test All Sources'}
+              </button>
+            </div>
+
+            {sourceTestResults.length > 0 ? (
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                {sourceTestResults.map((result, idx) => (
+                  <div
+                    key={`${result.name}-${idx}`}
+                    className="flex items-center justify-between text-xs bg-gray-900/50 p-2 rounded border border-gray-700/50"
+                  >
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      {result.status === 'ok' ? (
+                        <CheckCircleIcon className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      ) : (
+                        <XSquareIcon className="w-4 h-4 text-red-500 flex-shrink-0" />
+                      )}
+                      <div className="flex flex-col truncate">
+                        <span className="text-gray-200 truncate font-medium">{result.name}</span>
+                        <span className="text-gray-500 text-[10px] uppercase tracking-wider">
+                          {result.type}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0 ml-2">
+                      <span
+                        className={`font-mono ${result.latency < 500 ? 'text-green-400' : result.latency < 1500 ? 'text-yellow-400' : 'text-orange-400'}`}
+                      >
+                        {result.latency}ms
+                      </span>
+                      {result.status === 'error' && result.message && (
+                        <span className="text-red-400/80 italic text-[10px]" title={result.message}>
+                          Error
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : isTestingSources ? (
+              <div className="text-center py-6 text-gray-500 text-sm animate-pulse">
+                Running diagnostic tests for all sources...
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 text-center py-4 bg-gray-900/30 rounded border border-dashed border-gray-700">
+                Click "Test All Sources" to check availability and latency of all proxies and
+                instances.
+              </p>
+            )}
           </div>
 
           {statsArray.length > 0 ? (
