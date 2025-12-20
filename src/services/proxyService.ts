@@ -243,8 +243,6 @@ export const fetchViaProxy = async (
       console.log(`[Proxy] ${proxy.name} SUCCESS! Content length: ${content.length}`);
       return content;
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-
       let specificError = error;
       if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
         specificError = new Error(
