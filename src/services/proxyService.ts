@@ -169,6 +169,11 @@ export const PROXIES = [
 export const INVIDIOUS_INSTANCES = [
   'https://invidious.nerdvpn.de', // 🇺🇦 UA - 100% uptime - VERIFIED WORKING
   'https://invidious.f5.si', // 🇯🇵 JP - 97.9% uptime - VERIFIED WORKING
+  'https://inv.nadeko.net', // 🇩🇪 DE - High uptime
+  'https://inv.perditum.com', // 🇺🇸 US - High uptime
+  'https://invidious.lunar.icu', // 🇩🇪 DE
+  'https://invidious.io.lol', // 🇱🇺 LU
+  'https://iv.melmac.space', // 🇩🇪 DE
 ];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.

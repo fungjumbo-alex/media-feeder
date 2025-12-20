@@ -1,5 +1,12 @@
 import { INVIDIOUS_INSTANCES, fetchViaProxy } from './proxyService';
-import type { YouTubeSubscription, Feed, Article, YouTubeComment, TranscriptLine, CaptionChoice } from '../types';
+import type {
+  YouTubeSubscription,
+  Feed,
+  Article,
+  YouTubeComment,
+  TranscriptLine,
+  CaptionChoice,
+} from '../types';
 
 interface InvidiousVideoDetails {
   videoId: string;
@@ -549,16 +556,21 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
           console.warn(`[Transcript] Backend logic error: ${data.error}`);
         } else {
           // Standardize response format check
-          const transcript = data.transcript || data.snippets || (Array.isArray(data) ? data : null);
+          const transcript =
+            data.transcript || data.snippets || (Array.isArray(data) ? data : null);
           if (transcript && Array.isArray(transcript)) {
-            console.log(`[Transcript] Found transcript in backend response (${transcript.length} lines)`);
+            console.log(
+              `[Transcript] Found transcript in backend response (${transcript.length} lines)`
+            );
             return transcript;
           }
         }
       } else {
         try {
           const errorData = await response.json();
-          console.warn(`[Transcript] Backend failed (${response.status}): ${errorData.error || 'Unknown error'}`);
+          console.warn(
+            `[Transcript] Backend failed (${response.status}): ${errorData.error || 'Unknown error'}`
+          );
         } catch (e) {
           console.warn(`[Transcript] Backend failed (${response.status}). Trying fallback...`);
         }
@@ -567,7 +579,10 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
       console.warn(`[Transcript] Backend fetch exception, trying fallback: ${error}`);
     }
   } else {
-    console.log('[Transcript] URL is NOT a YouTube URL, skipping backend scraper and using proxy:', url);
+    console.log(
+      '[Transcript] URL is NOT a YouTube URL, skipping backend scraper and using proxy:',
+      url
+    );
   }
 
   // 2. Fallback to Invidious instances
@@ -591,7 +606,10 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   console.log(`[Transcript] Starting Invidious fallback for videoId: ${videoId}`);
   let lastError: unknown = null;
 
-  console.log(`%c[Transcript] V6-ULTRA: Racing ${INVIDIOUS_INSTANCES.length} instances...`, "color: #00ffff; font-weight: bold;");
+  console.log(
+    `%c[Transcript] V6-ULTRA: Racing ${INVIDIOUS_INSTANCES.length} instances...`,
+    'color: #00ffff; font-weight: bold;'
+  );
 
   const shuffled = [...INVIDIOUS_INSTANCES].sort(() => Math.random() - 0.5);
 
@@ -608,9 +626,17 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
     const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout for race
 
     try {
-      const content = await fetchViaProxy(captionsUrl, 'youtube', undefined, undefined, undefined, undefined, {
-        signal: controller.signal
-      } as any);
+      const content = await fetchViaProxy(
+        captionsUrl,
+        'youtube',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          signal: controller.signal,
+        } as any
+      );
 
       clearTimeout(timeoutId);
 
@@ -619,7 +645,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
       }
 
       const data = JSON.parse(content);
-      const captionsArray = Array.isArray(data) ? data : (data.captions || []);
+      const captionsArray = Array.isArray(data) ? data : data.captions || [];
 
       if (captionsArray.length === 0) throw new Error('No Captions');
 
@@ -634,6 +660,9 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
       return { instance, enCaption };
     } catch (e) {
       clearTimeout(timeoutId);
+      console.warn(
+        `[Transcript] Instance ${instance} FAILED: ${e instanceof Error ? e.message : String(e)}`
+      );
       throw e;
     }
   };
@@ -651,26 +680,49 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
     });
   };
 
-  // We race in batches of 4 to avoid overwhelming the proxy/Netlify
-  const batchSize = 4;
+  // We race in batches of 6 (increased from 4) to find working instances faster
+  const batchSize = 6;
+  console.log(
+    `[Transcript] Starting race with ${shuffled.length} instances in batches of ${batchSize}`
+  );
+
   for (let i = 0; i < shuffled.length; i += batchSize) {
     const batch = shuffled.slice(i, i + batchSize);
-    console.log(`[Transcript] Racing Batch ${Math.floor(i / batchSize) + 1}: ${batch.join(', ')}`);
+    console.log(
+      `[Transcript] Racing Batch ${Math.floor(i / batchSize) + 1}: ${batch.map(url => url.replace('https://', '')).join(', ')}`
+    );
 
     try {
       // Race the batch to find the first working bridge
-      const { instance: winnerInstance, enCaption } = await raceAny(batch.map(inst => tryInstance(inst)));
+      const { instance: winnerInstance, enCaption } = await raceAny(
+        batch.map(inst => tryInstance(inst))
+      );
 
-      console.log(`%c[Transcript] RACE WINNER: ${winnerInstance}`, "color: #00ff00; font-weight: bold;");
+      console.log(
+        `%c[Transcript] RACE WINNER: ${winnerInstance}`,
+        'color: #00ff00; font-weight: bold;'
+      );
 
       // Now fetch the actual content from the winner
-      const captionFileUrl = enCaption.url.startsWith('http') ? enCaption.url : `${winnerInstance}${enCaption.url}`;
+      const captionFileUrl = enCaption.url.startsWith('http')
+        ? enCaption.url
+        : `${winnerInstance}${enCaption.url}`;
+      console.log(`[Transcript] Fetching actual caption content from: ${captionFileUrl}`);
+
       const contentController = new AbortController();
       const contentTimeoutId = setTimeout(() => contentController.abort(), 20000);
 
-      let captionContent = await fetchViaProxy(captionFileUrl, 'youtube', undefined, undefined, undefined, undefined, {
-        signal: contentController.signal
-      } as any);
+      let captionContent = await fetchViaProxy(
+        captionFileUrl,
+        'youtube',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          signal: contentController.signal,
+        } as any
+      );
 
       clearTimeout(contentTimeoutId);
 
@@ -696,15 +748,20 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
 
         const snippets = parseVTT(captionContent);
         if (snippets.length > 0) {
-          console.log(`[Transcript] Successfully parsed ${snippets.length} snippets from ${winnerInstance}`);
+          console.log(
+            `[Transcript] Successfully parsed ${snippets.length} snippets from ${winnerInstance}`
+          );
           return snippets;
         }
         console.warn(`[Transcript] Parsed 0 snippets from ${winnerInstance} content.`);
       } else {
-        console.warn(`[Transcript] No suitable captions found on ${winnerInstance}`);
+        const errorType = !captionContent ? 'Empty' : 'HTML/Blocked';
+        console.warn(`[Transcript] ${errorType} content returned from ${winnerInstance}`);
       }
     } catch (error) {
-      console.warn(`[Transcript] Batch ${Math.floor(i / batchSize) + 1} failed or all were blocked.`, error);
+      console.warn(
+        `[Transcript] Batch ${Math.floor(i / batchSize) + 1} failed or all were blocked.`
+      );
       lastError = error;
     }
   }
@@ -722,11 +779,13 @@ export const getTranscriptChoices = async (videoId: string): Promise<CaptionChoi
   try {
     const snippets = await fetchTranscript(url);
     if (snippets && snippets.length > 0) {
-      return [{
-        label: 'English (Backend)',
-        language_code: 'en',
-        url: `backend-transcript:${videoId}`
-      }];
+      return [
+        {
+          label: 'English (Backend)',
+          language_code: 'en',
+          url: `backend-transcript:${videoId}`,
+        },
+      ];
     }
   } catch (e) {
     console.warn(`[Transcript] getTranscriptChoices: Backend attempt failed: ${e}`);
@@ -739,13 +798,13 @@ export const getTranscriptChoices = async (videoId: string): Promise<CaptionChoi
       const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
       const content = await fetchViaProxy(captionsUrl, 'youtube');
       const data = JSON.parse(content);
-      const captionsArray = Array.isArray(data) ? data : (data.captions || []);
+      const captionsArray = Array.isArray(data) ? data : data.captions || [];
 
       if (captionsArray.length > 0) {
         return captionsArray.map((c: any) => ({
           label: c.label || c.language_code || 'English',
           language_code: c.language_code || 'en',
-          url: c.url.startsWith('http') ? c.url : `${instance}${c.url}`
+          url: c.url.startsWith('http') ? c.url : `${instance}${c.url}`,
         }));
       }
     } catch (e) {

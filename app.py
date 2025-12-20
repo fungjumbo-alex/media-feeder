@@ -45,66 +45,77 @@ def get_transcript():
     
     try:
         # Instantiate the API class
+        print(f"[Backend] Fetching transcript for video_id: {video_id}")
         yt = YouTubeTranscriptApi()
         
         # List transcripts
-        transcript_list = yt.list(video_id)
+        try:
+            transcript_list = yt.list_transcripts(video_id)
+        except Exception as e:
+            print(f"[Backend] list_transcripts failed for {video_id}: {str(e)}")
+            return jsonify({'error': f'Could not list transcripts: {str(e)}'}), 404
         
         transcript_obj = None
         
-        # Try to find English
-        try:
-            transcript_obj = transcript_list.find_transcript(['en'])
-        except:
-             pass
-             
-        if not transcript_obj:
-            # Try to find generated English
-            try:
-                transcript_obj = transcript_list.find_generated_transcript(['en'])
-            except:
-                pass
-                
-        if not transcript_obj:
-            # Fallback to the first available one
-            for t in transcript_list:
+        # Priority 1: Manual English
+        # Priority 2: Generated English
+        # Priority 3: First available manual
+        # Priority 4: First available generated
+        
+        manual_transcripts = [t for t in transcript_list if not t.is_generated]
+        generated_transcripts = [t for t in transcript_list if t.is_generated]
+        
+        # Try manual English
+        for t in manual_transcripts:
+            if t.language_code.startswith('en'):
                 transcript_obj = t
+                print(f"[Backend] Found manual English transcript: {t.language_code}")
                 break
                 
         if not transcript_obj:
+            # Try generated English
+            for t in generated_transcripts:
+                if t.language_code.startswith('en'):
+                    transcript_obj = t
+                    print(f"[Backend] Found generated English transcript: {t.language_code}")
+                    break
+                    
+        if not transcript_obj:
+            # Fallback to any manual
+            if manual_transcripts:
+                transcript_obj = manual_transcripts[0]
+                print(f"[Backend] Falling back to manual {transcript_obj.language_code}")
+            elif generated_transcripts:
+                transcript_obj = generated_transcripts[0]
+                print(f"[Backend] Falling back to generated {transcript_obj.language_code}")
+                
+        if not transcript_obj:
+             print(f"[Backend] No transcripts found at all for {video_id}")
              return jsonify({'error': 'No transcript found for this video'}), 404
              
         transcript_data = transcript_obj.fetch()
+        print(f"[Backend] Successfully fetched {len(transcript_data)} lines for {video_id}")
         
         # Format the data
         formatted_transcript = []
         for item in transcript_data:
-            # Check if item is a dictionary or object
-            if isinstance(item, dict):
-                text = item['text']
-                start = item.get('start', 0)
-                duration = item.get('duration', 0)
-            else:
-                # Assume it's an object with attributes
-                text = item.text
-                start = item.start
-                duration = item.duration
-            
             formatted_transcript.append({
-                'text': text,
-                'start': start,
-                'duration': duration,
-                'timestamp': format_timestamp(start)
+                'text': item['text'],
+                'start': item['start'],
+                'duration': item.get('duration', 0),
+                'timestamp': format_timestamp(item['start'])
             })
             
         return jsonify({
             'video_id': video_id,
             'language': transcript_obj.language_code,
+            'is_generated': transcript_obj.is_generated,
             'transcript': formatted_transcript
         })
     except Exception as e:
-        print(f"Error fetching transcript: {str(e)}") # Add logging
-        return jsonify({'error': str(e)}), 500
+        error_msg = str(e)
+        print(f"[Backend] CRITICAL ERROR for {video_id}: {error_msg}")
+        return jsonify({'error': error_msg}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
