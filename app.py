@@ -30,8 +30,16 @@ def index():
 
 @app.route('/api/transcript', methods=['POST'])
 def get_transcript():
-    data = request.get_json()
-    url = data.get('url')
+    print(f"[Backend] Received request: {request.method} {request.url}", flush=True)
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            print("[Backend] Error: No JSON data received or invalid JSON", flush=True)
+            return jsonify({'error': 'JSON body is required'}), 400
+        url = data.get('url')
+    except Exception as e:
+        print(f"[Backend] JSON Parse Error: {str(e)}", flush=True)
+        return jsonify({'error': 'Invalid JSON'}), 400
     
     if not url:
         return jsonify({'error': 'URL is required'}), 400
@@ -46,7 +54,7 @@ def get_transcript():
     
     try:
         # Instantiate the API class
-        print(f"[Backend] Fetching transcript for video_id: {video_id}")
+        print(f"[Backend] Fetching transcript for video_id: {video_id}", flush=True)
         yt = YouTubeTranscriptApi()
         
         # List transcripts
@@ -54,7 +62,7 @@ def get_transcript():
             transcript_list = yt.list(video_id)
         except Exception as e:
             err_str = str(e)
-            print(f"[Backend] list_transcripts failed for {video_id}: {err_str}")
+            print(f"[Backend] list_transcripts failed for {video_id}: {err_str}", flush=True)
             # If YouTube blocks us, a specific error is usually raised
             if "status code 429" in err_str or "CAPTCHA" in err_str:
                  return jsonify({'error': 'Bot detection triggered (CAPTCHA). YouTube is blocking this server.'}), 500
@@ -76,7 +84,7 @@ def get_transcript():
         for t in manual_transcripts:
             if t.language_code.startswith('en'):
                 transcript_obj = t
-                print(f"[Backend] Selected manual English ({t.language_code})")
+                print(f"[Backend] Selected manual English ({t.language_code})", flush=True)
                 break
                 
         if not transcript_obj:
@@ -84,7 +92,7 @@ def get_transcript():
             for t in generated_transcripts:
                 if t.language_code.startswith('en'):
                     transcript_obj = t
-                    print(f"[Backend] Selected generated English ({t.language_code})")
+                    print(f"[Backend] Selected generated English ({t.language_code})", flush=True)
                     break
                     
         if not transcript_obj:
@@ -97,11 +105,11 @@ def get_transcript():
                 print(f"[Backend] Falling back to generated ({transcript_obj.language_code})")
                 
         if not transcript_obj:
-             print(f"[Backend] No transcripts found at all for {video_id}")
+             print(f"[Backend] No transcripts found at all for {video_id}", flush=True)
              return jsonify({'error': 'No transcript found for this video'}), 404
              
         transcript_data = transcript_obj.fetch()
-        print(f"[Backend] Successfully fetched {len(transcript_data)} lines for {video_id}")
+        print(f"[Backend] Successfully fetched {len(transcript_data)} lines for {video_id}", flush=True)
         
         # Format the data
         formatted_transcript = []
@@ -123,18 +131,27 @@ def get_transcript():
         import traceback
         error_msg = str(e)
         stack_trace = traceback.format_exc()
-        print(f"[Backend] CRITICAL ERROR for {video_id}: {error_msg}")
-        print(stack_trace)
+        print(f"[Backend] CRITICAL ERROR for {video_id}: {error_msg}", flush=True)
+        print(stack_trace, flush=True)
         
-        # Specific patterns to help user
-        if "Could not retrieve a transcript" in error_msg:
-            return jsonify({'error': 'No transcript found for this video. It might be disabled or private.'}), 404
+        if "Could not retrieve a transcript" in error_msg or "IpBlocked" in error_msg:
+            print(f"[Backend] IP Blocked by YouTube for {video_id}", flush=True)
+            return jsonify({
+                'error': 'YouTube is blocking this server\'s IP. Try a different fetching method.',
+                'code': 'IP_BLOCKED',
+                'video_id': video_id
+            }), 429
             
         return jsonify({
             'error': error_msg,
             'details': 'Check Python console for full stack trace',
             'video_id': video_id
         }), 500
+
+@app.errorhandler(404)
+def page_not_found(e):
+    print(f"[Backend] 404 NOT FOUND: {request.method} {request.url}", flush=True)
+    return jsonify(error="Not Found", method=request.method, url=request.url), 404
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

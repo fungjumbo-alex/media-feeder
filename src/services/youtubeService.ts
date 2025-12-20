@@ -925,17 +925,21 @@ export const fetchDirectScrapeTranscript = async (
   watchUrl: string,
   successfulProxyName: string
 ): Promise<TranscriptLine[]> => {
-  const successfulProxy = PROXIES.find(p => p.name === successfulProxyName) || PROXIES[1];
+  const successfulProxy = PROXIES.find(p => p.name === successfulProxyName);
 
-  // V17.2 Enhancement: Use specific headers to avoid Length 0 status 200 issue.
-  // We use lowercase custom headers because Netlify/Vite often normalize them.
+  // V17.9 Improvement: Prioritize the successful proxy for IP consistency,
+  // but allow falling back to others if it's now being rate-limited (429).
+  const proxiesToTry = successfulProxy
+    ? [successfulProxy, ...PROXIES.filter(p => p.name !== successfulProxyName)]
+    : PROXIES;
+
   const { content: vttContent } = await fetchViaProxy(
     vttUrl,
     'youtube',
     undefined,
     undefined,
     undefined,
-    [successfulProxy],
+    proxiesToTry,
     {
       headers: {
         'x-proxy-referer': watchUrl,
@@ -966,7 +970,7 @@ export const fetchDirectScrapeTranscript = async (
     undefined,
     undefined,
     undefined,
-    [successfulProxy],
+    proxiesToTry,
     {
       headers: {
         'x-proxy-referer': watchUrl,
@@ -1011,7 +1015,7 @@ export const fetchDirectScrapeTranscript = async (
     undefined,
     undefined,
     undefined,
-    [successfulProxy],
+    proxiesToTry,
     {
       headers: {
         'x-proxy-referer': watchUrl,
