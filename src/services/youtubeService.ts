@@ -165,11 +165,24 @@ const handleYouTubeError = async (response: Response, defaultMessage: string): P
 // FIX: Implement and export getYouTubeId to resolve import errors across the application.
 export const getYouTubeId = (url: string | null): string | null => {
   if (!url) return null;
-  // Improved regex to handle standard YouTube URLs, Shorts, and Invidious caption URLs
+
+  // 1. Try explicit Invidious API pattern first
+  if (url.includes('/api/v1/captions/')) {
+    const parts = url.split('/api/v1/captions/');
+    const idPart = parts[1]?.split(/[?&#]/)[0];
+    if (idPart?.length === 11) return idPart;
+  }
+
+  // 2. Standard YouTube patterns (watch, shorts, embed, short url)
   const regExp =
     /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/|api\/v1\/captions\/)([^#&?]*).*/;
   const match = url.match(regExp);
-  return match && match[2].length === 11 ? match[2] : null;
+  if (match && match[2].length === 11) return match[2];
+
+  // 3. Fallback: search for any 11-char string that looks like an ID if the context is right
+  if (url.length === 11) return url;
+
+  return null;
 };
 
 // FIX: Implement and export fetchYouTubeComments to resolve import error.
@@ -597,9 +610,13 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
         if (content) {
           const snippets = parseVTT(content);
           if (snippets.length > 0) return snippets;
+          throw new Error('No snippets found in caption file.');
         }
+        throw new Error('Empty response from caption source.');
       } catch (e) {
-        console.warn(`[Transcript] Direct caption fetch failed: ${e}`);
+        throw new Error(
+          `Direct caption fetch failed: ${e instanceof Error ? e.message : String(e)}`
+        );
       }
     }
     throw new Error('Could not identify Video ID or valid caption source from URL.');
@@ -609,7 +626,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   let lastError: unknown = null;
 
   console.log(
-    `%c[Transcript] V6-ULTRA: Racing ${INVIDIOUS_INSTANCES.length} instances...`,
+    `%c[Transcript] V11-HARDENED: Racing ${INVIDIOUS_INSTANCES.length} instances...`,
     'color: #00ffff; font-weight: bold;'
   );
 
@@ -625,7 +642,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   const tryInstance = async (instance: string) => {
     const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout for race
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout for race - increased from 12s
 
     try {
       const content = await fetchViaProxy(
@@ -718,19 +735,26 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
           console.log(`[Transcript] Fetching actual caption content from: ${captionFileUrl}`);
 
           const contentController = new AbortController();
-          const contentTimeoutId = setTimeout(() => contentController.abort(), 20000);
+          const contentTimeoutId = setTimeout(() => contentController.abort(), 25000); // 25s for content fetch
 
-          let captionContent = await fetchViaProxy(
-            captionFileUrl,
-            'youtube',
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            {
-              signal: contentController.signal,
-            } as any
-          );
+          let captionContent: string | null = null;
+          try {
+            captionContent = await fetchViaProxy(
+              captionFileUrl,
+              'youtube',
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              {
+                signal: contentController.signal,
+              } as any
+            );
+          } catch (fetchErr) {
+            console.warn(
+              `[Transcript] Failed to fetch content from winner ${winnerInstance}: ${fetchErr}`
+            );
+          }
 
           clearTimeout(contentTimeoutId);
 
@@ -767,7 +791,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
             console.warn(`[Transcript] ${errorType} content returned from ${winnerInstance}`);
           }
 
-          // If we reach here, the winner failed to provide content. Remove it and race the rest of the batch.
+          // If we reach here, this winner failed. Remove it and try the race again with remaining.
           const winnerIndex = instancesInBatch.indexOf(winnerInstance);
           if (winnerIndex !== -1) {
             instancesInBatch.splice(winnerIndex, 1);
@@ -775,11 +799,11 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
               `[Transcript] Retrying remaining ${instancesInBatch.length} instances in Batch ${Math.floor(i / batchSize) + 1}...`
             );
           } else {
-            break; // Should not happen
+            break;
           }
         } catch (raceError) {
-          // If the race itself fails (all instances in this batch failed)
-          console.warn(`[Transcript] Batch race failed: ${String(raceError)}`);
+          // If the race itself fails or winners are exhausted
+          console.warn(`[Transcript] Batch race finished or failed: ${String(raceError)}`);
           break; // Move to next batch
         }
       }
@@ -816,7 +840,7 @@ export const getTranscriptChoices = async (videoId: string): Promise<CaptionChoi
 
   // Method 2: Invidious list
   let lastError: any = null;
-  for (const instance of (INVIDIOUS_INSTANCES || []).slice(0, 3)) {
+  for (const instance of (INVIDIOUS_INSTANCES || []).slice(0, 10)) {
     try {
       const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
       const content = await fetchViaProxy(captionsUrl, 'youtube');
