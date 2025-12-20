@@ -164,15 +164,17 @@ export const PROXIES = [
 ];
 
 // List of public Invidious instances, which can act as proxies for YouTube content.
-// Updated 2025-12-20: Removed yewtu.be (403 Forbidden on feed requests) and broken instances
-// Status: invidious.nerdvpn.de (100% uptime, working), invidious.f5.si (97.9% uptime, working)
+// Updated 2025-12-20: Expanded with more high-uptime instances
 export const INVIDIOUS_INSTANCES = [
-  'https://invidious.nerdvpn.de', // 🇺🇦 UA - 100% uptime - VERIFIED WORKING
-  'https://invidious.f5.si', // 🇯🇵 JP - 97.9% uptime - VERIFIED WORKING
+  'https://invidious.nerdvpn.de', // 🇺🇦 UA - 100% uptime
+  'https://invidious.f5.si', // 🇯🇵 JP - 97.9% uptime
   'https://inv.nadeko.net', // 🇩🇪 DE - High uptime
   'https://inv.perditum.com', // 🇺🇸 US - High uptime
-  'https://invidious.lunar.icu', // 🇩🇪 DE
+  'https://iv.ggtyler.dev', // 🇺🇸 US
   'https://invidious.io.lol', // 🇱🇺 LU
+  'https://iv.n8pjl.ca', // 🇨🇦 CA
+  'https://invidious.flokinet.to', // 🇷🇴 RO
+  'https://invidious.lunar.icu', // 🇩🇪 DE
   'https://iv.melmac.space', // 🇩🇪 DE
 ];
 
@@ -269,7 +271,7 @@ export const fetchViaProxy = async (
         signal: controller.signal,
       };
 
-      // Handle the case where the external signal is already aborted
+      // If the external signal is aborted, we definitely should stop
       if (fetchOptions.signal?.aborted) {
         throw new Error('Signal already aborted');
       }
@@ -319,6 +321,11 @@ export const fetchViaProxy = async (
 
       lastError = specificError;
       onAttempt?.(proxy.name, 'failure', feedType);
+
+      // If the error was a signal abort (timeout), we should stop the whole loop
+      if (finalErrorMsg.includes('Signal already aborted') || finalErrorMsg.includes('timeout')) {
+        throw specificError;
+      }
 
       if (!currentStats[proxy.name]) {
         currentStats[proxy.name] = {

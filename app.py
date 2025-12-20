@@ -52,24 +52,30 @@ def get_transcript():
         try:
             transcript_list = yt.list_transcripts(video_id)
         except Exception as e:
-            print(f"[Backend] list_transcripts failed for {video_id}: {str(e)}")
-            return jsonify({'error': f'Could not list transcripts: {str(e)}'}), 404
+            err_str = str(e)
+            print(f"[Backend] list_transcripts failed for {video_id}: {err_str}")
+            # If YouTube blocks us, a specific error is usually raised
+            if "status code 429" in err_str or "CAPTCHA" in err_str:
+                 return jsonify({'error': 'Bot detection triggered (CAPTCHA). YouTube is blocking this server.'}), 500
+            return jsonify({'error': f'Could not list transcripts: {err_str}'}), 404
         
         transcript_obj = None
         
         # Priority 1: Manual English
         # Priority 2: Generated English
-        # Priority 3: First available manual
-        # Priority 4: First available generated
+        # Priority 3: Manual other language (translated to English if possible?)
+        # Priority 4: First available
         
         manual_transcripts = [t for t in transcript_list if not t.is_generated]
         generated_transcripts = [t for t in transcript_list if t.is_generated]
         
+        print(f"[Backend] Found {len(manual_transcripts)} manual and {len(generated_transcripts)} generated transcripts.")
+
         # Try manual English
         for t in manual_transcripts:
             if t.language_code.startswith('en'):
                 transcript_obj = t
-                print(f"[Backend] Found manual English transcript: {t.language_code}")
+                print(f"[Backend] Selected manual English ({t.language_code})")
                 break
                 
         if not transcript_obj:
@@ -77,17 +83,17 @@ def get_transcript():
             for t in generated_transcripts:
                 if t.language_code.startswith('en'):
                     transcript_obj = t
-                    print(f"[Backend] Found generated English transcript: {t.language_code}")
+                    print(f"[Backend] Selected generated English ({t.language_code})")
                     break
                     
         if not transcript_obj:
-            # Fallback to any manual
+            # Fallback to any manual then any generated
             if manual_transcripts:
                 transcript_obj = manual_transcripts[0]
-                print(f"[Backend] Falling back to manual {transcript_obj.language_code}")
+                print(f"[Backend] Falling back to manual ({transcript_obj.language_code})")
             elif generated_transcripts:
                 transcript_obj = generated_transcripts[0]
-                print(f"[Backend] Falling back to generated {transcript_obj.language_code}")
+                print(f"[Backend] Falling back to generated ({transcript_obj.language_code})")
                 
         if not transcript_obj:
              print(f"[Backend] No transcripts found at all for {video_id}")

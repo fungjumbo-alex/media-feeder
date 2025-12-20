@@ -165,7 +165,9 @@ const handleYouTubeError = async (response: Response, defaultMessage: string): P
 // FIX: Implement and export getYouTubeId to resolve import errors across the application.
 export const getYouTubeId = (url: string | null): string | null => {
   if (!url) return null;
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/)([^#&?]*).*/;
+  // Improved regex to handle standard YouTube URLs, Shorts, and Invidious caption URLs
+  const regExp =
+    /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/|api\/v1\/captions\/)([^#&?]*).*/;
   const match = url.match(regExp);
   return match && match[2].length === 11 ? match[2] : null;
 };
@@ -680,7 +682,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
     });
   };
 
-  // We race in batches of 6 (increased from 4) to find working instances faster
+  // We race in batches of 6 to find working instances faster
   const batchSize = 6;
   console.log(
     `[Transcript] Starting race with ${shuffled.length} instances in batches of ${batchSize}`
@@ -694,74 +696,95 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
 
     try {
       // Race the batch to find the first working bridge
-      const { instance: winnerInstance, enCaption } = await raceAny(
-        batch.map(inst => tryInstance(inst))
-      );
+      // We wrap the race in a loop so if one winner returns empty content, we can potentially try others in the same batch
+      const instancesInBatch = [...batch];
 
-      console.log(
-        `%c[Transcript] RACE WINNER: ${winnerInstance}`,
-        'color: #00ff00; font-weight: bold;'
-      );
-
-      // Now fetch the actual content from the winner
-      const captionFileUrl = enCaption.url.startsWith('http')
-        ? enCaption.url
-        : `${winnerInstance}${enCaption.url}`;
-      console.log(`[Transcript] Fetching actual caption content from: ${captionFileUrl}`);
-
-      const contentController = new AbortController();
-      const contentTimeoutId = setTimeout(() => contentController.abort(), 20000);
-
-      let captionContent = await fetchViaProxy(
-        captionFileUrl,
-        'youtube',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        {
-          signal: contentController.signal,
-        } as any
-      );
-
-      clearTimeout(contentTimeoutId);
-
-      if (captionContent && !isHtml(captionContent)) {
-        // Handle Data URI if returned by proxy/instance
-        if (captionContent.startsWith('data:')) {
-          const base64Marker = ';base64,';
-          const markerIndex = captionContent.indexOf(base64Marker);
-          if (markerIndex !== -1) {
-            const base64 = captionContent.substring(markerIndex + base64Marker.length);
-            try {
-              captionContent = atob(base64);
-            } catch (e) {
-              console.warn('[Transcript] Failed to decode base64 caption content', e);
-            }
-          } else {
-            const commaIndex = captionContent.indexOf(',');
-            if (commaIndex !== -1) {
-              captionContent = decodeURIComponent(captionContent.substring(commaIndex + 1));
-            }
-          }
-        }
-
-        const snippets = parseVTT(captionContent);
-        if (snippets.length > 0) {
-          console.log(
-            `[Transcript] Successfully parsed ${snippets.length} snippets from ${winnerInstance}`
+      while (instancesInBatch.length > 0) {
+        try {
+          // Race the remaining instances in the batch
+          const { instance: winnerInstance, enCaption } = await raceAny(
+            instancesInBatch.map(inst => tryInstance(inst))
           );
-          return snippets;
+
+          console.log(
+            `%c[Transcript] RACE WINNER: ${winnerInstance}`,
+            'color: #00ff00; font-weight: bold;'
+          );
+
+          // Now fetch the actual content from the winner
+          const captionFileUrl = enCaption.url.startsWith('http')
+            ? enCaption.url
+            : `${winnerInstance}${enCaption.url}`;
+          console.log(`[Transcript] Fetching actual caption content from: ${captionFileUrl}`);
+
+          const contentController = new AbortController();
+          const contentTimeoutId = setTimeout(() => contentController.abort(), 20000);
+
+          let captionContent = await fetchViaProxy(
+            captionFileUrl,
+            'youtube',
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            {
+              signal: contentController.signal,
+            } as any
+          );
+
+          clearTimeout(contentTimeoutId);
+
+          if (captionContent && !isHtml(captionContent)) {
+            // Handle Data URI if returned by proxy/instance
+            if (captionContent.startsWith('data:')) {
+              const base64Marker = ';base64,';
+              const markerIndex = captionContent.indexOf(base64Marker);
+              if (markerIndex !== -1) {
+                const base64 = captionContent.substring(markerIndex + base64Marker.length);
+                try {
+                  captionContent = atob(base64);
+                } catch (e) {
+                  console.warn('[Transcript] Failed to decode base64 caption content', e);
+                }
+              } else {
+                const commaIndex = captionContent.indexOf(',');
+                if (commaIndex !== -1) {
+                  captionContent = decodeURIComponent(captionContent.substring(commaIndex + 1));
+                }
+              }
+            }
+
+            const snippets = parseVTT(captionContent);
+            if (snippets.length > 0) {
+              console.log(
+                `[Transcript] Successfully parsed ${snippets.length} snippets from ${winnerInstance}`
+              );
+              return snippets;
+            }
+            console.warn(`[Transcript] Parsed 0 snippets from ${winnerInstance} content.`);
+          } else {
+            const errorType = !captionContent ? 'Empty' : 'HTML/Blocked';
+            console.warn(`[Transcript] ${errorType} content returned from ${winnerInstance}`);
+          }
+
+          // If we reach here, the winner failed to provide content. Remove it and race the rest of the batch.
+          const winnerIndex = instancesInBatch.indexOf(winnerInstance);
+          if (winnerIndex !== -1) {
+            instancesInBatch.splice(winnerIndex, 1);
+            console.log(
+              `[Transcript] Retrying remaining ${instancesInBatch.length} instances in Batch ${Math.floor(i / batchSize) + 1}...`
+            );
+          } else {
+            break; // Should not happen
+          }
+        } catch (raceError) {
+          // If the race itself fails (all instances in this batch failed)
+          console.warn(`[Transcript] Batch race failed: ${String(raceError)}`);
+          break; // Move to next batch
         }
-        console.warn(`[Transcript] Parsed 0 snippets from ${winnerInstance} content.`);
-      } else {
-        const errorType = !captionContent ? 'Empty' : 'HTML/Blocked';
-        console.warn(`[Transcript] ${errorType} content returned from ${winnerInstance}`);
       }
     } catch (error) {
-      console.warn(
-        `[Transcript] Batch ${Math.floor(i / batchSize) + 1} failed or all were blocked.`
-      );
+      console.warn(`[Transcript] Batch ${Math.floor(i / batchSize) + 1} processing error:`, error);
       lastError = error;
     }
   }
