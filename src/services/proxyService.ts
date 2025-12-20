@@ -1,6 +1,42 @@
 /// <reference types="vite/client" />
 import type { ProxyAttemptCallback, ProxyStats, FeedType } from '../types';
 
+/**
+ * Checks if the content returned is a bot detection challenge page or a YouTube consent page.
+ * Returns a descriptive reason if it's a challenge, or null if it appears valid.
+ */
+export const checkForBotChallenge = (text: string): string | null => {
+  const normalizedText = text.toLowerCase();
+
+  // YouTube Consent Page
+  if (
+    normalizedText.includes('before you continue to youtube') ||
+    normalizedText.includes('consent.google.com')
+  ) {
+    return 'YouTube Consent Page';
+  }
+
+  // Anubis Bot Detection (Common on some Invidious instances)
+  if (
+    normalizedText.includes("making sure you're not a bot!") ||
+    normalizedText.includes('anubis_challenge') ||
+    normalizedText.includes('protected by anubis')
+  ) {
+    return 'Bot Challenge (Anubis)';
+  }
+
+  // Generic Search/Bot protection strings
+  if (
+    normalizedText.includes('captcha-delivery.com') ||
+    normalizedText.includes('challenge-platform/h/g') ||
+    (normalizedText.includes('<title>access denied') && normalizedText.includes('cloudflare'))
+  ) {
+    return 'Bot Challenge (Generic/Cloudflare)';
+  }
+
+  return null;
+};
+
 // List of proxies to try in order.
 // Each proxy has a function to construct its URL and a function to parse its response.
 export const PROXIES = [
@@ -11,7 +47,12 @@ export const PROXIES = [
       if (!response.ok) {
         throw new Error(`Browser Direct responded with status ${response.status}`);
       }
-      return response.text();
+      const text = await response.text();
+      const botReason = checkForBotChallenge(text);
+      if (botReason) {
+        throw new Error(`Browser Direct blocked by ${botReason}.`);
+      }
+      return text;
     },
   },
   {
@@ -19,17 +60,15 @@ export const PROXIES = [
     buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}&t=${Date.now()}`,
     parseResponse: async (response: Response): Promise<string> => {
       const text = await response.text();
-      // Check for common error pages that return 200 OK
-      const isConsentPage =
-        text.includes('Before you continue to YouTube') || text.includes('consent.google.com');
+      const botReason = checkForBotChallenge(text);
       const isHtmlError =
         text.trim().startsWith('<!DOCTYPE html') || text.trim().startsWith('<html');
 
       // If we expect XML (RSS/Atom) but get HTML, it's likely an error or blocking page
       // Exception: Some valid feeds might be wrapped in HTML (rare), but for YouTube/RSS it's usually bad
       // 3000 chars covers the 1781 bytes "Before you continue" page
-      if (isConsentPage || (text.length < 3000 && isHtmlError)) {
-        const reason = isConsentPage ? 'YouTube Consent Page' : 'invalid short HTML/error page';
+      if (botReason || (text.length < 3000 && isHtmlError)) {
+        const reason = botReason || 'invalid short HTML/error page';
         console.error(
           `[App Proxy] potentially invalid content (${reason}) for ${response.url}:`,
           text.substring(0, 500)
@@ -57,6 +96,15 @@ export const PROXIES = [
         throw new Error(`Proxy AllOrigins responded with status ${response.status}`);
       }
       const data = await response.json();
+
+      // Check for bot challenges in the nested content
+      if (typeof data.contents === 'string') {
+        const botReason = checkForBotChallenge(data.contents);
+        if (botReason) {
+          throw new Error(`Proxy AllOrigins (nest) blocked by ${botReason}.`);
+        }
+      }
+
       // AllOrigins returns the status code of the fetched URL in `status.http_code`
       if (data.status?.http_code && data.status.http_code >= 400) {
         throw new Error(
@@ -77,7 +125,12 @@ export const PROXIES = [
       if (!response.ok) {
         throw new Error(`Proxy AllOriginsRaw responded with status ${response.status}`);
       }
-      return response.text();
+      const text = await response.text();
+      const botReason = checkForBotChallenge(text);
+      if (botReason) {
+        throw new Error(`Proxy AllOriginsRaw blocked by ${botReason}.`);
+      }
+      return text;
     },
   },
   {
@@ -100,7 +153,12 @@ export const PROXIES = [
         }
         throw new Error(`Proxy corsproxy.io responded with status ${response.status}`);
       }
-      return response.text();
+      const text = await response.text();
+      const botReason = checkForBotChallenge(text);
+      if (botReason) {
+        throw new Error(`Proxy corsproxy.io blocked by ${botReason}.`);
+      }
+      return text;
     },
   },
 ];
