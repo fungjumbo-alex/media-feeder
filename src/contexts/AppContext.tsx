@@ -461,6 +461,7 @@ interface AppContextType {
   exportTextContent: string;
   proxyStats: ProxyStats;
   disabledProxies: Set<string>;
+  handleResetNetworkSettings: () => void;
   handleProxyAttempt: (
     proxyName: string,
     status: 'success' | 'failure',
@@ -4268,6 +4269,16 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     },
     [setToast]
   );
+  const handleResetNetworkSettings = useCallback(() => {
+    setDisabledProxies(new Set());
+    setProxyStats({});
+    localStorage.removeItem(DISABLED_PROXIES_KEY);
+    localStorage.removeItem(PROXY_STATS_KEY);
+    setToast({
+      message: 'Network settings and statistics have been reset.',
+      type: 'success',
+    });
+  }, [setToast]);
 
   const handleGoogleSignOut = useCallback(() => {
     if (accessToken) {
@@ -6995,6 +7006,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     exportTextContent,
     proxyStats,
     disabledProxies,
+    handleResetNetworkSettings,
     handleProxyAttempt,
     handleClearProxyStats,
     handleToggleProxy,
