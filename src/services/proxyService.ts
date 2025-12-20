@@ -29,11 +29,12 @@ export const PROXIES = [
       // Exception: Some valid feeds might be wrapped in HTML (rare), but for YouTube/RSS it's usually bad
       // 3000 chars covers the 1781 bytes "Before you continue" page
       if (isConsentPage || (text.length < 3000 && isHtmlError)) {
+        const reason = isConsentPage ? 'YouTube Consent Page' : 'invalid short HTML/error page';
         console.error(
-          `[App Proxy] potentially invalid content for ${response.url}:`,
+          `[App Proxy] potentially invalid content (${reason}) for ${response.url}:`,
           text.substring(0, 500)
         );
-        throw new Error(`App Proxy returned invalid content (likely consent page or error).`);
+        throw new Error(`App Proxy blocked by ${reason}.`);
       }
 
       if (!response.ok) {
