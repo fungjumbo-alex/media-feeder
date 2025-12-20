@@ -166,8 +166,8 @@ export const INVIDIOUS_INSTANCES = [
   'https://inv.nadeko.net', // 🇩🇪 DE - High uptime
   'https://iv.ggtyler.dev', // 🇺🇸 US
   'https://invidious.tiekoetter.com', // 🇩🇪 DE
-  'https://invidious.snopyta.org', // High reputation
   'https://iv.melmac.space', // 🇩🇪 DE
+  'https://invidious.privacyredirect.com', // 🇺🇸 US - Reliable
 ];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.
