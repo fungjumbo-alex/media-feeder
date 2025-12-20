@@ -174,7 +174,7 @@ const App: React.FC = () => {
   useEffect(() => {
     // CRITICAL: If you see "IJyIUayD" in logs, you are NOT on the new version.
     console.log(
-      `%c[Build] STATUS: V12-ULTRA (20:10:48)`,
+      `%c[Build] STATUS: V13-ULTRA (20:19:48)`,
       'color: #ffffff; font-weight: bold; background: #800080; padding: 5px; border-radius: 4px;'
     );
 

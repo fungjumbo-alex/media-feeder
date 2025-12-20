@@ -599,6 +599,22 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
     );
   }
 
+  // 1.5 NEW: Direct YouTube Page Scrape Fallback (V13)
+  if (isYoutubeUrl && videoId) {
+    try {
+      console.log(`[Transcript] Trying Direct YouTube Scraping for: ${videoId}`);
+      const directSnippets = await scrapeYouTubePage(videoId);
+      if (directSnippets && directSnippets.length > 5) {
+        console.log(
+          `[Transcript] Successfully scraped ${directSnippets.length} snippets directly from YouTube page.`
+        );
+        return directSnippets;
+      }
+    } catch (scrapeErr) {
+      console.warn(`[Transcript] Direct scraping failed: ${scrapeErr}`);
+    }
+  }
+
   // 2. Fallback to Invidious instances
   if (!videoId) {
     // If it's already an external transcript URL (not a video URL), try fetching it via proxy directly
@@ -818,6 +834,69 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
   console.error(`[Transcript] FAILED after trying all sources: ${errorMessage}`);
   throw new Error(`Failed to fetch transcript from all sources. Last error: ${errorMessage}`);
+};
+
+/**
+ * NEW: V13 Direct YouTube Scraper
+ * Extracts ytInitialPlayerResponse from the watch page to find caption URLs.
+ */
+export const scrapeYouTubePage = async (videoId: string): Promise<TranscriptLine[]> => {
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // Use a broad search but prioritize proxies that handle HTML well
+  const html = await fetchViaProxy(watchUrl, 'youtube', undefined, undefined, undefined, [
+    PROXIES[1], // App Proxy
+    PROXIES[2], // AllOrigins
+    PROXIES[4], // corsproxy.io
+    PROXIES[5], // cors.sh
+  ]);
+
+  if (!html || !html.includes('ytInitialPlayerResponse')) {
+    throw new Error('Could not find player response in YouTube HTML.');
+  }
+
+  // Extract the JSON blob
+  const regex = /ytInitialPlayerResponse\s*=\s*({.+?});/s;
+  const match = html.match(regex);
+  if (!match) throw new Error('Failed to parse ytInitialPlayerResponse via regex.');
+
+  let playerResponse;
+  try {
+    playerResponse = JSON.parse(match[1]);
+  } catch (e) {
+    throw new Error('Failed to parse player response JSON.');
+  }
+
+  const captions = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!captions || !Array.isArray(captions) || captions.length === 0) {
+    throw new Error('No caption tracks found in player response.');
+  }
+
+  // Prioritize English (manual > generated)
+  const englishTrack =
+    captions.find((c: any) => c.languageCode === 'en' && c.kind !== 'asr') ||
+    captions.find((c: any) => c.languageCode === 'en') ||
+    captions[0];
+
+  if (!englishTrack?.baseUrl) {
+    throw new Error('No suitable caption track URL found.');
+  }
+
+  // Build the VTT URL
+  let vttUrl = englishTrack.baseUrl;
+  if (!vttUrl.includes('fmt=vtt')) {
+    vttUrl += (vttUrl.includes('?') ? '&' : '?') + 'fmt=vtt';
+  }
+
+  console.log(`[Transcript] Scraped direct VTT URL: ${vttUrl}`);
+  const vttContent = await fetchViaProxy(vttUrl, 'youtube');
+
+  if (!vttContent || vttContent.startsWith('<!doctype')) {
+    throw new Error('Failed to fetch VTT content from scraped URL.');
+  }
+
+  const snippets = parseVTT(vttContent);
+  return snippets;
 };
 
 export const getTranscriptChoices = async (videoId: string): Promise<CaptionChoice[]> => {
