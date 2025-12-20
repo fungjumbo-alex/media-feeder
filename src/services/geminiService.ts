@@ -27,7 +27,7 @@ export class QuotaExceededError extends Error {
 // FIX: Modified function to return a `WebSource` object, including the `uri`.
 const fetchPageDetails = async (url: string): Promise<WebSource> => {
   try {
-    const htmlContent = await fetchViaProxy(url, 'rss'); // Using 'rss' type for general web page fetching
+    const { content: htmlContent } = await fetchViaProxy(url, 'rss'); // Using 'rss' type for general web page fetching
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlContent, 'text/html');
 
@@ -138,7 +138,7 @@ const verifyAndGetCanonicalUrl = async (url: string): Promise<string | null> => 
     return url;
   }
   try {
-    const htmlContent = await fetchViaProxy(url, 'youtube');
+    const { content: htmlContent } = await fetchViaProxy(url, 'youtube');
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlContent, 'text/html');
 

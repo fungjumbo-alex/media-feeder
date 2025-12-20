@@ -16,7 +16,7 @@ export const fetchContentFromPastebinUrl = async (pastebinUrl: string): Promise<
 
   try {
     // Using 'rss' feedType for proxy as it's just fetching text content.
-    const content = await fetchViaProxy(rawUrl, 'rss');
+    const { content } = await fetchViaProxy(rawUrl, 'rss');
     return content;
   } catch (error) {
     console.error(`Failed to fetch Pastebin content for ID ${pasteId}:`, error);

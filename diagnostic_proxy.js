@@ -1,35 +1,33 @@
 
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
-async function runThemeTest() {
-    const videoId = 'mEHZxZEN69U';
-    const url = `https://www.youtube.com/watch?v=${videoId}&ucbcb=1`;
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Cookie': 'SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; CONSENT=YES+yt.20210328-17-p0.en+FX+417'
-    };
-
+async function testInstance() {
+    const url = 'https://iv.n8pjl.ca/api/v1/captions/WHqaF4jbUYU';
     try {
-        const response = await fetch(url, { headers });
-        const text = await response.text();
-
-        const hasThemeClasses = text.includes('darker-dark-theme');
-        const hasWizGlobal = text.includes('window.WIZ_global_data');
-        const hasJson = text.includes('ytInitialPlayerResponse');
-
-        console.log('\n--- Theme and Metadata Test ---');
-        console.log(`Has "darker-dark-theme": ${hasThemeClasses}`);
-        console.log(`Has WIZ_global_data: ${hasWizGlobal}`);
-        console.log(`Has ytInitialPlayerResponse: ${hasJson}`);
-
-        if (hasThemeClasses && hasWizGlobal && hasJson) {
-            console.log('\nRESULT: This is a 100% genuine YouTube Watch Page.');
-        } else {
-            console.log('\nRESULT: Likely a bare consent page or a modified view.');
-        }
+        console.log(`Testing ${url}...`);
+        const res = await fetch(url, { timeout: 5000 });
+        console.log(`Status: ${res.status}`);
+        const text = await res.text();
+        console.log(`Length: ${text.length}`);
     } catch (e) {
-        console.error(e);
+        console.log(`Failed: ${e.message}`);
     }
 }
 
-runThemeTest();
+async function testUrlParsing() {
+    const complexUrl = 'https://www.youtube.com/api/timedtext?v=WHqaF4jbUYU&ei=FQlHaZqzFbWAp-oPwNr76A4&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1766288261&sparams=ip,ipbits,expire,v,ei,caps,opi,exp,xoaf&signature=45A98F9BD679F975250577A6C326DBDAE0372EB9.6E36CEEC61BD944CF46E97738BAB8A9104CB35F5&key=yt8&kind=asr&lang=en&variant=ec&fmt=vtt';
+    const encoded = encodeURIComponent(complexUrl);
+    const reqUrl = `/api/proxy?url=${encoded}&t=${Date.now()}`;
+
+    console.log('\nTesting URL Parsing:');
+    const urlIdx = reqUrl.indexOf('?');
+    const queryString = reqUrl.substring(urlIdx + 1);
+    const params = new URLSearchParams(queryString);
+    const targetUrl = params.get('url');
+
+    console.log(`Original: ${complexUrl.substring(0, 50)}...`);
+    console.log(`Parsed:   ${targetUrl?.substring(0, 50)}...`);
+    console.log(`Match:    ${complexUrl === targetUrl}`);
+}
+
+testInstance().then(testUrlParsing);

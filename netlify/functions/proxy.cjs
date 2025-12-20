@@ -13,20 +13,21 @@ exports.handler = async function (event, context) {
   try {
     const isYouTube = targetUrl.includes('youtube.com') || targetUrl.includes('youtu.be');
 
+    const reqHeaders = event.headers || {};
     const fetchHeaders = {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept': reqHeaders['x-proxy-accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
       'DNT': '1',
       'Connection': 'keep-alive',
       'Upgrade-Insecure-Requests': '1',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-Dest': reqHeaders['x-proxy-fetch-dest'] || 'document',
+      'Sec-Fetch-Mode': reqHeaders['x-proxy-fetch-mode'] || 'navigate',
+      'Sec-Fetch-Site': reqHeaders['x-proxy-fetch-site'] || 'none',
       'Cache-Control': 'max-age=0',
       ...(isYouTube && {
-        'Referer': 'https://www.youtube.com/',
-        'Origin': 'https://www.youtube.com',
+        'Referer': reqHeaders['x-proxy-referer'] || 'https://www.youtube.com/',
+        'Origin': reqHeaders['x-proxy-origin'] || 'https://www.youtube.com',
         'Cookie': 'SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; CONSENT=YES+yt.20210328-17-p0.en+FX+417',
       }),
     };
@@ -62,13 +63,21 @@ exports.handler = async function (event, context) {
     };
 
   } catch (error) {
-    console.error('[Proxy] Global error:', error);
+    const isDnsError = error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN';
+    const isTimeout = error.code === 'ETIMEDOUT' || error.message?.includes('timeout') || error.code === 'ECONNRESET';
+
+    console.error('[Proxy] Global error:', {
+      message: error.message,
+      code: error.code,
+      targetUrl: targetUrl
+    });
+
     return {
-      statusCode: 500,
+      statusCode: isDnsError ? 502 : isTimeout ? 504 : 500,
       headers: { 'Access-Control-Allow-Origin': '*' },
       body: JSON.stringify({
         error: `Proxy error: ${error.message}`,
-        stack: error.stack,
+        code: error.code,
         targetUrl: targetUrl
       }),
     };

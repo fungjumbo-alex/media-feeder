@@ -27,7 +27,7 @@ const fetchYouTubeRssViaInvidious = async (
   }
 
   // For ANY YouTube URL (channel, video, playlist), always fetch the HTML first to get the best icon and canonical ID.
-  const htmlContent = await fetchViaProxy(
+  const { content: htmlContent } = await fetchViaProxy(
     youtubeUrl,
     'youtube',
     onProxyAttempt,
@@ -99,7 +99,7 @@ const fetchYouTubeRssViaInvidious = async (
 
   console.log(`[YouTube RSS] Fetching directly from YouTube: ${youtubeRssFeedUrl}`);
 
-  const content = await fetchViaProxy(
+  const { content } = await fetchViaProxy(
     youtubeRssFeedUrl,
     'youtube',
     onProxyAttempt,
@@ -207,7 +207,7 @@ const fetchBilibiliRssViaRssHub = async (
     try {
       const rsshubUrl = `${instance}${rssHubPath}`;
 
-      const content = await fetchViaProxy(
+      const { content } = await fetchViaProxy(
         rsshubUrl,
         'rss',
         onProxyAttempt,
@@ -447,7 +447,7 @@ export const fetchAndParseRss = async (
     discoveredChannelId = ytChannelId;
     doc = parser.parseFromString(content, 'application/xml');
   } else {
-    const responseText = await fetchViaProxy(
+    const { content: responseText } = await fetchViaProxy(
       fetchUrl,
       feedType,
       onProxyAttempt,
@@ -512,7 +512,7 @@ export const fetchAndParseRss = async (
       if (foundFeedUrl) {
         if (foundFeedUrl.trim() === url.trim())
           throw new Error('Found the same failing URL in HTML content. Cannot recover.');
-        const newContent = await fetchViaProxy(
+        const { content: newContent } = await fetchViaProxy(
           foundFeedUrl,
           feedType,
           onProxyAttempt,

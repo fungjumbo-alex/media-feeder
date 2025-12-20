@@ -27,6 +27,7 @@ def format_timestamp(seconds):
 def index():
     return send_file('index.html')
 
+
 @app.route('/api/transcript', methods=['POST'])
 def get_transcript():
     data = request.get_json()
@@ -50,7 +51,7 @@ def get_transcript():
         
         # List transcripts
         try:
-            transcript_list = yt.list_transcripts(video_id)
+            transcript_list = yt.list(video_id)
         except Exception as e:
             err_str = str(e)
             print(f"[Backend] list_transcripts failed for {video_id}: {err_str}")
@@ -106,10 +107,10 @@ def get_transcript():
         formatted_transcript = []
         for item in transcript_data:
             formatted_transcript.append({
-                'text': item['text'],
-                'start': item['start'],
-                'duration': item.get('duration', 0),
-                'timestamp': format_timestamp(item['start'])
+                'text': item.text,
+                'start': item.start,
+                'duration': item.duration,
+                'timestamp': format_timestamp(item.start)
             })
             
         return jsonify({
@@ -119,9 +120,21 @@ def get_transcript():
             'transcript': formatted_transcript
         })
     except Exception as e:
+        import traceback
         error_msg = str(e)
+        stack_trace = traceback.format_exc()
         print(f"[Backend] CRITICAL ERROR for {video_id}: {error_msg}")
-        return jsonify({'error': error_msg}), 500
+        print(stack_trace)
+        
+        # Specific patterns to help user
+        if "Could not retrieve a transcript" in error_msg:
+            return jsonify({'error': 'No transcript found for this video. It might be disabled or private.'}), 404
+            
+        return jsonify({
+            'error': error_msg,
+            'details': 'Check Python console for full stack trace',
+            'video_id': video_id
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

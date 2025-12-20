@@ -191,7 +191,7 @@ export const fetchYouTubeComments = async (videoId: string): Promise<YouTubeComm
   for (const instance of INVIDIOUS_INSTANCES.slice(0, 3)) {
     try {
       const commentsUrl = `${instance}/api/v1/comments/${videoId}`;
-      const content = await fetchViaProxy(commentsUrl, 'youtube');
+      const { content } = await fetchViaProxy(commentsUrl, 'youtube');
       const data = JSON.parse(content);
       if (data && Array.isArray(data.comments)) {
         return data.comments;
@@ -283,7 +283,7 @@ export const fetchYouTubeVideoDetails = async (
   for (const instance of INVIDIOUS_INSTANCES.slice(0, 3)) {
     try {
       const videoDetailsUrl = `${instance}/api/v1/videos/${videoId}`;
-      const content = await fetchViaProxy(videoDetailsUrl, 'youtube');
+      const { content } = await fetchViaProxy(videoDetailsUrl, 'youtube');
       const data = JSON.parse(content);
       if (data && data.descriptionHtml) {
         return {
@@ -448,7 +448,7 @@ export const fetchSingleYouTubeVideoAsArticle = async (videoId: string): Promise
   for (const instance of INVIDIOUS_INSTANCES) {
     try {
       const videoUrl = `${instance}/api/v1/videos/${videoId}`;
-      const content = await fetchViaProxy(videoUrl, 'youtube');
+      const { content } = await fetchViaProxy(videoUrl, 'youtube');
       const data = JSON.parse(content) as InvidiousVideoDetails;
       if (data && data.videoId) {
         return {
@@ -549,6 +549,13 @@ const parseVTT = (vttText: string): TranscriptLine[] => {
 };
 
 export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> => {
+  // Handle direct-vtt marker from getTranscriptChoices
+  if (url.startsWith('direct-vtt:')) {
+    const [proxyName, watchUrl, vttUrl] = url.substring('direct-vtt:'.length).split('|');
+    console.log(`[Transcript] Fetching direct-vtt choice via ${proxyName}`);
+    return await fetchDirectScrapeTranscript(vttUrl, watchUrl, proxyName);
+  }
+
   const isYoutubeUrl = url.includes('youtube.com/') || url.includes('youtu.be/');
   const videoId = getYouTubeId(url);
 
@@ -621,7 +628,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
     if (url.includes('/api/v1/captions/') || url.includes('.vtt') || url.includes('.srt')) {
       console.log('[Transcript] URL appears to be a direct caption link, fetching via proxy...');
       try {
-        const content = await fetchViaProxy(url, 'youtube');
+        const { content } = await fetchViaProxy(url, 'youtube');
         if (content) {
           const snippets = parseVTT(content);
           if (snippets.length > 0) return snippets;
@@ -641,7 +648,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   let lastError: unknown = null;
 
   console.log(
-    `%c[Build] STATUS: V16-ULTRA (20:36:48) Racing ${INVIDIOUS_INSTANCES.length} instances...`,
+    `%c[Build] STATUS: V17.7-ULTRA (23:30:00) Racing ${INVIDIOUS_INSTANCES.length} instances...`,
     'color: #00ffff; font-weight: bold;'
   );
 
@@ -660,7 +667,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
     const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout for race - increased from 12s
 
     try {
-      const content = await fetchViaProxy(
+      const { content } = await fetchViaProxy(
         captionsUrl,
         'youtube',
         undefined,
@@ -691,7 +698,28 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
       const enCaption = findCaption('en') || captionsArray[0];
       if (!enCaption) throw new Error('No valid track');
 
-      return { instance, enCaption };
+      // DEEP VALIDATION: Try fetching the actual file during the race to ensure it's not a 0-byte fakeout
+      const captionFileUrl = enCaption.url.startsWith('http')
+        ? enCaption.url
+        : `${instance}${enCaption.url}`;
+
+      const { content: testContent } = await fetchViaProxy(
+        captionFileUrl,
+        'youtube',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          signal: controller.signal,
+        } as any
+      );
+
+      if (!testContent || testContent.length < 50 || isHtml(testContent)) {
+        throw new Error(`Instance ${instance} served metadata but returned empty/invalid file.`);
+      }
+
+      return { instance, enCaption, validatedContent: testContent };
     } catch (e) {
       clearTimeout(timeoutId);
       console.warn(
@@ -734,44 +762,50 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
       while (instancesInBatch.length > 0) {
         try {
           // Race the remaining instances in the batch
-          const { instance: winnerInstance, enCaption } = await raceAny(
-            instancesInBatch.map(inst => tryInstance(inst))
-          );
+          const {
+            instance: winnerInstance,
+            enCaption,
+            validatedContent,
+          } = await raceAny(instancesInBatch.map(inst => tryInstance(inst)));
 
           console.log(
             `%c[Transcript] RACE WINNER: ${winnerInstance}`,
             'color: #00ff00; font-weight: bold;'
           );
 
-          // Now fetch the actual content from the winner
-          const captionFileUrl = enCaption.url.startsWith('http')
-            ? enCaption.url
-            : `${winnerInstance}${enCaption.url}`;
-          console.log(`[Transcript] Fetching actual caption content from: ${captionFileUrl}`);
+          // Use the already-validated content if available from the race
+          let captionContent: string | null = validatedContent || null;
 
-          const contentController = new AbortController();
-          const contentTimeoutId = setTimeout(() => contentController.abort(), 25000); // 25s for content fetch
+          if (!captionContent) {
+            // Fallback (shouldn't happen with deep validation but good for safety)
+            const captionFileUrl = enCaption.url.startsWith('http')
+              ? enCaption.url
+              : `${winnerInstance}${enCaption.url}`;
+            console.log(`[Transcript] Fetching actual caption content from: ${captionFileUrl}`);
 
-          let captionContent: string | null = null;
-          try {
-            captionContent = await fetchViaProxy(
-              captionFileUrl,
-              'youtube',
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              {
-                signal: contentController.signal,
-              } as any
-            );
-          } catch (fetchErr) {
-            console.warn(
-              `[Transcript] Failed to fetch content from winner ${winnerInstance}: ${fetchErr}`
-            );
+            const contentController = new AbortController();
+            const contentTimeoutId = setTimeout(() => contentController.abort(), 25000);
+
+            try {
+              const { content: fetchedContent } = await fetchViaProxy(
+                captionFileUrl,
+                'youtube',
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                {
+                  signal: contentController.signal,
+                } as any
+              );
+              captionContent = fetchedContent;
+            } catch (fetchErr) {
+              console.warn(
+                `[Transcript] Failed to fetch content from winner ${winnerInstance}: ${fetchErr}`
+              );
+            }
+            clearTimeout(contentTimeoutId);
           }
-
-          clearTimeout(contentTimeoutId);
 
           if (captionContent && !isHtml(captionContent)) {
             // Handle Data URI if returned by proxy/instance
@@ -837,26 +871,26 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
 };
 
 /**
- * NEW: V13 Direct YouTube Scraper
- * Extracts ytInitialPlayerResponse from the watch page to find caption URLs.
+ * NEW: V17.1 Direct YouTube Scraper - Phase 1: Metadata
+ * Extracts available caption tracks from the watch page.
  */
-export const scrapeYouTubePage = async (videoId: string): Promise<TranscriptLine[]> => {
-  // Use ucbcb=1 to bypass the cookie banner / consent page
+export const getDirectScrapeChoices = async (
+  videoId: string
+): Promise<{ choices: CaptionChoice[]; html: string; proxyName: string }> => {
   const watchUrl = `https://www.youtube.com/watch?v=${videoId}&ucbcb=1`;
-
-  // Use a broad search but prioritize proxies that handle HTML well
-  const html = await fetchViaProxy(watchUrl, 'youtube', undefined, undefined, undefined, [
-    PROXIES[1], // App Proxy
-    PROXIES[2], // AllOrigins
-    PROXIES[4], // corsproxy.io
-    PROXIES[5], // cors.sh
-  ]);
+  const { content: html, proxyName: successfulProxyName } = await fetchViaProxy(
+    watchUrl,
+    'youtube',
+    undefined,
+    undefined,
+    undefined,
+    [PROXIES[1], PROXIES[2], PROXIES[4], PROXIES[5]]
+  );
 
   if (!html || !html.includes('ytInitialPlayerResponse')) {
     throw new Error('Could not find player response in YouTube HTML.');
   }
 
-  // Extract the JSON blob
   const regex = /ytInitialPlayerResponse\s*=\s*({.+?});/s;
   const match = html.match(regex);
   if (!match) throw new Error('Failed to parse ytInitialPlayerResponse via regex.');
@@ -870,81 +904,242 @@ export const scrapeYouTubePage = async (videoId: string): Promise<TranscriptLine
 
   const captions = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
   if (!captions || !Array.isArray(captions) || captions.length === 0) {
-    throw new Error('No caption tracks found in player response.');
+    return { choices: [], html, proxyName: successfulProxyName };
   }
 
-  // Prioritize English (manual > generated)
-  const englishTrack =
-    captions.find((c: any) => c.languageCode === 'en' && c.kind !== 'asr') ||
-    captions.find((c: any) => c.languageCode === 'en') ||
-    captions[0];
+  const choices: CaptionChoice[] = captions.map((c: any) => ({
+    label: c.label?.simpleText || c.languageCode || 'English',
+    language_code: c.languageCode || 'en',
+    url: `direct-vtt:${successfulProxyName}|${watchUrl}|${c.baseUrl.includes('fmt=vtt') ? c.baseUrl : c.baseUrl + '&fmt=vtt'}`,
+  }));
 
-  if (!englishTrack?.baseUrl) {
-    throw new Error('No suitable caption track URL found.');
+  return { choices, html, proxyName: successfulProxyName };
+};
+
+/**
+ * NEW: V17.1 Direct YouTube Scraper - Phase 2: Content
+ * Fetches the VTT content using the locked proxy/IP.
+ */
+export const fetchDirectScrapeTranscript = async (
+  vttUrl: string,
+  watchUrl: string,
+  successfulProxyName: string
+): Promise<TranscriptLine[]> => {
+  const successfulProxy = PROXIES.find(p => p.name === successfulProxyName) || PROXIES[1];
+
+  // V17.2 Enhancement: Use specific headers to avoid Length 0 status 200 issue.
+  // We use lowercase custom headers because Netlify/Vite often normalize them.
+  const { content: vttContent } = await fetchViaProxy(
+    vttUrl,
+    'youtube',
+    undefined,
+    undefined,
+    undefined,
+    [successfulProxy],
+    {
+      headers: {
+        'x-proxy-referer': watchUrl,
+        'x-proxy-origin': 'https://www.youtube.com',
+        'x-proxy-no-cookies': 'true',
+        'x-proxy-accept': '*/*',
+        'x-proxy-fetch-dest': 'empty',
+        'x-proxy-fetch-mode': 'cors',
+        'x-proxy-fetch-site': 'same-origin',
+      },
+    }
+  );
+
+  if (vttContent && vttContent.length > 50 && !vttContent.startsWith('<!doctype')) {
+    return parseVTT(vttContent);
   }
 
-  // Build the VTT URL
-  let vttUrl = englishTrack.baseUrl;
-  if (!vttUrl.includes('fmt=vtt')) {
-    vttUrl += (vttUrl.includes('?') ? '&' : '?') + 'fmt=vtt';
+  // Fallback: If VTT is empty or HTML, try json3 format (sometimes more permissive)
+  // We just swap fmt=vtt for fmt=json3
+  const jsonUrl = vttUrl.replace('fmt=vtt', 'fmt=json3');
+  console.log(
+    `[Transcript] VTT failed (len ${vttContent?.length}), trying JSON3 fallback: ${jsonUrl}`
+  );
+
+  const { content: jsonContent } = await fetchViaProxy(
+    jsonUrl,
+    'youtube',
+    undefined,
+    undefined,
+    undefined,
+    [successfulProxy],
+    {
+      headers: {
+        'x-proxy-referer': watchUrl,
+        'x-proxy-origin': 'https://www.youtube.com',
+        'x-proxy-no-cookies': 'true',
+        'x-proxy-accept': 'application/json, */*',
+        'x-proxy-fetch-dest': 'empty',
+        'x-proxy-fetch-mode': 'cors',
+        'x-proxy-fetch-site': 'same-origin',
+      },
+    }
+  );
+
+  if (jsonContent && jsonContent.length > 50 && !jsonContent.startsWith('<!doctype')) {
+    try {
+      const data = JSON.parse(jsonContent);
+      if (data.events) {
+        return data.events
+          .filter((e: any) => e.segs)
+          .map((e: any) => ({
+            start: e.tStartMs / 1000,
+            duration: (e.dDurationMs || 0) / 1000,
+            text: e.segs
+              .map((s: any) => s.utf8)
+              .join(' ')
+              .trim(),
+          }))
+          .filter((line: any) => line.text.length > 0);
+      }
+    } catch (e) {
+      console.warn('[Transcript] JSON3 parse failed:', e);
+    }
   }
 
-  console.log(`[Transcript] Scraped direct VTT URL: ${vttUrl}`);
-  const vttContent = await fetchViaProxy(vttUrl, 'youtube');
+  // Final Fallback: SRV1 (XML) - Often the most permissive
+  const xmlUrl = vttUrl.replace(/fmt=[^&]+/, 'fmt=srv1');
+  console.log(`[Transcript] JSON3 failed, trying SRV1 fallback: ${xmlUrl}`);
 
-  if (!vttContent || vttContent.startsWith('<!doctype')) {
-    throw new Error('Failed to fetch VTT content from scraped URL.');
+  const { content: xmlContent } = await fetchViaProxy(
+    xmlUrl,
+    'youtube',
+    undefined,
+    undefined,
+    undefined,
+    [successfulProxy],
+    {
+      headers: {
+        'x-proxy-referer': watchUrl,
+        'x-proxy-origin': 'https://www.youtube.com',
+        'x-proxy-no-cookies': 'true',
+        'x-proxy-accept': 'text/xml, */*',
+      },
+    }
+  );
+
+  if (xmlContent && xmlContent.length > 50 && xmlContent.includes('<text')) {
+    return parseXMLTranscript(xmlContent);
   }
 
-  const snippets = parseVTT(vttContent);
+  throw new Error(
+    `Failed to fetch valid transcript content. VTT len: ${vttContent?.length}, JSON3 len: ${jsonContent?.length}, XML len: ${xmlContent?.length}`
+  );
+};
+
+/**
+ * Legacy XML transcript parser
+ */
+function parseXMLTranscript(xml: string): TranscriptLine[] {
+  const snippets: TranscriptLine[] = [];
+  const regex = /<text start="([\d.]+)" dur="([\d.]+)".*?>(.*?)<\/text>/g;
+  let match;
+
+  // Basic HTML entity decoding
+  const decode = (str: string) =>
+    str
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
+  while ((match = regex.exec(xml)) !== null) {
+    snippets.push({
+      start: parseFloat(match[1]),
+      duration: parseFloat(match[2]),
+      text: decode(match[3]),
+    });
+  }
   return snippets;
+}
+
+export const scrapeYouTubePage = async (videoId: string): Promise<TranscriptLine[]> => {
+  const { choices, proxyName } = await getDirectScrapeChoices(videoId);
+  if (choices.length === 0) throw new Error('No caption tracks found.');
+
+  const englishTrack = choices.find(c => c.language_code === 'en') || choices[0];
+  const [, , vttUrl] = englishTrack.url.split('|');
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  return await fetchDirectScrapeTranscript(vttUrl, watchUrl, proxyName);
 };
 
 export const getTranscriptChoices = async (videoId: string): Promise<CaptionChoice[]> => {
   if (!videoId) return [];
-  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  const allChoices: CaptionChoice[] = [];
 
-  // Method 1: Backend
+  // Method 1: Backend check (Now primary priority)
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
   try {
-    const snippets = await fetchTranscript(url);
-    if (snippets && snippets.length > 0) {
-      return [
-        {
-          label: 'English (Backend)',
-          language_code: 'en',
-          url: `backend-transcript:${videoId}`,
-        },
-      ];
+    const response = await fetch(`/api/transcript?t=${Date.now()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (response.ok) {
+      allChoices.push({
+        label: 'English (Backend)',
+        language_code: 'en',
+        url: `backend-transcript:${videoId}`,
+      });
     }
   } catch (e) {
-    console.warn(`[Transcript] getTranscriptChoices: Backend attempt failed: ${e}`);
+    console.warn(`[Transcript] getTranscriptChoices: Backend check failed: ${e}`);
   }
 
-  // Method 2: Invidious list (Extended search)
-  let lastError: any = null;
-  for (const instance of (INVIDIOUS_INSTANCES || []).slice(0, 15)) {
-    try {
-      const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
-      const content = await fetchViaProxy(captionsUrl, 'youtube', undefined, undefined, undefined, [
-        PROXIES[1], // App Proxy
-        PROXIES[2], // AllOrigins
-        PROXIES[4], // corsproxy.io
-      ]);
-      const data = JSON.parse(content);
-      const captionsArray = Array.isArray(data) ? data : data.captions || [];
+  // Method 2: Direct Scrape (FAST metadata check)
+  try {
+    const { choices } = await getDirectScrapeChoices(videoId);
+    if (choices.length > 0) {
+      allChoices.push(...choices);
+    }
+  } catch (e) {
+    // metadata failures are common, don't spam console
+  }
 
-      if (captionsArray.length > 0) {
-        return captionsArray.map((c: any) => ({
-          label: c.label || c.language_code || 'English',
-          language_code: c.language_code || 'en',
-          url: c.url.startsWith('http') ? c.url : `${instance}${c.url}`,
-        }));
+  // Method 3: Invidious list (Broad fallback)
+  // ONLY try if we don't have enough choices yet to avoid noise/delay
+  if (allChoices.length === 0) {
+    const shuffled = [...INVIDIOUS_INSTANCES].sort(() => Math.random() - 0.5);
+    let invidiousCount = 0;
+    for (const instance of shuffled.slice(0, 5)) {
+      // Reduced from 10 to 5 for speed
+      try {
+        const captionsUrl = `${instance}/api/v1/captions/${videoId}`;
+        const { content } = await fetchViaProxy(
+          captionsUrl,
+          'youtube',
+          undefined,
+          undefined,
+          undefined,
+          [PROXIES[1]]
+        );
+        if (!content || (!content.startsWith('[') && !content.startsWith('{'))) continue;
+
+        const data = JSON.parse(content);
+        const captionsArray = Array.isArray(data) ? data : data.captions || [];
+        if (captionsArray.length > 0) {
+          allChoices.push(
+            ...captionsArray.map((c: any) => ({
+              label: `${c.label || c.language_code || 'English'} (${new URL(instance).hostname})`,
+              language_code: c.language_code || 'en',
+              url: c.url.startsWith('http') ? c.url : `${instance}${c.url}`,
+            }))
+          );
+          invidiousCount++;
+          if (invidiousCount >= 2) break;
+        }
+      } catch (e) {
+        // Continue
       }
-    } catch (e) {
-      lastError = e;
     }
   }
 
-  if (lastError) throw lastError;
-  return [];
+  // Remove duplicates by URL
+  return allChoices.filter((c, index, self) => index === self.findIndex(t => t.url === c.url));
 };

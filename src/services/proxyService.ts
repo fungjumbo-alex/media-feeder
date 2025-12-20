@@ -163,15 +163,10 @@ export const PROXIES = [
 // List of public Invidious instances, which can act as proxies for YouTube content.
 // Updated 2025-12-20: Expanded with more high-uptime instances
 export const INVIDIOUS_INSTANCES = [
-  'https://invidious.nerdvpn.de', // 🇺🇦 UA - 100% uptime
-  'https://invidious.f5.si', // 🇯🇵 JP - 97.9% uptime
   'https://inv.nadeko.net', // 🇩🇪 DE - High uptime
-  'https://inv.perditum.com', // 🇺🇸 US - High uptime
   'https://iv.ggtyler.dev', // 🇺🇸 US
-  'https://invidious.io.lol', // 🇱🇺 LU
-  'https://iv.n8pjl.ca', // 🇨🇦 CA
-  'https://invidious.flokinet.to', // 🇷🇴 RO
-  'https://invidious.lunar.icu', // 🇩🇪 DE
+  'https://invidious.tiekoetter.com', // 🇩🇪 DE
+  'https://invidious.snopyta.org', // High reputation
   'https://iv.melmac.space', // 🇩🇪 DE
 ];
 
@@ -229,7 +224,7 @@ export const fetchViaProxy = async (
   proxyStats?: ProxyStats,
   proxiesToUse = PROXIES,
   fetchOptions: RequestInit = {}
-): Promise<string> => {
+): Promise<{ content: string; proxyName: string }> => {
   let lastError: unknown = null;
   const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
   const currentStats: ProxyStats = JSON.parse(JSON.stringify(proxyStats || {}));
@@ -329,7 +324,7 @@ export const fetchViaProxy = async (
       // For general URLs (RSS), we just try the proxy.
       if (url.startsWith(stored.instanceUrl) || feedType !== 'youtube') {
         const result = await tryRequest(proxy, url);
-        if (result !== null) return result;
+        if (result !== null) return { content: result, proxyName: proxy.name };
         // If stored config failed, clear it and fall back to full search
         localStorage.removeItem(STORAGE_KEY);
       }
@@ -360,7 +355,7 @@ export const fetchViaProxy = async (
           setStoredConfig(proxyToTry.name, instance);
         }
       }
-      return result;
+      return { content: result, proxyName: proxyToTry.name };
     } else {
       console.warn(`[Proxy] ${proxyToTry.name} failed (returned null), trying next alternate...`);
     }

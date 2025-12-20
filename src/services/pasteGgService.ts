@@ -50,7 +50,7 @@ export const createPaste = async (content: string, title: string): Promise<strin
   };
 
   // Using 'rss' feedType as a generic type for this non-feed API call through the proxy.
-  const responseText = await fetchViaProxy(
+  const { content: responseText } = await fetchViaProxy(
     PASTEGG_API_BASE,
     'rss',
     undefined,
