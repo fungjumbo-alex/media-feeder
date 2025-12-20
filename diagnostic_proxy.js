@@ -1,33 +1,36 @@
+import fetch from 'node-fetch';
 
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+async function testProxy() {
+    const targetUrl = 'https://inv.nadeko.net/api/v1/captions/48TkJ72ys2s';
+    console.log(`Testing fetch to: ${targetUrl}`);
 
-async function testInstance() {
-    const url = 'https://iv.n8pjl.ca/api/v1/captions/WHqaF4jbUYU';
     try {
-        console.log(`Testing ${url}...`);
-        const res = await fetch(url, { timeout: 5000 });
-        console.log(`Status: ${res.status}`);
-        const text = await res.text();
-        console.log(`Length: ${text.length}`);
-    } catch (e) {
-        console.log(`Failed: ${e.message}`);
+        const fetchOptions = {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0'
+            },
+            timeout: 10000
+        };
+
+        const response = await fetch(targetUrl, fetchOptions);
+        console.log(`Status: ${response.status} ${response.statusText}`);
+
+        const text = await response.text();
+        console.log(`Response length: ${text.length}`);
+        console.log(`Response snippet: ${text.substring(0, 200)}`);
+
+    } catch (error) {
+        console.error('Fetch error:', error);
     }
 }
 
-async function testUrlParsing() {
-    const complexUrl = 'https://www.youtube.com/api/timedtext?v=WHqaF4jbUYU&ei=FQlHaZqzFbWAp-oPwNr76A4&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1766288261&sparams=ip,ipbits,expire,v,ei,caps,opi,exp,xoaf&signature=45A98F9BD679F975250577A6C326DBDAE0372EB9.6E36CEEC61BD944CF46E97738BAB8A9104CB35F5&key=yt8&kind=asr&lang=en&variant=ec&fmt=vtt';
-    const encoded = encodeURIComponent(complexUrl);
-    const reqUrl = `/api/proxy?url=${encoded}&t=${Date.now()}`;
-
-    console.log('\nTesting URL Parsing:');
-    const urlIdx = reqUrl.indexOf('?');
-    const queryString = reqUrl.substring(urlIdx + 1);
-    const params = new URLSearchParams(queryString);
-    const targetUrl = params.get('url');
-
-    console.log(`Original: ${complexUrl.substring(0, 50)}...`);
-    console.log(`Parsed:   ${targetUrl?.substring(0, 50)}...`);
-    console.log(`Match:    ${complexUrl === targetUrl}`);
-}
-
-testInstance().then(testUrlParsing);
+testProxy();

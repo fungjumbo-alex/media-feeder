@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_file
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import IpBlocked, TranscriptsDisabled, NoTranscriptFound, VideoUnavailable
 import re
 
 app = Flask(__name__, static_folder='.')
@@ -60,13 +61,31 @@ def get_transcript():
         # List transcripts
         try:
             transcript_list = yt.list(video_id)
+        except IpBlocked as e:
+            print(f"[Backend] IP Blocked error for {video_id}: {str(e)}", flush=True)
+            return jsonify({
+                'error': 'YouTube is blocking this server\'s IP. Try a different fetching method.',
+                'code': 'IP_BLOCKED',
+                'video_id': video_id
+            }), 429
+        except TranscriptsDisabled as e:
+            print(f"[Backend] Transcripts disabled for {video_id}", flush=True)
+            return jsonify({'error': 'Subtitles are disabled for this video', 'code': 'TRANSCRIPTS_DISABLED'}), 404
+        except NoTranscriptFound as e:
+            print(f"[Backend] No transcript found for {video_id}", flush=True)
+            return jsonify({'error': 'No transcript found for this video', 'code': 'NO_TRANSCRIPT_FOUND'}), 404
+        except VideoUnavailable as e:
+            print(f"[Backend] Video unavailable: {video_id}", flush=True)
+            return jsonify({'error': 'Video is unavailable', 'code': 'VIDEO_UNAVAILABLE'}), 404
         except Exception as e:
             err_str = str(e)
-            print(f"[Backend] list_transcripts failed for {video_id}: {err_str}", flush=True)
-            # If YouTube blocks us, a specific error is usually raised
-            if "status code 429" in err_str or "CAPTCHA" in err_str:
-                 return jsonify({'error': 'Bot detection triggered (CAPTCHA). YouTube is blocking this server.'}), 500
-            return jsonify({'error': f'Could not list transcripts: {err_str}'}), 404
+            print(f"[Backend] Generic list_transcripts failure for {video_id}: {err_str}", flush=True)
+            if "status code 429" in err_str or "CAPTCHA" in err_str or "IpBlocked" in err_str:
+                 return jsonify({
+                    'error': 'Bot detection triggered. YouTube is blocking this server.',
+                    'code': 'IP_BLOCKED'
+                 }), 429
+            return jsonify({'error': f'Could not list transcripts: {err_str}'}), 500
         
         transcript_obj = None
         
@@ -134,8 +153,8 @@ def get_transcript():
         print(f"[Backend] CRITICAL ERROR for {video_id}: {error_msg}", flush=True)
         print(stack_trace, flush=True)
         
-        if "Could not retrieve a transcript" in error_msg or "IpBlocked" in error_msg:
-            print(f"[Backend] IP Blocked by YouTube for {video_id}", flush=True)
+        if "Could not retrieve a transcript" in error_msg or "IpBlocked" in error_msg or "status code 429" in error_msg:
+            print(f"[Backend] IP Blocked catch-all for {video_id}", flush=True)
             return jsonify({
                 'error': 'YouTube is blocking this server\'s IP. Try a different fetching method.',
                 'code': 'IP_BLOCKED',
