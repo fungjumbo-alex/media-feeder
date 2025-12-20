@@ -291,7 +291,6 @@ export const fetchViaProxy = async (
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      const isAbort = errorMsg.includes('abort') || errorMsg.includes('timeout');
 
       console.warn(`[Proxy] ${proxy.name} FAILED: ${errorMsg}`);
       lastError = error;
