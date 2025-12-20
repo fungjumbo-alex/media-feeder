@@ -3432,10 +3432,11 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
             const fetchPromises = ids.map(async id => {
               if (serviceName === 'dpaste') {
                 const rawContentUrl = `https://dpaste.org/${id}/raw`;
-                return fetchViaProxy(rawContentUrl, 'rss');
+                const { content } = await fetchViaProxy(rawContentUrl, 'rss');
+                return content;
               } else if (serviceName === 'pastegg') {
                 const metadataUrl = `https://api.paste.gg/v1/pastes/${id}`;
-                const metadataContent = await fetchViaProxy(metadataUrl, 'rss');
+                const { content: metadataContent } = await fetchViaProxy(metadataUrl, 'rss');
                 const metadata = JSON.parse(metadataContent);
                 if (metadata.status !== 'success')
                   throw new Error(
@@ -3444,7 +3445,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                 const fileId = metadata?.result?.files?.[0]?.id;
                 if (!fileId) throw new Error(`Could not find a file ID for paste.gg chunk: ${id}.`);
                 const fileContentUrl = `https://api.paste.gg/v1/pastes/${id}/files/${fileId}`;
-                const fileContentResponse = await fetchViaProxy(fileContentUrl, 'rss');
+                const { content: fileContentResponse } = await fetchViaProxy(fileContentUrl, 'rss');
                 const fileData = JSON.parse(fileContentResponse);
                 const content = fileData?.result?.content?.value;
                 if (typeof content !== 'string')
@@ -3507,10 +3508,11 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
             if (service === 'dpaste') {
               const rawContentUrl = `https://dpaste.org/${code}/raw`;
-              content = await fetchViaProxy(rawContentUrl, 'rss');
+              const { content: fetchedContent } = await fetchViaProxy(rawContentUrl, 'rss');
+              content = fetchedContent;
             } else if (service === 'pastegg') {
               const metadataUrl = `https://api.paste.gg/v1/pastes/${code}`;
-              const metadataContent = await fetchViaProxy(metadataUrl, 'rss');
+              const { content: metadataContent } = await fetchViaProxy(metadataUrl, 'rss');
               const metadata = JSON.parse(metadataContent);
               if (metadata.status !== 'success')
                 throw new Error(
@@ -3519,7 +3521,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
               const fileId = metadata?.result?.files?.[0]?.id;
               if (!fileId) throw new Error(`Could not find a file ID for the paste.gg code.`);
               const fileContentUrl = `https://api.paste.gg/v1/pastes/${code}/files/${fileId}`;
-              const fileContentResponse = await fetchViaProxy(fileContentUrl, 'rss');
+              const { content: fileContentResponse } = await fetchViaProxy(fileContentUrl, 'rss');
               const fileData = JSON.parse(fileContentResponse);
               content = fileData?.result?.content?.value;
               if (typeof content !== 'string')
@@ -3555,10 +3557,11 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
               try {
                 if (s === 'dpaste') {
                   const rawContentUrl = `https://dpaste.org/${code}/raw`;
-                  content = await fetchViaProxy(rawContentUrl, 'rss');
+                  const { content: fetchedContent } = await fetchViaProxy(rawContentUrl, 'rss');
+                  content = fetchedContent;
                 } else if (s === 'pastegg') {
                   const metadataUrl = `https://api.paste.gg/v1/pastes/${code}`;
-                  const metadataContent = await fetchViaProxy(metadataUrl, 'rss');
+                  const { content: metadataContent } = await fetchViaProxy(metadataUrl, 'rss');
                   const metadata = JSON.parse(metadataContent);
                   if (metadata.status !== 'success')
                     throw new Error(
@@ -3567,7 +3570,10 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
                   const fileId = metadata?.result?.files?.[0]?.id;
                   if (!fileId) throw new Error(`Could not find a file ID for the paste.gg code.`);
                   const fileContentUrl = `https://api.paste.gg/v1/pastes/${code}/files/${fileId}`;
-                  const fileContentResponse = await fetchViaProxy(fileContentUrl, 'rss');
+                  const { content: fileContentResponse } = await fetchViaProxy(
+                    fileContentUrl,
+                    'rss'
+                  );
                   const fileData = JSON.parse(fileContentResponse);
                   content = fileData?.result?.content?.value;
                   if (typeof content !== 'string')
