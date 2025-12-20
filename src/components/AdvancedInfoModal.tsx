@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../contexts/AppContext';
-import { XIcon, BarChartIcon, DatabaseIcon, TrashIcon, YouTubeIcon, RssIcon } from './icons';
+import {
+  XIcon,
+  BarChartIcon,
+  DatabaseIcon,
+  TrashIcon,
+  YouTubeIcon,
+  RssIcon,
+  RefreshIcon,
+} from './icons';
 import type { FeedType } from '../types';
 
 const ProxyTypeStats: React.FC<{
@@ -70,6 +78,7 @@ const NetworkTabContent: React.FC = () => {
     setRefreshBatchSize,
     refreshDelaySeconds,
     setRefreshDelaySeconds,
+    handleResetNetworkSettings,
   } = useAppContext();
 
   const statsArray = Object.entries(proxyStats)
@@ -94,6 +103,16 @@ const NetworkTabContent: React.FC = () => {
       )
     ) {
       handleClearProxyStats();
+    }
+  };
+
+  const handleResetSettings = () => {
+    if (
+      window.confirm(
+        'This will re-enable ALL proxies and clear all statistics. Use this if you are experiencing persistent connection issues. Continue?'
+      )
+    ) {
+      handleResetNetworkSettings();
     }
   };
 
@@ -178,14 +197,23 @@ const NetworkTabContent: React.FC = () => {
           No network statistics have been recorded yet. Refresh some feeds to begin.
         </div>
       )}
-      <div className="pt-4 mt-2 border-t border-gray-700 flex justify-start">
+      <div className="pt-4 mt-2 border-t border-gray-700 flex gap-2">
         <button
           onClick={handleClear}
           disabled={statsArray.length === 0}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold bg-red-600 text-white hover:bg-red-500 disabled:bg-red-400/50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Only clears success/failure counts"
         >
           <TrashIcon className="w-4 h-4" />
-          Clear Statistics
+          Clear Stats
+        </button>
+        <button
+          onClick={handleResetSettings}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors"
+          title="Re-enables ALL proxies & clears stats"
+        >
+          <RefreshIcon className="w-4 h-4" />
+          Reset All
         </button>
       </div>
     </div>
