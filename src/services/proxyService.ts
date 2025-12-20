@@ -181,18 +181,21 @@ export const fetchViaProxy = async (
     targetUrl: string
   ): Promise<string | null> => {
     const compositeKey = `${proxy.name}_${feedType}`;
-    if (disabledProxies?.has(compositeKey)) return null;
+    if (disabledProxies?.has(compositeKey)) {
+      console.log(`[Proxy] Skipping ${proxy.name} for ${feedType} (disabled in settings)`);
+      return null;
+    }
 
     try {
       console.log(
-        `[Proxy] Trying ${proxy.name} for: ${targetUrl.substring(0, 100)}${targetUrl.length > 100 ? '...' : ''}`
+        `[Proxy] Attempting ${proxy.name} for: ${targetUrl.substring(0, 100)}${targetUrl.length > 100 ? '...' : ''}`
       );
       const controller = new AbortController();
 
       // Respect passed-in signal if any, or use default 15s (reduced from 30s)
       const timeoutMs = 15000;
       const timeoutId = setTimeout(() => {
-        console.warn(`[Proxy] ${proxy.name} timed out after ${timeoutMs}ms`);
+        console.warn(`[Proxy] ${proxy.name} request timed out after ${timeoutMs}ms`);
         controller.abort('timeout');
       }, timeoutMs);
 
@@ -228,25 +231,31 @@ export const fetchViaProxy = async (
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        console.warn(`[Proxy] ${proxy.name} returned status ${response.status} for ${targetUrl}`);
+        console.warn(
+          `[Proxy] ${proxy.name} backend returned status ${response.status} for ${targetUrl}`
+        );
         throw new Error(`Proxy ${proxy.name} responded with status ${response.status}.`);
       }
 
       const content = await proxy.parseResponse(response);
 
       onAttempt?.(proxy.name, 'success', feedType);
-      console.log(`[Proxy] ${proxy.name} success! Content length: ${content.length}`);
+      console.log(`[Proxy] ${proxy.name} SUCCESS! Content length: ${content.length}`);
       return content;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.warn(`[Proxy] ${proxy.name} failed: ${errorMsg}`);
 
       let specificError = error;
       if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
         specificError = new Error(
-          `Network error for proxy '${proxy.name}'. It may be offline or blocked by an ad-blocker.`
+          `Network/CORS error for proxy '${proxy.name}'. It may be offline, blocked by an ad-blocker, or have invalid CORS headers.`
         );
       }
+
+      const finalErrorMsg =
+        specificError instanceof Error ? specificError.message : String(specificError);
+      console.warn(`[Proxy] ${proxy.name} FAILED: ${finalErrorMsg}`);
+
       lastError = specificError;
       onAttempt?.(proxy.name, 'failure', feedType);
 
