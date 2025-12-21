@@ -2006,7 +2006,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (article.summary || article.structuredSummary) {
           unreadAiSummaryYt++;
         }
-        if ((article.transcript && article.transcript.length > 0) || article.hasCaption) {
+        if (article.transcript && article.transcript.length > 0) {
           unreadTranscriptYt++;
         }
       }
@@ -2234,13 +2234,11 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       }
 
       case 'ai-summary-yt':
-        rawArticles = allArticles.filter(a => a.isVideo && a.structuredSummary);
+        rawArticles = allArticles.filter(a => a.isVideo && (a.summary || a.structuredSummary));
         needsDeduplication = true;
         break;
       case 'yt-transcripts':
-        rawArticles = allArticles.filter(
-          a => a.isVideo && ((a.transcript && a.transcript.length > 0) || a.hasCaption)
-        );
+        rawArticles = allArticles.filter(a => a.isVideo && a.transcript && a.transcript.length > 0);
         needsDeduplication = true;
         break;
       case 'ai-topic': {
@@ -3937,7 +3935,11 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         break;
       }
       case 'ai-summary-yt':
-        rawArticles = allArticles.filter(a => a.isVideo && a.structuredSummary);
+        rawArticles = allArticles.filter(a => a.isVideo && (a.summary || a.structuredSummary));
+        needsDeduplication = true;
+        break;
+      case 'yt-transcripts':
+        rawArticles = allArticles.filter(a => a.isVideo && a.transcript && a.transcript.length > 0);
         needsDeduplication = true;
         break;
       case 'ai-topic': {
