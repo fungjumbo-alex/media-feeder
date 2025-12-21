@@ -2720,6 +2720,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         const hierarchy = await generateMindmapHierarchy(
           recentArticles,
           aiModel,
+          'Recent Articles',
           defaultAiLanguage
         );
         console.log('[AutoGrouping] Hierarchy generated successfully.');
