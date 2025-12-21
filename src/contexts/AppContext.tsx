@@ -560,6 +560,7 @@ interface AppContextType {
   unreadCountsForReadLater: Record<string, number>;
   feedsByTag: Map<string, Feed[]>;
   feedsById: Map<string, Feed>;
+  articlesById: Map<string, Article>;
   articlesToShow: Article[];
   articlesForNavigation: Article[];
   availableTagsForFilter: string[];
@@ -7089,6 +7090,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     favoriteFeeds,
     unreadCounts,
     feedsById,
+    articlesById,
 
     // AI
     commentsState,

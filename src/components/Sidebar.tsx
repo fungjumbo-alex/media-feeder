@@ -27,7 +27,7 @@ import {
   AiSummaryIcon,
 } from './icons';
 import { SearchInput } from './SearchInput';
-import type { Feed } from '../types';
+import type { Feed, Article, MindmapHierarchy } from '../types';
 
 const Tooltip: React.FC<{ text: string; isVisible: boolean; children: React.ReactNode }> = ({
   text,
@@ -506,106 +506,37 @@ const ViewWithFeeds: React.FC<{
 const TopicItem: React.FC<{
   title: string;
   articleIds: string[];
-  subTopics?: { title: string; articleIds: string[] }[];
+  subTopics?: MindmapHierarchy['rootTopics'][0]['subTopics'];
   depth?: number;
   onNavigate: (title: string, ids: string[]) => void;
   personalInterests?: string[];
 }> = ({ title, articleIds, subTopics, depth = 0, onNavigate, personalInterests = [] }) => {
-  const { currentView, allArticles, sidebarTab, feedsById } = useAppContext();
-  const hasSubTopics = subTopics && subTopics.length > 0;
+  const { currentView, articlesById, readArticleIds } = useAppContext();
+  const [isExpanded, setIsExpanded] = React.useState(false);
 
   // Check if this topic matches a personal interest
   const isPersonalInterest = personalInterests.some(
     interest => interest.toLowerCase() === title.toLowerCase()
   );
 
-  // Filter articleIds to only include those that:
-  // 1. Exist in allArticles
-  // 2. Match the current sidebarTab (YT vs RSS)
-  const validArticleCount = useMemo(() => {
-    if (!allArticles || !feedsById) return 0;
+  const hasSubTopics = subTopics && subTopics.length > 0;
 
-    // Create a set of valid IDs for O(1) lookup, but we have strict checks
-    // Actually we iterate IDs and check existence.
-    // Optimization: allArticles is large. articlesById would be better.
-    // But we might only have allArticles exposed efficiently or as an array.
-    // Let's assume allArticles is available.
-    // To avoid O(N*M), let's use allArticles.find? No fast lookup.
-    // If allArticles is array, checking existence for each ID is slow.
-    // However, articleIds for a topic is usually small.
-    // But we do this for EVERY topic item.
-    // If we have articlesById map in context, that's best.
-    // Let's check if articlesById is exposed in useAppContext.
-    // If not, we iterate articleIds and find in allArticles.
-    // Given the previous code used allArticles.filter(id set), it implies allArticles iteration.
+  // Optimized count using articlesById Map (O(1) lookup)
+  const validArticles = React.useMemo(() => {
+    return articleIds.filter(id => articlesById.has(id));
+  }, [articleIds, articlesById]);
 
-    // Let's filter the input articleIds.
-    // We need to check if the article exists AND matches tab.
-    // Since we don't have a map, we have to iterate allArticles?
-    // NO! That would be terrible for performance in a list.
-    // We should iterate articleIds and check against a Map.
-    // DOES appContext provide a map?
-    // Let's assume for now we use allArticles.
-    // Wait, the previous `filteredArticles` logic iterated `allArticles`.
-    // Here we are inside `TopicItem`. If we iterate `allArticles` for every topic, it will lag.
+  const validArticleCount = validArticles.length;
 
-    // Ideally we rely on the parent or `AiTopicsList` to pre-calculate, or we get a Map.
-    // AppContext usually has `articlesById`. Let's assume it's exposed or verify.
-    // I will use allArticles.find for now, but really I should verify `articlesById` existence.
-
-    // Wait, if I cannot verify `articlesById`, I'll use `allArticles`.
-    // But wait, `allArticles` is `Article[]`.
-    // Let's assume `allArticles` is what we have.
-    const isYtTab = sidebarTab === 'yt';
-
-    // Optimization: Build a Set of valid IDs for the current tab ONCE in the parent list?
-    // That's much better. But `AiTopicsList` is the parent.
-    // Let's move this logic to `AiTopicsList` if possible?
-    // But `TopicItem` is recursive.
-
-    // Let's stick to doing it here but verify if we can use a Map.
-    // `useAppContext` typically exposes state.
-
-    return articleIds.filter(id => {
-      const article = allArticles.find(a => a.id === id);
-      if (!article) return false;
-      const feed = feedsById.get(article.feedId);
-      if (!feed) return false;
-      const isYtFeed = feed.url.toLowerCase().includes('youtube.com');
-      return isYtTab ? isYtFeed : !isYtFeed;
-    }).length;
-  }, [articleIds, allArticles, sidebarTab, feedsById]);
+  const unreadCount = React.useMemo(() => {
+    return validArticles.filter(id => !readArticleIds.has(id)).length;
+  }, [validArticles, readArticleIds]);
 
   // Check if this topic is active
   const isSelfActive =
-    currentView.type === 'ai-topic' && (currentView.value as { title: string })?.title === title;
-
-  // Check if any subtopic is active (recursive check helper)
-  const isChildActive = useMemo(() => {
-    if (!hasSubTopics || !subTopics) return false;
-    const checkActive = (subs: { title: string }[]): boolean => {
-      return subs.some(sub => {
-        if (
-          currentView.type === 'ai-topic' &&
-          (currentView.value as { title: string })?.title === sub.title
-        ) {
-          return true;
-        }
-        return false;
-      });
-    };
-    return checkActive(subTopics);
-  }, [currentView, subTopics, hasSubTopics]);
-
-  // Initialize expanded state
-  const [isExpanded, setIsExpanded] = useState(isChildActive);
-
-  useEffect(() => {
-    if (isChildActive) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsExpanded(true);
-    }
-  }, [isChildActive]);
+    currentView.type === 'ai-topic' &&
+    (currentView.value === title ||
+      (typeof currentView.value === 'object' && currentView.value?.title === title));
 
   const handleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -619,14 +550,7 @@ const TopicItem: React.FC<{
 
   const paddingLeft = (depth + 1) * 12;
 
-  // Render even if validArticleCount is 0?
-  // User might want to see topics even if empty in current view?
-  // Or maybe gray them out?
-  // For now just show the count.
-  // UPDATE: User requested to hide topics with no articles.
-  if (validArticleCount === 0) {
-    return null;
-  }
+  if (validArticleCount === 0) return null;
 
   return (
     <div className="w-full">
@@ -660,7 +584,12 @@ const TopicItem: React.FC<{
             <TagIcon className="w-3 h-3 mr-2 opacity-70" />
           )}
           <span className="truncate">{title}</span>
-          {validArticleCount > 0 && (
+          {unreadCount > 0 && (
+            <span className="ml-auto text-[10px] bg-indigo-600 px-1.5 py-0.5 rounded-full text-white font-medium">
+              {unreadCount}
+            </span>
+          )}
+          {unreadCount === 0 && validArticleCount > 0 && (
             <span className="ml-auto text-[10px] bg-gray-700 px-1.5 py-0.5 rounded-full text-gray-400">
               {validArticleCount}
             </span>
@@ -669,7 +598,7 @@ const TopicItem: React.FC<{
       </div>
       {hasSubTopics && isExpanded && (
         <div className="mt-0.5">
-          {subTopics!.map((sub, idx) => (
+          {subTopics!.map((sub: { title: string; articleIds: string[] }, idx: number) => (
             <TopicItem
               key={`${title}-${sub.title}-${idx}`}
               title={sub.title}
@@ -686,9 +615,31 @@ const TopicItem: React.FC<{
 };
 
 const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindmap }) => {
-  const { aiHierarchy, handleViewChange, personalInterests } = useAppContext();
+  const {
+    aiHierarchy,
+    ytAiHierarchy,
+    nonYtAiHierarchy,
+    sidebarTab,
+    handleViewChange,
+    personalInterests,
+  } = useAppContext();
 
-  if (!aiHierarchy || !aiHierarchy.rootTopics || aiHierarchy.rootTopics.length === 0) {
+  // Select the hierarchy based on the current context
+  // Manual grouping (MindmapModal) populates ytAiHierarchy and nonYtAiHierarchy
+  // Auto-grouping (background) populates aiHierarchy
+  const currentHierarchy = React.useMemo(() => {
+    if (sidebarTab === 'yt') {
+      return ytAiHierarchy || aiHierarchy;
+    } else {
+      return nonYtAiHierarchy || aiHierarchy;
+    }
+  }, [sidebarTab, ytAiHierarchy, nonYtAiHierarchy, aiHierarchy]);
+
+  if (
+    !currentHierarchy ||
+    !currentHierarchy.rootTopics ||
+    currentHierarchy.rootTopics.length === 0
+  ) {
     return (
       <div className="px-4 py-3 text-xs text-gray-500 italic text-center">
         No topics generated yet. Use the "AI Grouping" button to generate topics correctly.
@@ -703,7 +654,7 @@ const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindma
 
   return (
     <div className="space-y-0.5 mt-1">
-      {aiHierarchy.rootTopics.map((topic, idx) => {
+      {currentHierarchy.rootTopics.map((topic, idx) => {
         // Calculate total unique article IDs for the root topic to show correct count
         const allIds = new Set(topic.articleIds);
         topic.subTopics?.forEach(sub => {
@@ -946,7 +897,7 @@ export const Sidebar: React.FC<{
         </div>
       )}
 
-      {!isSidebarCollapsed && enableRssAndReddit && !isMobileView && (
+      {!isSidebarCollapsed && enableRssAndReddit && (
         <div className="flex-shrink-0 px-3 py-2 flex items-center gap-1 border-b border-gray-700">
           <button
             onClick={() => handleSetSidebarTab('yt')}
@@ -1044,7 +995,7 @@ export const Sidebar: React.FC<{
           </Tooltip>
         </SidebarSection>
 
-        {!isSidebarCollapsed && aiHierarchy && (
+        {(!isSidebarCollapsed || (isMobileView && !isSidebarCollapsed)) && aiHierarchy && (
           <SidebarSection
             title="AI Topics"
             isCollapsed={isAiTopicsCollapsed}
