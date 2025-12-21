@@ -784,13 +784,20 @@ IMPORTANT CONSTRAINTS:
 
       // Add personal interests prioritization if provided
       if (personalInterests.length > 0) {
-        systemInstruction += `\n\nPERSONAL INTERESTS (create topics for these first if articles match):
+        systemInstruction += `\n\nPERSONAL INTERESTS - PRIORITY GROUPING:
 ${personalInterests.map(topic => `- ${topic}`).join('\n')}
 
-When grouping:
-1. First identify articles matching any personal interest topics above
-2. Create dedicated topics for personal interests with matching articles
-3. Group remaining articles into general topics (3-8 topics total)`;
+**CRITICAL INSTRUCTIONS FOR PERSONAL INTERESTS:**
+1. Search through ALL articles carefully for content related to these interests
+2. Use SEMANTIC MATCHING - don't require exact title matches
+   - For "Machine Learning": include articles about neural networks, deep learning, AI models, training algorithms, etc.
+   - For "Climate Change": include articles about global warming, carbon emissions, renewable energy, climate policy, etc.
+   - For "Space Exploration": include articles about rockets, satellites, Mars missions, astronomy, SpaceX, NASA, etc.
+3. Create a dedicated topic for EACH personal interest that has at least one matching article
+4. Group ALL related articles under the appropriate personal interest topic
+5. Only after assigning articles to personal interest topics, group remaining articles into 3-8 general topics
+
+The personal interest topics should appear FIRST in your output if they have matching articles.`;
       }
 
       if (targetLanguage && targetLanguage !== 'original') {
