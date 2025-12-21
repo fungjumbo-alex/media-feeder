@@ -509,9 +509,15 @@ const TopicItem: React.FC<{
   subTopics?: { title: string; articleIds: string[] }[];
   depth?: number;
   onNavigate: (title: string, ids: string[]) => void;
-}> = ({ title, articleIds, subTopics, depth = 0, onNavigate }) => {
+  personalInterests?: string[];
+}> = ({ title, articleIds, subTopics, depth = 0, onNavigate, personalInterests = [] }) => {
   const { currentView, allArticles, sidebarTab, feedsById } = useAppContext();
   const hasSubTopics = subTopics && subTopics.length > 0;
+
+  // Check if this topic matches a personal interest
+  const isPersonalInterest = personalInterests.some(
+    interest => interest.toLowerCase() === title.toLowerCase()
+  );
 
   // Filter articleIds to only include those that:
   // 1. Exist in allArticles
@@ -648,7 +654,11 @@ const TopicItem: React.FC<{
           onClick={handleClick}
           className="flex-1 truncate cursor-pointer flex items-center"
         >
-          <TagIcon className="w-3 h-3 mr-2 opacity-70" />
+          {isPersonalInterest ? (
+            <StarIcon className="w-3 h-3 mr-2 text-yellow-400" />
+          ) : (
+            <TagIcon className="w-3 h-3 mr-2 opacity-70" />
+          )}
           <span className="truncate">{title}</span>
           {validArticleCount > 0 && (
             <span className="ml-auto text-[10px] bg-gray-700 px-1.5 py-0.5 rounded-full text-gray-400">
@@ -666,6 +676,7 @@ const TopicItem: React.FC<{
               articleIds={sub.articleIds}
               depth={depth + 1}
               onNavigate={onNavigate}
+              personalInterests={personalInterests}
             />
           ))}
         </div>
@@ -675,7 +686,7 @@ const TopicItem: React.FC<{
 };
 
 const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindmap }) => {
-  const { aiHierarchy, handleViewChange } = useAppContext();
+  const { aiHierarchy, handleViewChange, personalInterests } = useAppContext();
 
   if (!aiHierarchy || !aiHierarchy.rootTopics || aiHierarchy.rootTopics.length === 0) {
     return (
@@ -707,6 +718,7 @@ const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindma
             articleIds={aggregateIds}
             subTopics={topic.subTopics}
             onNavigate={handleNavigate}
+            personalInterests={personalInterests}
           />
         );
       })}
