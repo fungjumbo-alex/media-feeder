@@ -738,7 +738,8 @@ export const generateMindmapHierarchy = async (
   articles: Article[],
   model: AiModel,
   groupName: string = 'Articles',
-  targetLanguage: string = 'English'
+  targetLanguage: string = 'English',
+  personalInterests: string[] = []
 ): Promise<MindmapHierarchy> => {
   if (articles.length === 0) {
     return { rootTopics: [] };
@@ -780,6 +781,17 @@ IMPORTANT CONSTRAINTS:
 2. Assign each article to the single most relevant subtopic.
 3. Do NOT repeat article IDs across multiple topics or subtopics.
 4. If an article doesn't fit well, put it in a "Miscellaneous" topic.`;
+
+      // Add personal interests prioritization if provided
+      if (personalInterests.length > 0) {
+        systemInstruction += `\n\nPERSONAL INTERESTS (create topics for these first if articles match):
+${personalInterests.map(topic => `- ${topic}`).join('\n')}
+
+When grouping:
+1. First identify articles matching any personal interest topics above
+2. Create dedicated topics for personal interests with matching articles
+3. Group remaining articles into general topics (3-8 topics total)`;
+      }
 
       if (targetLanguage && targetLanguage !== 'original') {
         systemInstruction += `\n\nIMPORTANT: All "title" fields in the JSON output MUST be translated into ${targetLanguage}.`;

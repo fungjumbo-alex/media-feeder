@@ -50,11 +50,16 @@ export const AiSettingsModal: React.FC = () => {
     handleGoogleSignOut,
     defaultAiLanguage,
     setDefaultAiLanguage,
+    personalInterests,
+    handleAddPersonalInterest,
+    handleRemovePersonalInterest,
     accessToken,
     isAiDisabled,
     autoAiTimeWindowDays,
     setAutoAiTimeWindowDays,
   } = useAppContext();
+
+  const [newInterestInput, setNewInterestInput] = React.useState('');
 
   if (!isAiSettingsModalOpen) return null;
 
@@ -387,7 +392,7 @@ export const AiSettingsModal: React.FC = () => {
             <h3 className="text-sm font-semibold text-gray-400 mb-3 border-b border-gray-700 pb-2">
               AI & Content
             </h3>
-            <div className="bg-gray-700/50 p-4 rounded-lg">
+            <div className="bg-gray-700/50 p-4 rounded-lg space-y-4">
               <div>
                 <h4 className="font-semibold text-gray-100">Default AI Language</h4>
                 <p className="text-xs text-gray-400 mt-1 mb-3">
@@ -410,6 +415,68 @@ export const AiSettingsModal: React.FC = () => {
                     <ChevronDownIcon className="w-4 h-4" />
                   </div>
                 </div>
+              </div>
+              <div className="border-t border-gray-600/50 pt-4">
+                <h4 className="font-semibold text-gray-100">Personal Interest Topics</h4>
+                <p className="text-xs text-gray-400 mt-1 mb-3">
+                  Define topics you're interested in. AI clustering will prioritize grouping
+                  articles by these topics.
+                </p>
+                {personalInterests.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {personalInterests.map(topic => (
+                      <div
+                        key={topic}
+                        className="flex items-center justify-between bg-gray-900 px-3 py-2 rounded-md"
+                      >
+                        <span className="text-sm text-gray-100">{topic}</span>
+                        <button
+                          onClick={() => handleRemovePersonalInterest(topic)}
+                          className="text-red-400 hover:text-red-300 transition-colors"
+                          aria-label={`Remove ${topic}`}
+                        >
+                          <XIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newInterestInput}
+                    onChange={e => setNewInterestInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newInterestInput.trim()) {
+                          handleAddPersonalInterest(newInterestInput.trim());
+                          setNewInterestInput('');
+                        }
+                      }
+                    }}
+                    placeholder="e.g., Machine Learning, Climate Change"
+                    className="flex-1 bg-gray-900 border border-gray-600 rounded-md p-2 text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                    disabled={personalInterests.length >= 10}
+                  />
+                  <button
+                    onClick={() => {
+                      if (newInterestInput.trim()) {
+                        handleAddPersonalInterest(newInterestInput.trim());
+                        setNewInterestInput('');
+                      }
+                    }}
+                    disabled={!newInterestInput.trim() || personalInterests.length >= 10}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+                {personalInterests.length >= 10 && (
+                  <p className="text-xs text-yellow-500 mt-2">
+                    Maximum of 10 topics reached. Remove a topic to add more.
+                  </p>
+                )}
               </div>
             </div>
           </div>

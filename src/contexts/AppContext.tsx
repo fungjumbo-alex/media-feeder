@@ -583,6 +583,10 @@ interface AppContextType {
   aiModel: AiModel;
   defaultAiLanguage: string;
   setDefaultAiLanguage: React.Dispatch<React.SetStateAction<string>>;
+  personalInterests: string[];
+  setPersonalInterests: React.Dispatch<React.SetStateAction<string[]>>;
+  handleAddPersonalInterest: (topic: string) => void;
+  handleRemovePersonalInterest: (topic: string) => void;
   autoplayMode: AutoplayMode;
   autoLikeYouTubeVideos: boolean;
   autoLikeDelaySeconds: number;
@@ -1277,6 +1281,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   );
   const [defaultAiLanguage, setDefaultAiLanguage] = useState<string>(() =>
     getStoredData(DEFAULT_AI_LANGUAGE_KEY, 'original')
+  );
+  const [personalInterests, setPersonalInterests] = useState<string[]>(() =>
+    getStoredData('media-feeder-personal-interests', [])
   );
   const [urlFromExtension, setUrlFromExtension] = useState<string | null>(null);
   const [isProcessingUrl, setIsProcessingUrl] = useState(false);
@@ -2721,7 +2728,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           recentArticles,
           aiModel,
           'Recent Articles',
-          defaultAiLanguage
+          defaultAiLanguage,
+          personalInterests
         );
         console.log('[AutoGrouping] Hierarchy generated successfully.');
         setAiHierarchy(hierarchy);
@@ -2734,7 +2742,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         }
       }
     },
-    [autoClusterOnRefresh, feeds, aiModel, defaultAiLanguage, handleQuotaError]
+    [autoClusterOnRefresh, feeds, aiModel, defaultAiLanguage, personalInterests, handleQuotaError]
   );
 
   const handleImportData = useCallback(
@@ -6326,6 +6334,24 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     () => setAutoLikeYouTubeVideos(prev => !prev),
     []
   );
+
+  const handleAddPersonalInterest = useCallback((topic: string) => {
+    const trimmed = topic.trim();
+    if (!trimmed) return;
+
+    setPersonalInterests(prev => {
+      if (prev.includes(trimmed)) return prev; // No duplicate
+      if (prev.length >= 10) {
+        console.warn('[Personal Interests] Maximum of 10 topics reached');
+        return prev;
+      }
+      return [...prev, trimmed];
+    });
+  }, []);
+
+  const handleRemovePersonalInterest = useCallback((topic: string) => {
+    setPersonalInterests(prev => prev.filter(t => t !== topic));
+  }, []);
   const handleToggleAutoUploadAfterRefresh = useCallback(
     () => setAutoUploadAfterRefresh(prev => !prev),
     []
@@ -6896,6 +6922,10 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   useEffect(() => {
     safeSetLocalStorage(DEFAULT_AI_LANGUAGE_KEY, defaultAiLanguage);
   }, [defaultAiLanguage, safeSetLocalStorage]);
+
+  useEffect(() => {
+    safeSetLocalStorage('media-feeder-personal-interests', personalInterests);
+  }, [personalInterests, safeSetLocalStorage]);
   useEffect(() => {
     safeSetLocalStorage(RECENT_SHARE_CODES_KEY, recentShareCodes);
   }, [recentShareCodes, safeSetLocalStorage]);
@@ -7102,6 +7132,10 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     aiModel,
     defaultAiLanguage,
     setDefaultAiLanguage,
+    personalInterests,
+    setPersonalInterests,
+    handleAddPersonalInterest,
+    handleRemovePersonalInterest,
     autoplayMode,
     autoLikeYouTubeVideos,
     autoLikeDelaySeconds,
