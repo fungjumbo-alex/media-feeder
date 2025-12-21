@@ -233,6 +233,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
     setYtAiHierarchy,
     nonYtAiHierarchy,
     setNonYtAiHierarchy,
+    personalInterests,
   } = useAppContext();
   const [activeTab, setActiveTab] = useState<'yt' | 'web'>('yt');
   const [searchQuery, setSearchQuery] = useState('');
@@ -270,7 +271,8 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
         articlesToCluster,
         aiModel,
         isVideoType ? 'YouTube' : 'Web Articles',
-        defaultAiLanguage
+        defaultAiLanguage,
+        personalInterests
       );
 
       if (isVideoType) {
