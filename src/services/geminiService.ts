@@ -793,9 +793,13 @@ ${personalInterests.map(topic => `- ${topic}`).join('\n')}
    - For "Machine Learning": include articles about neural networks, deep learning, AI models, training algorithms, etc.
    - For "Climate Change": include articles about global warming, carbon emissions, renewable energy, climate policy, etc.
    - For "Space Exploration": include articles about rockets, satellites, Mars missions, astronomy, SpaceX, NASA, etc.
-3. Create a dedicated topic for EACH personal interest that has at least one matching article
-4. Group ALL related articles under the appropriate personal interest topic
-5. Only after assigning articles to personal interest topics, group remaining articles into 3-8 general topics
+3. **IMPORTANT: Use the EXACT personal interest name as the topic title**
+   - If personal interest is "Apple", the topic title MUST be "Apple" (not "Apple Products", "Apple產品", etc.)
+   - If personal interest is "Machine Learning", the topic title MUST be "Machine Learning" (not "ML", "AI", etc.)
+   - DO NOT rename, translate, or modify the personal interest names
+4. Create a dedicated topic for EACH personal interest that has at least one matching article
+5. Group ALL related articles under the appropriate personal interest topic
+6. Only after assigning articles to personal interest topics, group remaining articles into 3-8 general topics
 
 The personal interest topics should appear FIRST in your output if they have matching articles.`;
       }
