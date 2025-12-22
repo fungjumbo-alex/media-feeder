@@ -655,6 +655,15 @@ const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindma
       });
     }
 
+    // Final sort: ensure personal interest topics are at the very top
+    result.rootTopics.sort((a, b) => {
+      const aIsInterest = personalInterests.some(pi => pi.toLowerCase() === a.title.toLowerCase());
+      const bIsInterest = personalInterests.some(pi => pi.toLowerCase() === b.title.toLowerCase());
+      if (aIsInterest && !bIsInterest) return -1;
+      if (!aIsInterest && bIsInterest) return 1;
+      return 0;
+    });
+
     return result;
   }, [sidebarTab, ytAiHierarchy, nonYtAiHierarchy, aiHierarchy, personalInterests]);
 

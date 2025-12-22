@@ -243,7 +243,24 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
   const [isClustering, setIsClustering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const currentHierarchy = activeTab === 'yt' ? ytAiHierarchy : nonYtAiHierarchy;
+  const currentHierarchy = React.useMemo(() => {
+    const rawHierarchy = activeTab === 'yt' ? ytAiHierarchy : nonYtAiHierarchy;
+    if (!rawHierarchy) return null;
+
+    // Create a copy to sort
+    const hierarchy: MindmapHierarchy = JSON.parse(JSON.stringify(rawHierarchy));
+
+    // Sort root topics so personal interests are at the top
+    hierarchy.rootTopics.sort((a, b) => {
+      const aIsInterest = personalInterests.some(pi => pi.toLowerCase() === a.title.toLowerCase());
+      const bIsInterest = personalInterests.some(pi => pi.toLowerCase() === b.title.toLowerCase());
+      if (aIsInterest && !bIsInterest) return -1;
+      if (!aIsInterest && bIsInterest) return 1;
+      return 0;
+    });
+
+    return hierarchy;
+  }, [activeTab, ytAiHierarchy, nonYtAiHierarchy, personalInterests]);
 
   const handleClusterWithAI = async (tabToCluster?: 'yt' | 'web') => {
     const targetTab = tabToCluster || activeTab;
