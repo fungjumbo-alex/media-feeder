@@ -91,9 +91,15 @@ const OutlineView: React.FC<{
         const isRootExpanded = expandedTopics.has(rootId);
 
         // Calculate total unique article IDs for the root topic to show correct count
-        const allIds = new Set(rootTopic.articleIds || []);
+        // Filter to only count articles that actually exist
+        const allIds = new Set<string>();
+        (rootTopic.articleIds || []).forEach(id => {
+          if (articleMap.has(id)) allIds.add(id);
+        });
         (rootTopic.subTopics || []).forEach(sub => {
-          (sub.articleIds || []).forEach(id => allIds.add(id));
+          (sub.articleIds || []).forEach(id => {
+            if (articleMap.has(id)) allIds.add(id);
+          });
         });
         const rootArticleCount = allIds.size;
 
