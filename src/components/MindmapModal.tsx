@@ -89,10 +89,13 @@ const OutlineView: React.FC<{
       {hierarchy.rootTopics.map((rootTopic, rootIndex) => {
         const rootId = `root-${rootIndex}`;
         const isRootExpanded = expandedTopics.has(rootId);
-        const rootArticleCount = (rootTopic.subTopics || []).reduce(
-          (sum, sub) => sum + (sub.articleIds?.length || 0),
-          rootTopic.articleIds?.length || 0
-        );
+
+        // Calculate total unique article IDs for the root topic to show correct count
+        const allIds = new Set(rootTopic.articleIds || []);
+        (rootTopic.subTopics || []).forEach(sub => {
+          (sub.articleIds || []).forEach(id => allIds.add(id));
+        });
+        const rootArticleCount = allIds.size;
 
         // Filter visibility based on search
         const rootMatches = matchesSearch(rootTopic.title);
