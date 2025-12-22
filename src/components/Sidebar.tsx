@@ -1015,7 +1015,10 @@ export const Sidebar: React.FC<{
               onToggle={onToggleAiTopicsCollapse}
               isSidebarCollapsed={isSidebarCollapsed}
             >
-              <AiTopicsList onCloseMindmap={onCloseMindmap} />
+              <AiTopicsList
+                key={`${ytAiHierarchy?.rootTopics.length || 0}-${nonYtAiHierarchy?.rootTopics.length || 0}-${aiHierarchy?.rootTopics.length || 0}`}
+                onCloseMindmap={onCloseMindmap}
+              />
             </SidebarSection>
           )}
 
