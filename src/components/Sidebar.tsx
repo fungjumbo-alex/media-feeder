@@ -633,30 +633,45 @@ const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindma
 
     if (!base && !fallback) return null;
 
-    // Start with a clone of the fallback or base
-    const result: MindmapHierarchy = JSON.parse(JSON.stringify(base || fallback));
+    // If we only have one source, use it directly (with sorting)
+    if (!base || !fallback) {
+      const source = base || fallback;
+      if (!source) return null;
 
-    // If we have both, ensure personal interest topics from fallback are present in the result
-    if (base && fallback && personalInterests.length > 0) {
+      // Sort the topics to prioritize personal interests
+      const sortedTopics = [...source.rootTopics].sort((a, b) => {
+        const aIsInterest = personalInterests.some(
+          pi => pi.toLowerCase() === a.title.toLowerCase()
+        );
+        const bIsInterest = personalInterests.some(
+          pi => pi.toLowerCase() === b.title.toLowerCase()
+        );
+        if (aIsInterest && !bIsInterest) return -1;
+        if (!aIsInterest && bIsInterest) return 1;
+        return 0;
+      });
+
+      return { rootTopics: sortedTopics };
+    }
+
+    // We have both base and fallback - need to merge personal interests
+    const mergedTopics = [...base.rootTopics];
+    const existingTitles = new Set(mergedTopics.map(t => t.title.toLowerCase()));
+
+    // Add personal interest topics from fallback if they don't exist in base
+    if (personalInterests.length > 0) {
       fallback.rootTopics.forEach(fallbackTopic => {
         const isInterest = personalInterests.some(
           pi => pi.toLowerCase() === fallbackTopic.title.toLowerCase()
         );
-        if (isInterest) {
-          // Check if this topic already exists in result
-          const exists = result.rootTopics.find(
-            t => t.title.toLowerCase() === fallbackTopic.title.toLowerCase()
-          );
-          if (!exists) {
-            // Add it to the top
-            result.rootTopics.unshift(fallbackTopic);
-          }
+        if (isInterest && !existingTitles.has(fallbackTopic.title.toLowerCase())) {
+          mergedTopics.push(fallbackTopic);
         }
       });
     }
 
-    // Final sort: ensure personal interest topics are at the very top
-    result.rootTopics.sort((a, b) => {
+    // Sort to prioritize personal interests
+    const sortedTopics = mergedTopics.sort((a, b) => {
       const aIsInterest = personalInterests.some(pi => pi.toLowerCase() === a.title.toLowerCase());
       const bIsInterest = personalInterests.some(pi => pi.toLowerCase() === b.title.toLowerCase());
       if (aIsInterest && !bIsInterest) return -1;
@@ -664,7 +679,7 @@ const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindma
       return 0;
     });
 
-    return result;
+    return { rootTopics: sortedTopics };
   }, [sidebarTab, ytAiHierarchy, nonYtAiHierarchy, aiHierarchy, personalInterests]);
 
   if (

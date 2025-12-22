@@ -247,11 +247,8 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
     const rawHierarchy = activeTab === 'yt' ? ytAiHierarchy : nonYtAiHierarchy;
     if (!rawHierarchy) return null;
 
-    // Create a copy to sort
-    const hierarchy: MindmapHierarchy = JSON.parse(JSON.stringify(rawHierarchy));
-
     // Sort root topics so personal interests are at the top
-    hierarchy.rootTopics.sort((a, b) => {
+    const sortedTopics = [...rawHierarchy.rootTopics].sort((a, b) => {
       const aIsInterest = personalInterests.some(pi => pi.toLowerCase() === a.title.toLowerCase());
       const bIsInterest = personalInterests.some(pi => pi.toLowerCase() === b.title.toLowerCase());
       if (aIsInterest && !bIsInterest) return -1;
@@ -259,7 +256,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
       return 0;
     });
 
-    return hierarchy;
+    return { rootTopics: sortedTopics };
   }, [activeTab, ytAiHierarchy, nonYtAiHierarchy, personalInterests]);
 
   const handleClusterWithAI = async (tabToCluster?: 'yt' | 'web') => {
