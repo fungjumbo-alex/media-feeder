@@ -2744,6 +2744,14 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     [autoClusterOnRefresh, feeds, aiModel, defaultAiLanguage, personalInterests, handleQuotaError]
   );
 
+  // Re-cluster when personal interests change
+  useEffect(() => {
+    if (personalInterests.length > 0 && autoClusterOnRefresh) {
+      console.log('[AutoGrouping] Personal interests changed, triggering re-grouping...');
+      runInBackgroundGrouping();
+    }
+  }, [personalInterests, autoClusterOnRefresh, runInBackgroundGrouping]);
+
   const handleImportData = useCallback(
     (data: SyncData, options?: { silent?: boolean }) => {
       try {

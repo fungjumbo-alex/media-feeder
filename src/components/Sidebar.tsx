@@ -27,7 +27,7 @@ import {
   AiSummaryIcon,
 } from './icons';
 import { SearchInput } from './SearchInput';
-import type { Feed, Article, MindmapHierarchy } from '../types';
+import type { Feed, MindmapHierarchy } from '../types';
 
 const Tooltip: React.FC<{ text: string; isVisible: boolean; children: React.ReactNode }> = ({
   text,
@@ -625,15 +625,38 @@ const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindma
   } = useAppContext();
 
   // Select the hierarchy based on the current context
-  // Manual grouping (MindmapModal) populates ytAiHierarchy and nonYtAiHierarchy
-  // Auto-grouping (background) populates aiHierarchy
+  // We prefer tab-specific hierarchies but ALWAYS prioritize topics from the background
+  // hierarchy that match personal interests to ensure they don't disappear.
   const currentHierarchy = React.useMemo(() => {
-    if (sidebarTab === 'yt') {
-      return ytAiHierarchy || aiHierarchy;
-    } else {
-      return nonYtAiHierarchy || aiHierarchy;
+    const base = sidebarTab === 'yt' ? ytAiHierarchy : nonYtAiHierarchy;
+    const fallback = aiHierarchy;
+
+    if (!base && !fallback) return null;
+
+    // Start with a clone of the fallback or base
+    const result: MindmapHierarchy = JSON.parse(JSON.stringify(base || fallback));
+
+    // If we have both, ensure personal interest topics from fallback are present in the result
+    if (base && fallback && personalInterests.length > 0) {
+      fallback.rootTopics.forEach(fallbackTopic => {
+        const isInterest = personalInterests.some(
+          pi => pi.toLowerCase() === fallbackTopic.title.toLowerCase()
+        );
+        if (isInterest) {
+          // Check if this topic already exists in result
+          const exists = result.rootTopics.find(
+            t => t.title.toLowerCase() === fallbackTopic.title.toLowerCase()
+          );
+          if (!exists) {
+            // Add it to the top
+            result.rootTopics.unshift(fallbackTopic);
+          }
+        }
+      });
     }
-  }, [sidebarTab, ytAiHierarchy, nonYtAiHierarchy, aiHierarchy]);
+
+    return result;
+  }, [sidebarTab, ytAiHierarchy, nonYtAiHierarchy, aiHierarchy, personalInterests]);
 
   if (
     !currentHierarchy ||
@@ -642,7 +665,7 @@ const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindma
   ) {
     return (
       <div className="px-4 py-3 text-xs text-gray-500 italic text-center">
-        No topics generated yet. Use the "AI Grouping" button to generate topics correctly.
+        No topics generated yet. Use the "AI Grouping" button or wait for background processing.
       </div>
     );
   }
@@ -798,6 +821,8 @@ export const Sidebar: React.FC<{
     // FIX: Add missing property `favoriteFeeds` to destructuring.
     favoriteFeeds,
     aiHierarchy,
+    ytAiHierarchy,
+    nonYtAiHierarchy,
     isAiTopicsCollapsed,
     onToggleAiTopicsCollapse,
     handleRefreshAllTranscripts,
@@ -995,16 +1020,17 @@ export const Sidebar: React.FC<{
           </Tooltip>
         </SidebarSection>
 
-        {(!isSidebarCollapsed || (isMobileView && !isSidebarCollapsed)) && aiHierarchy && (
-          <SidebarSection
-            title="AI Topics"
-            isCollapsed={isAiTopicsCollapsed}
-            onToggle={onToggleAiTopicsCollapse}
-            isSidebarCollapsed={isSidebarCollapsed}
-          >
-            <AiTopicsList onCloseMindmap={onCloseMindmap} />
-          </SidebarSection>
-        )}
+        {(!isSidebarCollapsed || (isMobileView && !isSidebarCollapsed)) &&
+          (aiHierarchy || ytAiHierarchy || nonYtAiHierarchy) && (
+            <SidebarSection
+              title="AI Topics"
+              isCollapsed={isAiTopicsCollapsed}
+              onToggle={onToggleAiTopicsCollapse}
+              isSidebarCollapsed={isSidebarCollapsed}
+            >
+              <AiTopicsList onCloseMindmap={onCloseMindmap} />
+            </SidebarSection>
+          )}
 
         {sidebarTab === 'yt' && (youtubeTags.length > 0 || favoriteFeeds.some(isYouTubeFeed)) && (
           <SidebarSection
