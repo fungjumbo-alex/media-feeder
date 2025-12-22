@@ -624,54 +624,17 @@ const AiTopicsList: React.FC<{ onCloseMindmap?: () => void }> = ({ onCloseMindma
     personalInterests,
   } = useAppContext();
 
-  // Select the hierarchy based on the current context
-  // We prefer tab-specific hierarchies but ALWAYS prioritize topics from the background
-  // hierarchy that match personal interests to ensure they don't disappear.
+  // Select the hierarchy based on the current tab
+  // Use tab-specific hierarchy first, fall back to background aiHierarchy
+  // This ensures the sidebar matches what's shown in the AI Grouping modal
   const currentHierarchy = React.useMemo(() => {
-    const base = sidebarTab === 'yt' ? ytAiHierarchy : nonYtAiHierarchy;
-    const fallback = aiHierarchy;
+    const tabSpecific = sidebarTab === 'yt' ? ytAiHierarchy : nonYtAiHierarchy;
+    const source = tabSpecific || aiHierarchy;
 
-    if (!base && !fallback) return null;
+    if (!source) return null;
 
-    // If we only have one source, use it directly (with sorting)
-    if (!base || !fallback) {
-      const source = base || fallback;
-      if (!source) return null;
-
-      // Sort the topics to prioritize personal interests
-      const sortedTopics = [...source.rootTopics].sort((a, b) => {
-        const aIsInterest = personalInterests.some(
-          pi => pi.toLowerCase() === a.title.toLowerCase()
-        );
-        const bIsInterest = personalInterests.some(
-          pi => pi.toLowerCase() === b.title.toLowerCase()
-        );
-        if (aIsInterest && !bIsInterest) return -1;
-        if (!aIsInterest && bIsInterest) return 1;
-        return 0;
-      });
-
-      return { rootTopics: sortedTopics };
-    }
-
-    // We have both base and fallback - need to merge personal interests
-    const mergedTopics = [...base.rootTopics];
-    const existingTitles = new Set(mergedTopics.map(t => t.title.toLowerCase()));
-
-    // Add personal interest topics from fallback if they don't exist in base
-    if (personalInterests.length > 0) {
-      fallback.rootTopics.forEach(fallbackTopic => {
-        const isInterest = personalInterests.some(
-          pi => pi.toLowerCase() === fallbackTopic.title.toLowerCase()
-        );
-        if (isInterest && !existingTitles.has(fallbackTopic.title.toLowerCase())) {
-          mergedTopics.push(fallbackTopic);
-        }
-      });
-    }
-
-    // Sort to prioritize personal interests
-    const sortedTopics = mergedTopics.sort((a, b) => {
+    // Sort the topics to prioritize personal interests
+    const sortedTopics = [...source.rootTopics].sort((a, b) => {
       const aIsInterest = personalInterests.some(pi => pi.toLowerCase() === a.title.toLowerCase());
       const bIsInterest = personalInterests.some(pi => pi.toLowerCase() === b.title.toLowerCase());
       if (aIsInterest && !bIsInterest) return -1;
