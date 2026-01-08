@@ -2719,7 +2719,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       const recentArticles = uniqueArticles
         .filter(i => i.pubDateTimestamp && i.pubDateTimestamp >= threeDaysAgo)
         .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0))
-        .slice(0, 400);
+        .slice(0, 300);
 
       console.log(`[AutoGrouping] Found ${recentArticles.length} recent articles for grouping.`);
 
