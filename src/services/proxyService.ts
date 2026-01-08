@@ -32,9 +32,19 @@ export const checkForBotChallenge = (text: string): string | null => {
   if (
     normalizedText.includes('captcha-delivery.com') ||
     normalizedText.includes('challenge-platform/h/g') ||
-    (normalizedText.includes('<title>access denied') && normalizedText.includes('cloudflare'))
+    normalizedText.includes('checking your browser before accessing') ||
+    (normalizedText.includes('<title>access denied') && normalizedText.includes('cloudflare')) ||
+    (normalizedText.includes('<title>invidious') && normalizedText.includes('error'))
   ) {
-    return 'Bot Challenge (Generic/Cloudflare)';
+    return 'Bot Challenge or Instance Error';
+  }
+
+  // Invidious specific blocks/errors
+  if (
+    normalizedText.includes('api_error') ||
+    (normalizedText.startsWith('invidious ') && normalizedText.includes('error'))
+  ) {
+    return 'Invidious API Error';
   }
 
   return null;
@@ -43,6 +53,103 @@ export const checkForBotChallenge = (text: string): string | null => {
 // List of proxies to try in order.
 // Each proxy has a function to construct its URL and a function to parse its response.
 export const PROXIES = [
+  {
+    name: 'App Proxy',
+    buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}&t=${Date.now()}`,
+    parseResponse: async (response: Response): Promise<string> => {
+      const text = await response.text();
+      const botReason = checkForBotChallenge(text);
+      const isHtmlError =
+        text.trim().startsWith('<!DOCTYPE html') || text.trim().startsWith('<html');
+
+      if (botReason || (text.length < 3000 && isHtmlError)) {
+        const reason = botReason || 'invalid short HTML/error page';
+        throw new Error(`App Proxy blocked by ${reason}.`);
+      }
+
+      if (!response.ok) {
+        throw new Error(`App Proxy responded with status ${response.status}.`);
+      }
+
+      if (!text || text.length === 0) {
+        throw new Error('App Proxy returned empty content.');
+      }
+      return text;
+    },
+  },
+  {
+    name: 'AllOrigins',
+    buildUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+    parseResponse: async (response: Response): Promise<string> => {
+      if (!response.ok) {
+        throw new Error(`Proxy AllOrigins responded with status ${response.status}`);
+      }
+      const data = await response.json();
+
+      if (typeof data.contents === 'string') {
+        const botReason = checkForBotChallenge(data.contents);
+        if (botReason) {
+          throw new Error(`Proxy AllOrigins (nest) blocked by ${botReason}.`);
+        }
+      }
+
+      if (data.status?.http_code && data.status.http_code >= 400) {
+        throw new Error(
+          `Target server responded with status ${data.status.http_code} via AllOrigins`
+        );
+      }
+      if (data.contents === null || data.contents === undefined) {
+        throw new Error('Proxy AllOrigins returned null/undefined content.');
+      }
+      return data.contents;
+    },
+  },
+  {
+    name: 'AllOriginsRaw',
+    buildUrl: (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    parseResponse: async (response: Response): Promise<string> => {
+      if (!response.ok) {
+        throw new Error(`Proxy AllOriginsRaw responded with status ${response.status}`);
+      }
+      const text = await response.text();
+      if (!text || text.length === 0) {
+        throw new Error('Proxy AllOriginsRaw returned empty content.');
+      }
+      const botReason = checkForBotChallenge(text);
+      if (botReason) {
+        throw new Error(`Proxy AllOriginsRaw blocked by ${botReason}.`);
+      }
+      return text;
+    },
+  },
+  {
+    name: 'corsproxy.io',
+    buildUrl: (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    parseResponse: async (response: Response): Promise<string> => {
+      if (!response.ok) {
+        throw new Error(`Proxy corsproxy.io responded with status ${response.status}`);
+      }
+      const text = await response.text();
+      if (!text || text.length === 0) {
+        throw new Error('Proxy corsproxy.io returned empty content.');
+      }
+      const botReason = checkForBotChallenge(text);
+      if (botReason) throw new Error(`Proxy corsproxy.io blocked by ${botReason}.`);
+      return text;
+    },
+  },
+  {
+    name: 'cors.sh',
+    buildUrl: (url: string) => `https://proxy.cors.sh/${url}`,
+    parseResponse: async (response: Response): Promise<string> => {
+      if (!response.ok) throw new Error(`Proxy cors.sh responded with status ${response.status}`);
+      const text = await response.text();
+      if (!text || text.length === 0) {
+        throw new Error('Proxy cors.sh returned empty content.');
+      }
+      return text;
+    },
+  },
   {
     name: 'Browser Direct',
     buildUrl: (url: string) => url,
@@ -58,116 +165,22 @@ export const PROXIES = [
       return text;
     },
   },
-  {
-    name: 'App Proxy',
-    buildUrl: (url: string) => `/api/proxy?url=${encodeURIComponent(url)}&t=${Date.now()}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      const text = await response.text();
-      const botReason = checkForBotChallenge(text);
-      const isHtmlError =
-        text.trim().startsWith('<!DOCTYPE html') || text.trim().startsWith('<html');
-
-      // If we expect XML (RSS/Atom) but get HTML, it's likely an error or blocking page
-      // Exception: Some valid feeds might be wrapped in HTML (rare), but for YouTube/RSS it's usually bad
-      // 3000 chars covers the 1781 bytes "Before you continue" page
-      if (botReason || (text.length < 3000 && isHtmlError)) {
-        const reason = botReason || 'invalid short HTML/error page';
-        console.error(
-          `[App Proxy] potentially invalid content (${reason}) for ${response.url}:`,
-          text.substring(0, 500)
-        );
-        throw new Error(`App Proxy blocked by ${reason}.`);
-      }
-
-      if (!response.ok) {
-        console.error(`[App Proxy] Error accessing ${response.url}:`, response.status, text);
-        throw new Error(`App Proxy responded with status ${response.status}. Body: ${text}`);
-      }
-
-      console.log(`[App Proxy] Success for ${response.url}. Length: ${text.length}`);
-      if (text.length < 3000) {
-        console.log(`[App Proxy] Content snippet:`, text);
-      }
-      return text;
-    },
-  },
-  {
-    name: 'AllOrigins',
-    buildUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      if (!response.ok) {
-        throw new Error(`Proxy AllOrigins responded with status ${response.status}`);
-      }
-      const data = await response.json();
-
-      // Check for bot challenges in the nested content
-      if (typeof data.contents === 'string') {
-        const botReason = checkForBotChallenge(data.contents);
-        if (botReason) {
-          throw new Error(`Proxy AllOrigins (nest) blocked by ${botReason}.`);
-        }
-      }
-
-      // AllOrigins returns the status code of the fetched URL in `status.http_code`
-      if (data.status?.http_code && data.status.http_code >= 400) {
-        throw new Error(
-          `Target server responded with status ${data.status.http_code} via AllOrigins`
-        );
-      }
-      // Sometimes AllOrigins returns null contents if the fetch failed silently
-      if (data.contents === null || data.contents === undefined) {
-        throw new Error('Proxy AllOrigins returned null/undefined content.');
-      }
-      return data.contents;
-    },
-  },
-  {
-    name: 'AllOriginsRaw',
-    buildUrl: (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      if (!response.ok) {
-        throw new Error(`Proxy AllOriginsRaw responded with status ${response.status}`);
-      }
-      const text = await response.text();
-      const botReason = checkForBotChallenge(text);
-      if (botReason) {
-        throw new Error(`Proxy AllOriginsRaw blocked by ${botReason}.`);
-      }
-      return text;
-    },
-  },
-  {
-    name: 'corsproxy.io',
-    buildUrl: (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      // ... same implementation ...
-      if (!response.ok) {
-        throw new Error(`Proxy corsproxy.io responded with status ${response.status}`);
-      }
-      const text = await response.text();
-      const botReason = checkForBotChallenge(text);
-      if (botReason) throw new Error(`Proxy corsproxy.io blocked by ${botReason}.`);
-      return text;
-    },
-  },
-  {
-    name: 'cors.sh',
-    buildUrl: (url: string) => `https://proxy.cors.sh/${url}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      if (!response.ok) throw new Error(`Proxy cors.sh responded with status ${response.status}`);
-      return await response.text();
-    },
-  },
 ];
 
 // List of public Invidious instances, which can act as proxies for YouTube content.
-// Updated 2025-12-20: Expanded with more high-uptime instances
+// Updated 2026-01-03: Refreshed with verified working instances
 export const INVIDIOUS_INSTANCES = [
-  'https://inv.nadeko.net', // 🇩🇪 DE - High uptime
+  'https://yewtu.be', // 🇱🇺 LU - Official Ref
+  'https://invidious.projectsegfau.lt', // 🇫🇷 FR - Reliable
+  'https://invidious.privacydev.net', // 🇫🇷 FR
+  'https://inv.vern.cc', // 🇺🇸 US
   'https://iv.ggtyler.dev', // 🇺🇸 US
-  'https://invidious.tiekoetter.com', // 🇩🇪 DE
-  'https://iv.melmac.space', // 🇩🇪 DE
-  'https://invidious.privacyredirect.com', // 🇺🇸 US - Reliable
+  'https://invidious.lunar.icu', // 🇩🇪 DE
+  'https://invidious.flokinet.to', // 🇮🇸 IS
+  'https://invidious.perennialte.ch', // 🇦🇺 AU
+  'https://inv.tux.nu', // 🇩🇪 DE
+  'https://invidious.io.lol', // 🇩🇪 DE
+  'https://iv.n8ms.com', // 🇺🇸 US - New
 ];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.
@@ -361,16 +374,14 @@ export const fetchViaProxy = async (
     }
   }
 
-  let errorMessage = 'Unknown error';
-  if (lastError instanceof Error) {
-    errorMessage = lastError.message;
-  } else if (lastError) {
-    errorMessage = String(lastError);
-  }
-
-  throw new Error(
-    `Failed to fetch content after trying all available proxies. Last error: ${errorMessage}`
-  );
+  const errorMessage =
+    lastError instanceof Error
+      ? lastError.message
+      : lastError
+        ? String(lastError)
+        : 'None (all sources exhausted)';
+  console.error(`[Transcript] FAILED after trying all sources: ${errorMessage}`);
+  throw new Error(`Failed to fetch transcript from all sources. Last error: ${errorMessage}`);
 };
 
 export interface SourceTestResult {

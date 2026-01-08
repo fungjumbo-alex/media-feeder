@@ -109,37 +109,39 @@ export default defineConfig(({ mode }) => {
                 const isInvidious = targetUrl.includes('invidious');
 
                 const noCookies = req.headers['x-proxy-no-cookies'] === 'true';
-                if (noCookies || req.headers['x-proxy-referer']) {
-                  console.log(`[App Proxy] ${targetUrl.substring(0, 80)}...`, {
-                    noCookies,
-                    referer: req.headers['x-proxy-referer'],
-                  });
-                }
+
+                // Rotate common User-Agents to avoid pattern detection
+                const userAgents = [
+                  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                ];
+                const selectedUA = userAgents[Math.floor(Math.random() * userAgents.length)];
 
                 const fetchOptions = {
                   headers: {
-                    'User-Agent':
-                      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': selectedUA,
                     'Accept-Language': 'en-US,en;q=0.9',
                     Accept:
                       (req.headers['x-proxy-accept'] as string) ||
                       'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                     DNT: '1',
+                    'Accept-Encoding': 'identity', // Prevent compressed junk that node-fetch/Vite might struggle to pipe
                     Connection: 'keep-alive',
                     'Upgrade-Insecure-Requests': '1',
                     'Sec-Fetch-Dest': (req.headers['x-proxy-fetch-dest'] as string) || 'document',
                     'Sec-Fetch-Mode': (req.headers['x-proxy-fetch-mode'] as string) || 'navigate',
                     'Sec-Fetch-Site': (req.headers['x-proxy-fetch-site'] as string) || 'none',
+                    'Sec-Fetch-User': '?1',
                     'Cache-Control': 'max-age=0',
-                    // Only set referer/origin for YouTube to avoid bot detection on Invidious
                     ...(isYouTube && {
                       Referer:
-                        (req.headers['x-proxy-referer'] as string) || 'https://www.youtube.com/',
+                        (req.headers['x-proxy-referer'] as string) || 'https://www.google.com/',
                       Origin:
                         (req.headers['x-proxy-origin'] as string) || 'https://www.youtube.com',
                       ...(!noCookies && {
                         Cookie:
-                          'SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; CONSENT=YES+yt.20210328-17-p0.en+FX+417',
+                          'CONSENT=YES+cb.20240101-00-p0.en+FX+123; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; VISITOR_INFO1_LIVE=ztLpX-Pq_2Y;',
                       }),
                     }),
                   },
@@ -148,12 +150,25 @@ export default defineConfig(({ mode }) => {
                 const fetch = (await import('node-fetch')).default;
                 const response = await fetch(targetUrl, fetchOptions);
 
+                // Robust response handling: Read to buffer before sending to avoid pipe issues
+                const arrayBuffer = await response.arrayBuffer();
+                const buffer = Buffer.from(arrayBuffer);
+
+                console.log(
+                  `[App Proxy] ${response.status} for ${targetUrl.substring(0, 100)} (Length: ${buffer.length})`
+                );
+
+                if (!response.ok && response.status !== 404) {
+                  console.warn(`[App Proxy] Failed fetch details: Status ${response.status}`);
+                }
+
                 // Forward headers, but exclude those that might cause issues
                 const excludedHeaders = [
                   'content-encoding',
                   'content-length',
                   'transfer-encoding',
                   'connection',
+                  'access-control-allow-origin',
                 ];
                 response.headers.forEach((value, key) => {
                   if (!excludedHeaders.includes(key.toLowerCase())) {
@@ -161,13 +176,10 @@ export default defineConfig(({ mode }) => {
                   }
                 });
 
-                // Set CORS headers to allow local dev
+                // Ensure CORS is allowed for the local proxy
                 res.setHeader('Access-Control-Allow-Origin', '*');
-
                 res.statusCode = response.status;
-
-                const arrayBuffer = await response.arrayBuffer();
-                res.end(Buffer.from(arrayBuffer));
+                res.end(buffer);
               } catch (error) {
                 const err = error as any;
                 const isDnsError = err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN';

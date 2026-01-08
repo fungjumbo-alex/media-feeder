@@ -9,7 +9,12 @@ import type {
 } from '../types';
 
 // Helper for proxies that are likely to work from cloud environments (Netlify/Firebase)
-const THIRD_PARTY_PROXIES = [PROXIES[1], PROXIES[2], PROXIES[4], PROXIES[5]];
+const THIRD_PARTY_PROXIES = [
+  PROXIES.find(p => p.name === 'App Proxy'),
+  PROXIES.find(p => p.name === 'AllOrigins'),
+  PROXIES.find(p => p.name === 'corsproxy.io'),
+  PROXIES.find(p => p.name === 'cors.sh'),
+].filter((p): p is (typeof PROXIES)[0] => !!p);
 
 interface InvidiousVideoDetails {
   videoId: string;
@@ -591,28 +596,70 @@ const parseVTT = (vttText: string): TranscriptLine[] => {
   return snippets;
 };
 
+// Transcript cache to reduce redundant API calls
+const transcriptCache = new Map<string, { transcript: TranscriptLine[]; timestamp: number }>();
+const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
+
+// Backend rate limit tracking
+let backendRateLimitedUntil = 0;
+const BACKEND_COOLDOWN = 5 * 60 * 1000; // 5 minutes cooldown after 429
+
 export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> => {
   // Handle direct-vtt marker from getTranscriptChoices
   if (url.startsWith('direct-vtt:')) {
-    const [proxyName, watchUrl, vttUrl] = url.substring('direct-vtt:'.length).split('|');
-    console.log(`[Transcript] Fetching direct-vtt choice via ${proxyName}`);
-    return await fetchDirectScrapeTranscript(vttUrl, watchUrl, proxyName);
+    try {
+      const [proxyName, watchUrl, vttUrl] = url.substring('direct-vtt:'.length).split('|');
+      console.log(`[Transcript] Fetching direct-vtt choice via ${proxyName}`);
+      const snippets = await fetchDirectScrapeTranscript(vttUrl, watchUrl, proxyName);
+      if (snippets && snippets.length > 5) {
+        return snippets;
+      }
+      console.warn('[Transcript] Direct-vtt returned too few snippets, trying fallback...');
+    } catch (e) {
+      console.warn(`[Transcript] Direct-vtt fetch failed: ${e}. Falling back to broad search...`);
+      // Re-map the URL to a standard YouTube URL so the logic below can extract the videoId and proceed
+      const videoIdMatch = url.match(/v=([0-9A-Za-z_-]{11})/);
+      if (videoIdMatch) {
+        url = `https://www.youtube.com/watch?v=${videoIdMatch[1]}`;
+      } else {
+        // If we can't recover the URL, we might still have the videoId in context elsewhere or just let it fail at next step
+        console.warn(
+          '[Transcript] Could not recover video URL from direct-vtt link after failure.'
+        );
+      }
+    }
   }
 
   const isYoutubeUrl = url.includes('youtube.com/') || url.includes('youtu.be/');
   const videoId = getYouTubeId(url);
 
-  // 1. Try local backend first ONLY for YouTube URLs
-  if (isYoutubeUrl) {
+  // Check cache first
+  const cacheKey = videoId || url;
+  const cached = transcriptCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log(
+      `[Transcript] Returning cached transcript for ${cacheKey} (${cached.transcript.length} lines)`
+    );
+    return cached.transcript;
+  }
+
+  // 1. Try local backend first ONLY for YouTube URLs (if not rate-limited)
+  if (isYoutubeUrl && Date.now() > backendRateLimitedUntil) {
     try {
       console.log('[Transcript] Attempting backend fetch for YouTube URL:', url);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout for backend
+
       const response = await fetch(`/api/transcript?t=${Date.now()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ url }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.json();
@@ -626,9 +673,17 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
             console.log(
               `[Transcript] Found transcript in backend response (${transcript.length} lines)`
             );
+            // Cache the result
+            transcriptCache.set(cacheKey, { transcript, timestamp: Date.now() });
             return transcript;
           }
         }
+      } else if (response.status === 429) {
+        // Backend is rate-limited, disable it temporarily
+        backendRateLimitedUntil = Date.now() + BACKEND_COOLDOWN;
+        console.warn(
+          `[Transcript] Backend rate-limited (429). Disabling backend for ${BACKEND_COOLDOWN / 60000} minutes. Trying fallback immediately...`
+        );
       } else {
         try {
           const errorData = await response.json();
@@ -640,8 +695,19 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
         }
       }
     } catch (error) {
-      console.warn(`[Transcript] Backend fetch exception, trying fallback: ${error}`);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      // Check if it's a timeout or abort
+      if (errorMsg.includes('aborted') || errorMsg.includes('timeout')) {
+        console.warn(`[Transcript] Backend timeout, skipping to fallback immediately`);
+      } else {
+        console.warn(`[Transcript] Backend fetch exception, trying fallback: ${errorMsg}`);
+      }
     }
+  } else if (isYoutubeUrl && Date.now() <= backendRateLimitedUntil) {
+    const remainingMinutes = Math.ceil((backendRateLimitedUntil - Date.now()) / 60000);
+    console.log(
+      `[Transcript] Backend is rate-limited. Skipping backend (cooldown: ${remainingMinutes}m remaining). Using fallback...`
+    );
   } else {
     console.log(
       '[Transcript] URL is NOT a YouTube URL, skipping backend scraper and using proxy:',
@@ -658,6 +724,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
         console.log(
           `[Transcript] Successfully scraped ${directSnippets.length} snippets directly from YouTube page.`
         );
+        transcriptCache.set(cacheKey, { transcript: directSnippets, timestamp: Date.now() });
         return directSnippets;
       }
     } catch (scrapeErr) {
@@ -680,6 +747,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
           console.log(
             `[Transcript] Successfully fetched and parsed direct caption link (${snippets.length} lines)`
           );
+          transcriptCache.set(cacheKey, { transcript: snippets, timestamp: Date.now() });
           return snippets;
         }
         throw new Error('No snippets found in caption file.');
@@ -735,13 +803,19 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
       clearTimeout(timeoutId);
 
       if (!content || isHtml(content)) {
-        throw new Error('Blocked or No Content');
+        throw new Error('Blocked or No Content (HTML)');
       }
 
-      const data = JSON.parse(content);
-      const captionsArray = Array.isArray(data) ? data : data.captions || [];
+      let data;
+      try {
+        data = JSON.parse(content);
+      } catch (parseErr) {
+        const snippet = content.substring(0, 100).replace(/\n/g, ' ');
+        throw new Error(`Invalid JSON from Invidious: "${snippet}..."`);
+      }
 
-      if (captionsArray.length === 0) throw new Error('No Captions');
+      const captionsArray = Array.isArray(data) ? data : data.captions || [];
+      if (captionsArray.length === 0) throw new Error('No Captions in metadata');
 
       // Find English caption
       const findCaption = (lang: string) =>
@@ -756,17 +830,35 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
         ? enCaption.url
         : `${instance}${enCaption.url}`;
 
-      const { content: testContent } = await fetchViaProxy(
-        captionFileUrl,
-        'youtube',
-        undefined,
-        undefined,
-        undefined,
-        THIRD_PARTY_PROXIES,
-        {
-          signal: controller.signal,
-        } as any
-      );
+      let testContent = '';
+      try {
+        const { content } = await fetchViaProxy(
+          captionFileUrl,
+          'youtube',
+          undefined,
+          undefined,
+          undefined,
+          THIRD_PARTY_PROXIES,
+          {
+            signal: controller.signal,
+          } as any
+        );
+        testContent = content;
+      } catch (proxyErr) {
+        // HYBRID FALLBACK: If proxy fails, try Browser Direct (many Invidious instances have CORS)
+        console.log(`[Transcript] Proxy failed for ${instance} VTT, trying Browser Direct...`);
+        try {
+          const response = await fetch(captionFileUrl, { signal: controller.signal });
+          if (response.ok) {
+            testContent = await response.text();
+            console.log(`[Transcript] Browser Direct success for ${instance} VTT!`);
+          } else {
+            throw proxyErr;
+          }
+        } catch (directErr) {
+          throw proxyErr; // Rethrow original proxy error if direct also fails
+        }
+      }
 
       if (!testContent || testContent.length < 50 || isHtml(testContent)) {
         throw new Error(`Instance ${instance} served metadata but returned empty/invalid file.`);
@@ -802,6 +894,10 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
   );
 
   for (let i = 0; i < shuffled.length; i += batchSize) {
+    if (i > 0) {
+      console.log(`[Transcript] Waiting 1s before next batch...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
     const batch = shuffled.slice(i, i + batchSize);
     console.log(
       `[Transcript] Racing Batch ${Math.floor(i / batchSize) + 1}: ${batch.map(url => url.replace('https://', '')).join(', ')}`
@@ -886,6 +982,7 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
               console.log(
                 `[Transcript] Successfully parsed ${snippets.length} snippets from ${winnerInstance}`
               );
+              transcriptCache.set(cacheKey, { transcript: snippets, timestamp: Date.now() });
               return snippets;
             }
             console.warn(
@@ -918,7 +1015,12 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
     }
   }
 
-  const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+  const errorMessage =
+    lastError instanceof Error
+      ? lastError.message
+      : lastError
+        ? String(lastError)
+        : 'None (all sources exhausted)';
   console.error(`[Transcript] FAILED after trying all sources: ${errorMessage}`);
   throw new Error(`Failed to fetch transcript from all sources. Last error: ${errorMessage}`);
 };
@@ -997,7 +1099,6 @@ export const fetchDirectScrapeTranscript = async (
       headers: {
         'x-proxy-referer': watchUrl,
         'x-proxy-origin': 'https://www.youtube.com',
-        'x-proxy-no-cookies': 'true',
         'x-proxy-accept': '*/*',
         'x-proxy-fetch-dest': 'empty',
         'x-proxy-fetch-mode': 'cors',
@@ -1028,7 +1129,6 @@ export const fetchDirectScrapeTranscript = async (
       headers: {
         'x-proxy-referer': watchUrl,
         'x-proxy-origin': 'https://www.youtube.com',
-        'x-proxy-no-cookies': 'true',
         'x-proxy-accept': 'application/json, */*',
         'x-proxy-fetch-dest': 'empty',
         'x-proxy-fetch-mode': 'cors',
@@ -1114,23 +1214,46 @@ export const getTranscriptChoices = async (videoId: string): Promise<CaptionChoi
   if (!videoId) return [];
   const allChoices: CaptionChoice[] = [];
 
-  // Method 1: Backend check (Now primary priority)
-  const url = `https://www.youtube.com/watch?v=${videoId}`;
-  try {
-    const response = await fetch(`/api/transcript?t=${Date.now()}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    if (response.ok) {
-      allChoices.push({
-        label: 'English (Backend)',
-        language_code: 'en',
-        url: `backend-transcript:${videoId}`,
+  // Method 1: Backend check (ONLY if not rate-limited)
+  if (Date.now() > backendRateLimitedUntil) {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout for choices
+
+      const response = await fetch(`/api/transcript?t=${Date.now()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        allChoices.push({
+          label: 'English (Backend)',
+          language_code: 'en',
+          url: `backend-transcript:${videoId}`,
+        });
+      } else if (response.status === 429 || response.status === 502) {
+        // Backend is rate-limited or erroring, disable it temporarily
+        backendRateLimitedUntil = Date.now() + BACKEND_COOLDOWN;
+        console.warn(
+          `[Transcript] Backend returned ${response.status} in getTranscriptChoices. Disabling for ${BACKEND_COOLDOWN / 60000}m`
+        );
+      }
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      if (!errorMsg.includes('aborted')) {
+        console.warn(`[Transcript] getTranscriptChoices: Backend check failed: ${errorMsg}`);
+      }
     }
-  } catch (e) {
-    console.warn(`[Transcript] getTranscriptChoices: Backend check failed: ${e}`);
+  } else {
+    const remainingMinutes = Math.ceil((backendRateLimitedUntil - Date.now()) / 60000);
+    console.log(
+      `[Transcript] Skipping backend in getTranscriptChoices (cooldown: ${remainingMinutes}m remaining)`
+    );
   }
 
   // Method 2: Direct Scrape (FAST metadata check)
