@@ -931,6 +931,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const isReAuthingRef = useRef(false);
   const isSilentAuthRef = useRef(false);
   const tokenRefreshTimerRef = useRef<number | null>(null);
+  const isRefreshingRef = useRef(false);
 
   const handleGoogleSignIn = useCallback(
     (options?: { showConsentPrompt?: boolean; isSilent?: boolean }) => {
@@ -2687,9 +2688,17 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const runInBackgroundGrouping = useCallback(
     async (feedsOverride?: Feed[]) => {
-      console.log('[AutoGrouping] Checking if auto-grouping is valid...', { autoClusterOnRefresh });
+      console.log('[AutoGrouping] Checking if auto-grouping is valid...', {
+        autoClusterOnRefresh,
+        isRefreshing: isRefreshingRef.current,
+      });
+      console.log('[AutoGrouping] Called from:', new Error().stack?.split('\n')[2]?.trim());
       if (!autoClusterOnRefresh) {
         console.log('[AutoGrouping] Skipped: disabled.');
+        return;
+      }
+      if (isRefreshingRef.current) {
+        console.log('[AutoGrouping] Skipped: refresh in progress.');
         return;
       }
       const feedsToUse = feedsOverride || feeds;
@@ -2837,9 +2846,10 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         setFeeds(latestFeeds);
 
         runInBackgroundTranscription(latestFeeds).then(() => {
-          runInBackgroundSummaryGeneration(latestFeeds);
+          runInBackgroundSummaryGeneration(latestFeeds).then(() => {
+            runInBackgroundGrouping(latestFeeds);
+          });
         });
-        runInBackgroundGrouping(latestFeeds);
 
         const totalImportedFeeds = currentFeedsMap.size;
         if (!options?.silent) {
@@ -4468,6 +4478,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
       setIsRefreshingAll(true);
       setRefreshProgress(1);
+      isRefreshingRef.current = true;
 
       setToast({ message: `Refreshing ${viewTitle}...`, type: 'success' });
 
@@ -4686,25 +4697,37 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         console.log('[Refresh] Refresh complete. Triggering background tasks...');
         console.log(`[Refresh] New articles found: ${allNewArticles.length}`);
 
-        // Chain background tasks: Transcription -> Summary
-        // Updated to use feeds from state (all articles) instead of just new ones
-        console.log('[Refresh] Triggering background transcription sequence...');
-        // Get current feeds directly - don't wrap in setFeeds
+        // Clear the refresh flag BEFORE triggering background tasks
+        isRefreshingRef.current = false;
+
+        // Capture the final feeds state after all batch processing
+        let finalFeeds: Feed[] = [];
         setFeeds(currentFeeds => {
-          // Fire and forget (it is async)
-          runInBackgroundTranscription(currentFeeds).then(() => {
+          finalFeeds = currentFeeds;
+          return currentFeeds;
+        });
+
+        // Chain background tasks: Transcription -> Summary -> Grouping
+        // Use setTimeout to ensure the setFeeds above has completed
+        console.log('[Refresh] Triggering background transcription sequence...');
+        setTimeout(() => {
+          console.log(
+            `[Refresh] Starting background tasks with ${finalFeeds.length} feeds, ${finalFeeds.flatMap(f => f.items).length} total articles`
+          );
+
+          // Chain the tasks sequentially: Transcription -> Summary -> Grouping
+          runInBackgroundTranscription(finalFeeds).then(() => {
             console.log(
               '[Refresh] Transcription task finished (or skipped). Starting summary generation...'
             );
-            runInBackgroundSummaryGeneration(currentFeeds);
+            runInBackgroundSummaryGeneration(finalFeeds).then(() => {
+              console.log(
+                '[Refresh] Summary generation finished (or skipped). Starting AI grouping...'
+              );
+              runInBackgroundGrouping(finalFeeds);
+            });
           });
-
-          console.log('[Refresh] Triggering background grouping...');
-          runInBackgroundGrouping(currentFeeds);
-
-          // CRITICAL: Return currentFeeds unchanged - feeds were already updated by processBatchResults
-          return currentFeeds;
-        });
+        }, 100);
 
         if (autoUploadAfterRefresh) {
           setTriggerAutoUpload(true);
@@ -4716,6 +4739,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           type: 'error',
         });
       } finally {
+        isRefreshingRef.current = false;
         setIsRefreshingAll(false);
         setRefreshProgress(null);
       }
@@ -4730,7 +4754,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       refreshDelaySeconds,
       accessToken,
       autoUploadAfterRefresh,
+      runInBackgroundTranscription,
       runInBackgroundSummaryGeneration,
+      runInBackgroundGrouping,
     ]
   );
 
