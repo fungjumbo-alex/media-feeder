@@ -932,6 +932,11 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const isSilentAuthRef = useRef(false);
   const tokenRefreshTimerRef = useRef<number | null>(null);
   const isRefreshingRef = useRef(false);
+  const feedsRef = useRef<Feed[]>(feeds);
+
+  useEffect(() => {
+    feedsRef.current = feeds;
+  }, [feeds]);
 
   const handleGoogleSignIn = useCallback(
     (options?: { showConsentPrompt?: boolean; isSilent?: boolean }) => {
@@ -2705,6 +2710,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
       const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
       const allArticles = feedsToUse.flatMap(f => f.items);
+      console.log(`[AutoGrouping] Total articles in feeds: ${allArticles.length}`);
 
       // Deduplicate by ID
       const seenIds = new Set<string>();
@@ -2715,13 +2721,19 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           uniqueArticles.push(article);
         }
       }
+      console.log(`[AutoGrouping] Unique articles: ${uniqueArticles.length}`);
 
       const recentArticles = uniqueArticles
-        .filter(i => i.pubDateTimestamp && i.pubDateTimestamp >= threeDaysAgo)
+        .filter(i => {
+          const isRecent = i.pubDateTimestamp && i.pubDateTimestamp >= threeDaysAgo;
+          return isRecent;
+        })
         .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0))
         .slice(0, 300);
 
-      console.log(`[AutoGrouping] Found ${recentArticles.length} recent articles for grouping.`);
+      console.log(
+        `[AutoGrouping] Found ${recentArticles.length} recent articles (last 3 days) for grouping.`
+      );
 
       if (recentArticles.length < 5) {
         console.log(
@@ -2843,6 +2855,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (data.autoplayMode) setAutoplayMode(data.autoplayMode);
 
         const latestFeeds = Array.from(currentFeedsMap.values());
+        feedsRef.current = latestFeeds;
         setFeeds(latestFeeds);
 
         runInBackgroundTranscription(latestFeeds).then(() => {
@@ -4551,7 +4564,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
               const existing = updatedFeedsMap.get(f.id);
               if (existing) updatedFeedsMap.set(f.id, { ...existing, error: f.error });
             });
-            return Array.from(updatedFeedsMap.values());
+            const nextFeeds = Array.from(updatedFeedsMap.values());
+            feedsRef.current = nextFeeds;
+            return nextFeeds;
           });
 
           if (successfulFeeds.length > 0) {
@@ -4700,31 +4715,25 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         // Clear the refresh flag BEFORE triggering background tasks
         isRefreshingRef.current = false;
 
-        // Capture the final feeds state after all batch processing
-        let finalFeeds: Feed[] = [];
-        setFeeds(currentFeeds => {
-          finalFeeds = currentFeeds;
-          return currentFeeds;
-        });
-
         // Chain background tasks: Transcription -> Summary -> Grouping
-        // Use setTimeout to ensure the setFeeds above has completed
+        // Use a short delay to ensure React has flushed state updates to the Ref
         console.log('[Refresh] Triggering background transcription sequence...');
         setTimeout(() => {
+          const latestFeeds = feedsRef.current;
           console.log(
-            `[Refresh] Starting background tasks with ${finalFeeds.length} feeds, ${finalFeeds.flatMap(f => f.items).length} total articles`
+            `[Refresh] Starting background tasks with ${latestFeeds.length} feeds, ${latestFeeds.flatMap(f => f.items).length} total articles`
           );
 
           // Chain the tasks sequentially: Transcription -> Summary -> Grouping
-          runInBackgroundTranscription(finalFeeds).then(() => {
+          runInBackgroundTranscription(latestFeeds).then(() => {
             console.log(
               '[Refresh] Transcription task finished (or skipped). Starting summary generation...'
             );
-            runInBackgroundSummaryGeneration(finalFeeds).then(() => {
+            runInBackgroundSummaryGeneration(latestFeeds).then(() => {
               console.log(
                 '[Refresh] Summary generation finished (or skipped). Starting AI grouping...'
               );
-              runInBackgroundGrouping(finalFeeds);
+              runInBackgroundGrouping(latestFeeds);
             });
           });
         }, 100);
