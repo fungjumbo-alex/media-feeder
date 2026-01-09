@@ -511,7 +511,7 @@ const TopicItem: React.FC<{
   onNavigate: (title: string, ids: string[]) => void;
   personalInterests?: string[];
 }> = ({ title, articleIds, subTopics, depth = 0, onNavigate, personalInterests = [] }) => {
-  const { currentView, articlesById, readArticleIds } = useAppContext();
+  const { currentView, articlesById, readArticleIds, sidebarTab, feedsById } = useAppContext();
   const [isExpanded, setIsExpanded] = React.useState(false);
 
   // Check if this topic matches a personal interest
@@ -522,9 +522,17 @@ const TopicItem: React.FC<{
   const hasSubTopics = subTopics && subTopics.length > 0;
 
   // Optimized count using articlesById Map (O(1) lookup)
+  // CRITICAL: Filter by the current tab so the count matches the main view
   const validArticles = React.useMemo(() => {
-    return articleIds.filter(id => articlesById.has(id));
-  }, [articleIds, articlesById]);
+    return articleIds.filter(id => {
+      const article = articlesById.get(id);
+      if (!article) return false;
+      const feed = feedsById.get(article.feedId);
+      if (!feed) return false;
+      const isYouTubeFeed = feed.url.toLowerCase().includes('youtube.com');
+      return sidebarTab === 'yt' ? isYouTubeFeed : !isYouTubeFeed;
+    });
+  }, [articleIds, articlesById, feedsById, sidebarTab]);
 
   const validArticleCount = validArticles.length;
 

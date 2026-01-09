@@ -238,6 +238,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
   const {
     aiModel,
     defaultAiLanguage,
+    aiHierarchy,
     ytAiHierarchy,
     setYtAiHierarchy,
     nonYtAiHierarchy,
@@ -249,24 +250,41 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
   const [articleViewMode, setArticleViewMode] = useState<'list' | 'thumbnail'>('list');
 
+  const filteredArticles = React.useMemo(() => {
+    return articles.filter(a => {
+      const isVideo = a.feedId.startsWith('yt-') || a.isVideo;
+      return activeTab === 'yt' ? isVideo : !isVideo;
+    });
+  }, [articles, activeTab]);
+
   const [isClustering, setIsClustering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const currentHierarchy = React.useMemo(() => {
     const rawHierarchy = activeTab === 'yt' ? ytAiHierarchy : nonYtAiHierarchy;
-    if (!rawHierarchy) return null;
+    const source = rawHierarchy || aiHierarchy;
+    if (!source) return null;
 
     // Sort root topics so personal interests are at the top
-    const sortedTopics = [...rawHierarchy.rootTopics].sort((a, b) => {
-      const aIsInterest = personalInterests.some(pi => pi.toLowerCase() === a.title.toLowerCase());
-      const bIsInterest = personalInterests.some(pi => pi.toLowerCase() === b.title.toLowerCase());
+    const sortedTopics = [...source.rootTopics].sort((a, b) => {
+      const aIsInterest = personalInterests.some(
+        pi => pi.toLowerCase() === titleMatch(pi, a.title)
+      );
+      const bIsInterest = personalInterests.some(
+        pi => pi.toLowerCase() === titleMatch(pi, b.title)
+      );
       if (aIsInterest && !bIsInterest) return -1;
       if (!aIsInterest && bIsInterest) return 1;
       return 0;
     });
 
     return { rootTopics: sortedTopics };
-  }, [activeTab, ytAiHierarchy, nonYtAiHierarchy, personalInterests]);
+  }, [activeTab, ytAiHierarchy, nonYtAiHierarchy, aiHierarchy, personalInterests]);
+
+  function titleMatch(interest: string, title: string) {
+    if (interest.toLowerCase() === title.toLowerCase()) return interest.toLowerCase();
+    return title.toLowerCase();
+  }
 
   const handleClusterWithAI = async (tabToCluster?: 'yt' | 'web') => {
     const targetTab = tabToCluster || activeTab;
@@ -329,7 +347,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
     currentHierarchy.rootTopics.forEach((rootTopic, rootIndex) => {
       const rootId = `root-${rootIndex}`;
       allTopicIds.push(rootId);
-      rootTopic.subTopics.forEach((_, subIndex) => {
+      rootTopic.subTopics.forEach((_: any, subIndex: number) => {
         const subId = `${rootId}-sub-${subIndex}`;
         allTopicIds.push(subId);
       });
@@ -492,7 +510,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
         ) : (
           <OutlineView
             hierarchy={currentHierarchy}
-            articles={articles}
+            articles={filteredArticles}
             expandedTopics={expandedTopics}
             onToggleTopic={handleToggleTopic}
             onOpenArticle={article => {

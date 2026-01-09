@@ -757,9 +757,22 @@ export const generateMindmapHierarchy = async (
 
   while (attempt < MAX_RETRIES) {
     try {
-      let systemInstruction = `You are a JSON generator. Your ONLY task is to group these ${groupName} articles into topics.
-    - Prioritize the latest/newest items when forming groups or choosing representative titles.
-    - Group items that discuss the same or very similar events/topics.
+      // 1. Create a mapping of indices to original IDs to save tokens.
+      // RSS article IDs are often long URLs, which hit token limits quickly with 250+ articles.
+      const idMap = new Map<string, string>();
+      const articleList = articlesToProcess
+        .map((a, index) => {
+          const fakeId = `A${index}`;
+          idMap.set(fakeId, a.id);
+          return `${fakeId}|${a.title}`;
+        })
+        .join('\n');
+
+      let systemInstruction = `You are a JSON generator. Your task is to group these ${articlesToProcess.length} ${groupName} articles into topics.
+    - Use EXACTLY the IDs provided (A0, A1, ...) in the articleIds fields.
+    - Every ID from the input must be included exactly once.
+    - Group articles into meaningful root topics (3-8 topics for general content).
+    - Prioritize newest items.
 
 Output strictly valid JSON. NO explanations. NO thinking.
 
@@ -767,9 +780,9 @@ Format:
 {
   "rootTopics": [
     {
-      "title": "Topic",
+      "title": "Topic Title",
       "subTopics": [
-        { "title": "Subtopic", "articleIds": ["id1"] }
+        { "title": "Subtopic Title", "articleIds": ["A0", "A1", ...] }
       ],
       "articleIds": []
     }
@@ -777,43 +790,32 @@ Format:
 }
 
 IMPORTANT CONSTRAINTS:
-1. Each article ID from the input list must appear EXACTLY ONCE in the entire JSON output.
-2. Assign each article to the single most relevant subtopic.
-3. Do NOT repeat article IDs across multiple topics or subtopics.
-4. If an article doesn't fit well, put it in a "Miscellaneous" topic.`;
+1. Every article ID (A0, A1, ...) provided in the input MUST appear EXACTLY ONCE in the JSON output.
+2. If an article doesn't fit, put it in a "Miscellaneous" subtopic.
+3. Assigning EVERY article ID is more important than perfect categorization. Do not omit any IDs.
+4. If you hit length limits, use fewer subtopics to ensure all IDs are listed.`;
 
       // Add personal interests prioritization if provided
       if (personalInterests.length > 0) {
         systemInstruction += `\n\nPERSONAL INTERESTS - PRIORITY GROUPING:
-${personalInterests.map(topic => `- ${topic}`).join('\n')}
+${personalInterests.map(interest => `- ${interest}`).join('\n')}
 
 **CRITICAL INSTRUCTIONS FOR PERSONAL INTERESTS:**
-1. Search through ALL articles carefully for content related to these interests
-2. Use SEMANTIC MATCHING - don't require exact title matches
-   - For "Machine Learning": include articles about neural networks, deep learning, AI models, training algorithms, etc.
-   - For "Climate Change": include articles about global warming, carbon emissions, renewable energy, climate policy, etc.
-   - For "Space Exploration": include articles about rockets, satellites, Mars missions, astronomy, SpaceX, NASA, etc.
-3. **IMPORTANT: Use the EXACT personal interest name as the topic title**
-   - If personal interest is "Apple", the topic title MUST be "Apple" (not "Apple Products", "Apple產品", etc.)
-   - If personal interest is "Machine Learning", the topic title MUST be "Machine Learning" (not "ML", "AI", etc.)
-   - DO NOT rename, translate, or modify the personal interest names
-4. Create a dedicated topic for EACH personal interest that has at least one matching article
-5. Group ALL related articles under the appropriate personal interest topic
-6. Only after assigning articles to personal interest topics, group remaining articles into 3-8 general topics
-
-The personal interest topics should appear FIRST in your output if they have matching articles.`;
+1. Search ALL articles for content related to these interests using semantic matching.
+2. **Use the EXACT personal interest name as the topic title** (DO NOT rename or translate them).
+3. Create a dedicated topic for EACH personal interest that has matching articles.
+4. Group remaining articles into 3-8 general topics only after assigning interest-related ones.
+5. Personal interest topics must appear FIRST.`;
       }
 
       if (targetLanguage && targetLanguage !== 'original') {
         systemInstruction += `\n\nIMPORTANT: All "title" fields in the JSON output MUST be translated into ${targetLanguage}.`;
       }
 
-      const articleList = articlesToProcess.map(a => `${a.id}|${a.title}`).join('\n');
-
-      const contents = `Group these ${articlesToProcess.length} articles into 3-8 topics. The input format is ID|Title:\n${articleList}`;
+      const contents = `Group these ${articlesToProcess.length} articles into topics. The input format is ID|Title:\n${articleList}`;
 
       console.log(
-        `[AI Clustering] Sending request to ${model} with ${contents.length} characters for ${articlesToProcess.length} ${groupName} articles (Attempt ${attempt + 1})`
+        `[AI Clustering] Sending request to ${model} for ${articlesToProcess.length} ${groupName} articles (Attempt ${attempt + 1})`
       );
 
       const response = await generateContentWithRetry({
@@ -833,31 +835,57 @@ The personal interest topics should appear FIRST in your output if they have mat
       }
 
       const candidate = response.candidates[0];
-
       if (candidate.finishReason === 'MAX_TOKENS') {
         throw new Error('MAX_TOKENS_LIMIT');
       }
 
-      if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+      const part = candidate.content?.parts?.[0];
+      if (!part || !part.text) {
         throw new Error(
-          `AI response has no content. Finish reason: ${candidate.finishReason || 'UNKNOWN'}.`
+          `AI response has no content parts. Finish reason: ${candidate.finishReason || 'UNKNOWN'}.`
         );
       }
 
-      let jsonString = candidate.content.parts[0].text || '{}';
-      jsonString = jsonString.replace(/```json\n/g, '').replace(/```/g, '');
+      let jsonString = part.text || '{}';
+      // Robust JSON extraction from possible markdown or dialogue
+      const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
+      if (jsonMatch) jsonString = jsonMatch[0];
 
-      let hierarchyJson = JSON.parse(jsonString);
+      const hierarchyJson = JSON.parse(jsonString);
+      const rootTopicsRaw = Array.isArray(hierarchyJson)
+        ? hierarchyJson
+        : hierarchyJson.rootTopics || [];
 
-      if (Array.isArray(hierarchyJson)) {
-        hierarchyJson = { rootTopics: hierarchyJson };
-      }
+      // 2. Map indices back to original long IDs (URLs)
+      const mapId = (id: any) => idMap.get(String(id).trim()) || null;
 
-      if (!hierarchyJson.rootTopics || !Array.isArray(hierarchyJson.rootTopics)) {
-        throw new Error('AI returned an invalid format for the mindmap hierarchy.');
-      }
+      const mappedHierarchy: MindmapHierarchy = {
+        rootTopics: rootTopicsRaw.map((root: any) => ({
+          title: root.title || 'Topic',
+          articleIds: (root.articleIds || [])
+            .map(mapId)
+            .filter((id: string | null): id is string => !!id),
+          subTopics: (root.subTopics || []).map((sub: any) => ({
+            title: sub.title || 'Subtopic',
+            articleIds: (sub.articleIds || [])
+              .map(mapId)
+              .filter((id: string | null): id is string => !!id),
+          })),
+        })),
+      };
 
-      return hierarchyJson as MindmapHierarchy;
+      // Logging metrics for coverage
+      const finalCount = mappedHierarchy.rootTopics.reduce((acc, root) => {
+        let count = root.articleIds.length;
+        root.subTopics.forEach((sub: any) => (count += sub.articleIds.length));
+        return acc + count;
+      }, 0);
+
+      console.log(
+        `[AI Clustering] Hierarchy generated: ${finalCount}/${articlesToProcess.length} articles covered.`
+      );
+
+      return mappedHierarchy;
     } catch (error: any) {
       if (
         (error.message &&
@@ -865,7 +893,7 @@ The personal interest topics should appear FIRST in your output if they have mat
         error.message === 'MAX_TOKENS_LIMIT'
       ) {
         console.warn(
-          `[AI Clustering] Hit token limit with ${articlesToProcess.length} ${groupName} articles.`
+          `[AI Clustering] Hit token limit with ${articlesToProcess.length} ${groupName} articles. Reducing size...`
         );
         attempt++;
         if (attempt >= MAX_RETRIES) {
@@ -873,7 +901,8 @@ The personal interest topics should appear FIRST in your output if they have mat
             `The mindmap for ${groupName} is too complex even after reducing the dataset.`
           );
         }
-        const newSize = Math.max(5, Math.floor(articlesToProcess.length * 0.6));
+        // More gradual reduction (80% instead of 60%)
+        const newSize = Math.max(5, Math.floor(articlesToProcess.length * 0.8));
         articlesToProcess = articlesToProcess.slice(0, newSize);
         continue;
       }

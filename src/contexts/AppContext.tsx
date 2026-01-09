@@ -1408,6 +1408,19 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     trendingKeywordsRef.current = trendingKeywords;
   }, [trendingKeywords]);
 
+  // Persist AI hierarchies
+  useEffect(() => {
+    localStorage.setItem('media-feeder-ai-hierarchy', JSON.stringify(aiHierarchy));
+  }, [aiHierarchy]);
+
+  useEffect(() => {
+    localStorage.setItem('media-feeder-yt-ai-hierarchy', JSON.stringify(ytAiHierarchy));
+  }, [ytAiHierarchy]);
+
+  useEffect(() => {
+    localStorage.setItem('media-feeder-non-yt-ai-hierarchy', JSON.stringify(nonYtAiHierarchy));
+  }, [nonYtAiHierarchy]);
+
   const [isRefreshOptionsModalOpen, setIsRefreshOptionsModalOpen] = useState(false);
   const [refreshModalInitialState, setRefreshModalInitialState] = useState<{
     favoritesOnly?: boolean;
@@ -2283,6 +2296,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       const feed = feedsById.get(article.feedId);
       if (!feed) return false;
       const isYouTubeFeed = feed.url.toLowerCase().includes('youtube.com');
+
       if (sidebarTab === 'yt') {
         return isYouTubeFeed;
       } else {
@@ -2373,6 +2387,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     favoritesOrderRss,
     sidebarTab,
     aiHierarchy,
+    ytAiHierarchy,
+    nonYtAiHierarchy,
   ]);
 
   const notesForView = useMemo(() => {
@@ -2759,6 +2775,9 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         );
         console.log('[AutoGrouping] Hierarchy generated successfully.');
         setAiHierarchy(hierarchy);
+        // Clear tab-specific hierarchies to ensure the new auto-hierarchy is shown in the sidebar
+        setYtAiHierarchy(null);
+        setNonYtAiHierarchy(null);
       } catch (error) {
         console.warn('[AutoGrouping] Failed to generate background hierarchy:', error);
         if (error instanceof QuotaExceededError) {
@@ -4015,6 +4034,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       const feed = feedsById.get(article.feedId);
       if (!feed) return false;
       const isYouTubeFeed = feed.url.toLowerCase().includes('youtube.com');
+
       if (sidebarTab === 'yt') {
         return isYouTubeFeed;
       } else {
