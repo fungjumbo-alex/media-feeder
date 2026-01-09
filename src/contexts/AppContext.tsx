@@ -2729,11 +2729,17 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
           return isRecent;
         })
         .sort((a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0))
-        .slice(0, 300);
+        .slice(0, 250);
 
-      console.log(
-        `[AutoGrouping] Found ${recentArticles.length} recent articles (last 3 days) for grouping.`
-      );
+      console.log(`[AutoGrouping] Processing ${recentArticles.length} recent articles.`);
+      if (recentArticles.length > 0) {
+        console.log('[AutoGrouping] Top 3 most recent articles for AI:');
+        recentArticles.slice(0, 3).forEach((a, i) => {
+          console.log(
+            `  ${i + 1}. "${a.title}" - ${new Date(a.pubDateTimestamp || 0).toLocaleString()}`
+          );
+        });
+      }
 
       if (recentArticles.length < 5) {
         console.log(
@@ -4716,27 +4722,33 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         isRefreshingRef.current = false;
 
         // Chain background tasks: Transcription -> Summary -> Grouping
-        // Use a short delay to ensure React has flushed state updates to the Ref
-        console.log('[Refresh] Triggering background transcription sequence...');
+        // Use a longer delay to ensure React has fully settled after heavy batch processing
+        console.log('[Refresh] Triggering background sequence in 500ms...');
         setTimeout(() => {
           const latestFeeds = feedsRef.current;
+          const allItems = latestFeeds.flatMap(f => f.items);
+          const newestItem = allItems.sort(
+            (a, b) => (b.pubDateTimestamp || 0) - (a.pubDateTimestamp || 0)
+          )[0];
+
           console.log(
-            `[Refresh] Starting background tasks with ${latestFeeds.length} feeds, ${latestFeeds.flatMap(f => f.items).length} total articles`
+            `[Refresh] Background task START: ${latestFeeds.length} feeds, ${allItems.length} total articles.`
           );
+          if (newestItem) {
+            console.log(
+              `[Refresh] Newest article in state: "${newestItem.title}" (${new Date(newestItem.pubDateTimestamp || 0).toLocaleString()})`
+            );
+          }
 
           // Chain the tasks sequentially: Transcription -> Summary -> Grouping
           runInBackgroundTranscription(latestFeeds).then(() => {
-            console.log(
-              '[Refresh] Transcription task finished (or skipped). Starting summary generation...'
-            );
+            console.log('[Refresh] Transcription sequence finished.');
             runInBackgroundSummaryGeneration(latestFeeds).then(() => {
-              console.log(
-                '[Refresh] Summary generation finished (or skipped). Starting AI grouping...'
-              );
+              console.log('[Refresh] Summary sequence finished. Initiating AI grouping...');
               runInBackgroundGrouping(latestFeeds);
             });
           });
-        }, 100);
+        }, 500);
 
         if (autoUploadAfterRefresh) {
           setTriggerAutoUpload(true);
