@@ -380,8 +380,8 @@ export const fetchViaProxy = async (
       : lastError
         ? String(lastError)
         : 'None (all sources exhausted)';
-  console.error(`[Transcript] FAILED after trying all sources: ${errorMessage}`);
-  throw new Error(`Failed to fetch transcript from all sources. Last error: ${errorMessage}`);
+  console.error(`[Proxy] FAILED after trying all sources: ${errorMessage}`);
+  throw new Error(`Failed to fetch content from all sources. Last error: ${errorMessage}`);
 };
 
 export interface SourceTestResult {

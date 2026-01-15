@@ -196,18 +196,49 @@ export const getYouTubeId = (url: string | null): string | null => {
 export const fetchYouTubeComments = async (videoId: string): Promise<YouTubeComment[]> => {
   if (!videoId) return [];
   let lastError: unknown = null;
-  for (const instance of INVIDIOUS_INSTANCES.slice(0, 3)) {
+
+  // Try more instances for better reliability
+  const instancesToTry = INVIDIOUS_INSTANCES.slice(0, 5);
+  console.log(
+    `[Comments] Fetching comments for video ${videoId} from ${instancesToTry.length} instances...`
+  );
+
+  for (const instance of instancesToTry) {
     try {
       const commentsUrl = `${instance}/api/v1/comments/${videoId}`;
+      console.log(`[Comments] Trying ${instance}...`);
+
       const { content } = await fetchViaProxy(commentsUrl, 'youtube');
+
+      // Validate content is not empty or HTML
+      if (!content || content.trim().length === 0) {
+        throw new Error('Empty response from server');
+      }
+
+      if (content.trim().startsWith('<!DOCTYPE') || content.trim().startsWith('<html')) {
+        throw new Error('Received HTML instead of JSON (possible block/error page)');
+      }
+
       const data = JSON.parse(content);
+
+      // Validate response structure
       if (data && Array.isArray(data.comments)) {
+        console.log(
+          `[Comments] Successfully fetched ${data.comments.length} comments from ${instance}`
+        );
         return data.comments;
+      } else if (data && data.error) {
+        throw new Error(`API returned error: ${data.error}`);
+      } else {
+        throw new Error('Invalid response structure: missing comments array');
       }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`[Comments] ${instance} failed: ${errorMsg}`);
       lastError = error;
     }
   }
+
   if (lastError) {
     const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
     throw new Error(
