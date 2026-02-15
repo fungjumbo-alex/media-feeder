@@ -12,7 +12,9 @@ import type {
 const THIRD_PARTY_PROXIES = [
   PROXIES.find(p => p.name === 'App Proxy'),
   PROXIES.find(p => p.name === 'AllOrigins'),
+  PROXIES.find(p => p.name === 'AllOriginsRaw'),
   PROXIES.find(p => p.name === 'corsproxy.io'),
+  PROXIES.find(p => p.name === 'Codetabs'),
   PROXIES.find(p => p.name === 'cors.sh'),
 ].filter((p): p is (typeof PROXIES)[0] => !!p);
 

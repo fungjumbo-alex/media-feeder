@@ -26,9 +26,9 @@ exports.handler = async function (event, context) {
       'Sec-Fetch-Site': reqHeaders['x-proxy-fetch-site'] || 'none',
       'Cache-Control': 'max-age=0',
       ...(isYouTube && {
-        'Referer': reqHeaders['x-proxy-referer'] || 'https://www.youtube.com/',
+        'Referer': reqHeaders['x-proxy-referer'] || 'https://www.google.com/',
         'Origin': reqHeaders['x-proxy-origin'] || 'https://www.youtube.com',
-        'Cookie': 'SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; CONSENT=YES+yt.20210328-17-p0.en+FX+417',
+        'Cookie': 'CONSENT=YES+yt.20250101-00-p0.en+FX+123; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; VISITOR_INFO1_LIVE=ztLpX-Pq_2Y;',
       }),
     };
 
