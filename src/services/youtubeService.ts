@@ -635,7 +635,7 @@ const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes
 
 // Backend rate limit tracking
 let backendRateLimitedUntil = 0;
-const BACKEND_COOLDOWN = 5 * 60 * 1000; // 5 minutes cooldown after 429
+const BACKEND_COOLDOWN = 10 * 60 * 1000; // 10 minutes cooldown after 429
 
 export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> => {
   // Handle direct-vtt marker from getTranscriptChoices

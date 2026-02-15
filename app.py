@@ -62,7 +62,7 @@ def get_transcript():
         try:
             transcript_list = yt.list(video_id)
         except IpBlocked as e:
-            print(f"[Backend] IP Blocked error for {video_id}: {str(e)}", flush=True)
+            print(f"[Backend] IP Blocked error for {video_id}. (429)", flush=True)
             return jsonify({
                 'error': 'YouTube is blocking this server\'s IP. Try a different fetching method.',
                 'code': 'IP_BLOCKED',
@@ -149,18 +149,18 @@ def get_transcript():
     except Exception as e:
         import traceback
         error_msg = str(e)
-        stack_trace = traceback.format_exc()
-        print(f"[Backend] CRITICAL ERROR for {video_id}: {error_msg}", flush=True)
-        print(stack_trace, flush=True)
-        
         if "Could not retrieve a transcript" in error_msg or "IpBlocked" in error_msg or "status code 429" in error_msg:
-            print(f"[Backend] IP Blocked catch-all for {video_id}", flush=True)
+            print(f"[Backend] IP Blocked catch-all for {video_id}. Fallback will take over.", flush=True)
             return jsonify({
-                'error': 'YouTube is blocking this server\'s IP. Try a different fetching method.',
+                'error': 'YouTube is blocking this server\'s IP. Fallback (Invidious/Proxy) will handle this automatically.',
                 'code': 'IP_BLOCKED',
                 'video_id': video_id
             }), 429
             
+        import traceback
+        stack_trace = traceback.format_exc()
+        print(f"[Backend] CRITICAL ERROR for {video_id}: {error_msg}", flush=True)
+        print(stack_trace, flush=True)
         return jsonify({
             'error': error_msg,
             'details': 'Check Python console for full stack trace',
