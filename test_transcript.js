@@ -3,9 +3,11 @@ import fetch from 'node-fetch';
 
 const INVIDIOUS_INSTANCES = [
     'https://inv.nadeko.net',
-    'https://iv.melmac.space', // Often reliable
+    'https://invidious.nerdvpn.de',
+    'https://invidious.ducks.cloud',
     'https://invidious.privacydev.net',
-    'https://vid.priv.au',
+    'https://iv.ggtyler.dev',
+    'https://inv.vern.cc',
 ];
 
 const VIDEO_ID = 'jNQXAC9IVRw'; // "Me at the zoo"

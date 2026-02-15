@@ -126,13 +126,12 @@ export default defineConfig(({ mode }) => {
                       (req.headers['x-proxy-accept'] as string) ||
                       'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                     DNT: '1',
-                    'Accept-Encoding': 'identity', // Prevent compressed junk that node-fetch/Vite might struggle to pipe
+                    'Accept-Encoding': 'identity',
                     Connection: 'keep-alive',
                     'Upgrade-Insecure-Requests': '1',
                     'Sec-Fetch-Dest': (req.headers['x-proxy-fetch-dest'] as string) || 'document',
                     'Sec-Fetch-Mode': (req.headers['x-proxy-fetch-mode'] as string) || 'navigate',
                     'Sec-Fetch-Site': (req.headers['x-proxy-fetch-site'] as string) || 'none',
-                    'Sec-Fetch-User': '?1',
                     'Cache-Control': 'max-age=0',
                     ...(isYouTube && {
                       Referer:
@@ -141,10 +140,11 @@ export default defineConfig(({ mode }) => {
                         (req.headers['x-proxy-origin'] as string) || 'https://www.youtube.com',
                       ...(!noCookies && {
                         Cookie:
-                          'CONSENT=YES+cb.20240101-00-p0.en+FX+123; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; VISITOR_INFO1_LIVE=ztLpX-Pq_2Y;',
+                          'CONSENT=YES+yt.20250101-00-p0.en+FX+123; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; VISITOR_INFO1_LIVE=ztLpX-Pq_2Y;',
                       }),
                     }),
                   },
+                  redirect: 'follow' as const,
                 };
 
                 const fetch = (await import('node-fetch')).default;

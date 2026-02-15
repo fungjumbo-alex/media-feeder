@@ -139,6 +139,17 @@ export const PROXIES = [
     },
   },
   {
+    name: 'Codetabs',
+    buildUrl: (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    parseResponse: async (response: Response): Promise<string> => {
+      if (!response.ok) throw new Error(`Proxy Codetabs responded with status ${response.status}`);
+      const text = await response.text();
+      const botReason = checkForBotChallenge(text);
+      if (botReason) throw new Error(`Proxy Codetabs blocked by ${botReason}.`);
+      return text;
+    },
+  },
+  {
     name: 'cors.sh',
     buildUrl: (url: string) => `https://proxy.cors.sh/${url}`,
     parseResponse: async (response: Response): Promise<string> => {
@@ -170,17 +181,19 @@ export const PROXIES = [
 // List of public Invidious instances, which can act as proxies for YouTube content.
 // Updated 2026-01-03: Refreshed with verified working instances
 export const INVIDIOUS_INSTANCES = [
-  'https://yewtu.be', // 🇱🇺 LU - Official Ref
-  'https://invidious.projectsegfau.lt', // 🇫🇷 FR - Reliable
+  'https://inv.nadeko.net', // 🇩🇪 DE - Verified functional metadata
+  'https://invidious.nerdvpn.de', // 🇩🇪 DE
+  'https://invidious.ducks.cloud', // 🇮🇸 IS
   'https://invidious.privacydev.net', // 🇫🇷 FR
-  'https://inv.vern.cc', // 🇺🇸 US
   'https://iv.ggtyler.dev', // 🇺🇸 US
-  'https://invidious.lunar.icu', // 🇩🇪 DE
+  'https://inv.vern.cc', // 🇺🇸 US
+  'https://invidious.projectsegfau.lt', // 🇫🇷 FR
+  'https://invidious.esmailelbob.xyz', // 🇪🇬 EG
+  'https://iv.melmac.space', // 🇩🇪 DE
   'https://invidious.flokinet.to', // 🇮🇸 IS
-  'https://invidious.perennialte.ch', // 🇦🇺 AU
-  'https://inv.tux.nu', // 🇩🇪 DE
-  'https://invidious.io.lol', // 🇩🇪 DE
-  'https://iv.n8ms.com', // 🇺🇸 US - New
+  'https://invidious.drgns.space', // 🇺🇸 US
+  'https://invidious.incogniweb.net', // 🇺🇸 US
+  'https://yewtu.be', // 🇱🇺 LU
 ];
 
 // List of public RSSHub instances for generating feeds from sites like Bilibili.

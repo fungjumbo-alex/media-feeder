@@ -856,43 +856,52 @@ export const fetchTranscript = async (url: string): Promise<TranscriptLine[]> =>
       const enCaption = findCaption('en') || captionsArray[0];
       if (!enCaption) throw new Error('No valid track');
 
-      // DEEP VALIDATION: Try fetching the actual file during the race to ensure it's not a 0-byte fakeout
+      // DEEP VALIDATION: Try fetching the actual file during the race and cycle formats if needed
       const captionFileUrl = enCaption.url.startsWith('http')
         ? enCaption.url
         : `${instance}${enCaption.url}`;
 
       let testContent = '';
-      try {
-        const { content } = await fetchViaProxy(
-          captionFileUrl,
-          'youtube',
-          undefined,
-          undefined,
-          undefined,
-          THIRD_PARTY_PROXIES,
-          {
-            signal: controller.signal,
-          } as any
-        );
-        testContent = content;
-      } catch (proxyErr) {
-        // HYBRID FALLBACK: If proxy fails, try Browser Direct (many Invidious instances have CORS)
-        console.log(`[Transcript] Proxy failed for ${instance} VTT, trying Browser Direct...`);
+      const formatsToTry = ['vtt', 'json3', 'srv1'];
+
+      for (const fmt of formatsToTry) {
+        const formatUrl = captionFileUrl.includes('fmt=')
+          ? captionFileUrl.replace(/fmt=[^&]+/, `fmt=${fmt}`)
+          : `${captionFileUrl}${captionFileUrl.includes('?') ? '&' : '?'}fmt=${fmt}`;
+
         try {
-          const response = await fetch(captionFileUrl, { signal: controller.signal });
-          if (response.ok) {
-            testContent = await response.text();
-            console.log(`[Transcript] Browser Direct success for ${instance} VTT!`);
-          } else {
-            throw proxyErr;
+          const { content } = await fetchViaProxy(
+            formatUrl,
+            'youtube',
+            undefined,
+            undefined,
+            undefined,
+            THIRD_PARTY_PROXIES,
+            { signal: controller.signal } as any
+          );
+          if (content && content.length > 50 && !isHtml(content)) {
+            testContent = content;
+            break;
           }
-        } catch (directErr) {
-          throw proxyErr; // Rethrow original proxy error if direct also fails
+        } catch (err) {
+          // Try Browser Direct as fallback for each format
+          try {
+            const resp = await fetch(formatUrl, { signal: controller.signal });
+            if (resp.ok) {
+              const directText = await resp.text();
+              if (directText && directText.length > 50 && !isHtml(directText)) {
+                testContent = directText;
+                break;
+              }
+            }
+          } catch (dErr) {
+            /* ignore */
+          }
         }
       }
 
       if (!testContent || testContent.length < 50 || isHtml(testContent)) {
-        throw new Error(`Instance ${instance} served metadata but returned empty/invalid file.`);
+        throw new Error(`Instance ${instance} returned empty/invalid file for all formats.`);
       }
 
       return { instance, enCaption, validatedContent: testContent };
