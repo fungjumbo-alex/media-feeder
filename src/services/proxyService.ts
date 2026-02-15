@@ -179,20 +179,17 @@ export const PROXIES = [
 ];
 
 // List of public Invidious instances, which can act as proxies for YouTube content.
-// Updated 2026-01-03: Refreshed with verified working instances
+// Updated 2026-02-15: Removed failing instances (DNS errors and expired certs)
 export const INVIDIOUS_INSTANCES = [
-  'https://inv.nadeko.net', // 🇩🇪 DE - Verified functional metadata
-  'https://invidious.nerdvpn.de', // 🇩🇪 DE
-  'https://invidious.ducks.cloud', // 🇮🇸 IS
-  'https://invidious.privacydev.net', // 🇫🇷 FR
-  'https://iv.ggtyler.dev', // 🇺🇸 US
+  'https://inv.nadeko.net', // 🇩🇪 DE - Stable
+  'https://invidious.nerdvpn.de', // 🇩🇪 DE - Stable
+  'https://iv.ggtyler.dev', // 🇺🇸 US - Working!
   'https://inv.vern.cc', // 🇺🇸 US
   'https://invidious.projectsegfau.lt', // 🇫🇷 FR
+  'https://invidious.ducks.cloud', // 🇮🇸 IS
   'https://invidious.esmailelbob.xyz', // 🇪🇬 EG
   'https://iv.melmac.space', // 🇩🇪 DE
   'https://invidious.flokinet.to', // 🇮🇸 IS
-  'https://invidious.drgns.space', // 🇺🇸 US
-  'https://invidious.incogniweb.net', // 🇺🇸 US
   'https://yewtu.be', // 🇱🇺 LU
 ];
 

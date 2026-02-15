@@ -148,7 +148,15 @@ export default defineConfig(({ mode }) => {
                 };
 
                 const fetch = (await import('node-fetch')).default;
-                const response = await fetch(targetUrl, fetchOptions);
+                const https = await import('https');
+                const agent = new https.Agent({
+                  rejectUnauthorized: false, // Allow expired certs for Invidious instances
+                });
+
+                const response = await fetch(targetUrl, {
+                  ...fetchOptions,
+                  agent: targetUrl.startsWith('https') ? agent : undefined,
+                } as any);
 
                 // Robust response handling: Read to buffer before sending to avoid pipe issues
                 const arrayBuffer = await response.arrayBuffer();
