@@ -51,29 +51,14 @@ import type {
   YouTubeComment,
   AiModel,
 } from '../types';
-import { formatRelativeDate } from '../utils/dateUtils';
+import { formatRelativeDate, formatDuration } from '../utils/dateUtils';
+import { setLinksToOpenInNewTab } from '../utils/textUtils';
 
 const formatViews = (views: number | null | undefined): string => {
   if (views === null || views === undefined) return '';
   if (views >= 1_000_000) return `${(views / 1_000_000).toFixed(1)}M views`;
   if (views >= 1_000) return `${(views / 1_000).toFixed(0)}K views`;
   return `${views} views`;
-};
-
-const setLinksToOpenInNewTab = (htmlString: string): string => {
-  if (!htmlString) return '';
-  try {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = htmlString;
-    tempDiv.querySelectorAll('a').forEach(link => {
-      link.setAttribute('target', '_blank');
-      link.setAttribute('rel', 'noopener noreferrer');
-    });
-    return tempDiv.innerHTML;
-  } catch (e) {
-    console.error('Failed to process HTML to modify links:', e);
-    return htmlString;
-  }
 };
 
 const ensureYouTubeApiReady = (() => {
@@ -96,17 +81,6 @@ const ensureYouTubeApiReady = (() => {
     return apiReadyPromise;
   };
 })();
-
-const formatTranscriptTime = (seconds: number): string => {
-  if (isNaN(seconds) || seconds < 0) return '00:00';
-  const date = new Date(0);
-  date.setSeconds(seconds);
-  const timeString = date.toISOString().substr(11, 8);
-  if (timeString.startsWith('00:')) {
-    return timeString.substr(3);
-  }
-  return timeString;
-};
 
 const RTL_LANGUAGES = ['ar', 'he', 'fa', 'ur', 'yi', 'syr', 'dv'];
 const isRtl = (langCode: string | undefined): boolean => {
@@ -1122,7 +1096,7 @@ export const ArticleModal: React.FC = () => {
         summaryToDisplay.sections
           .map(
             section =>
-              `- **${formatTranscriptTime(section.timestamp)} - ${section.title}**: ${section.summary}`
+              `- **${formatDuration(section.timestamp)} - ${section.title}**: ${section.summary}`
           )
           .join('\n') + '\n\n';
     }
@@ -1147,7 +1121,7 @@ export const ArticleModal: React.FC = () => {
       html += summaryToDisplay.sections
         .map(
           section =>
-            `<li><strong>${formatTranscriptTime(section.timestamp)} - ${section.title}</strong>: ${section.summary}</li>`
+            `<li><strong>${formatDuration(section.timestamp)} - ${section.title}</strong>: ${section.summary}</li>`
         )
         .join('');
       html += `</ul>`;
@@ -1255,7 +1229,7 @@ export const ArticleModal: React.FC = () => {
                   title="Duration"
                 >
                   <ClockIcon className="w-3 h-3" />
-                  <span>{formatTranscriptTime(article.duration)}</span>
+                  <span>{formatDuration(article.duration)}</span>
                 </div>
               )}{' '}
               {article.views != null && (
@@ -1773,7 +1747,7 @@ export const ArticleModal: React.FC = () => {
                                         onClick={() => handleTimestampClick(section.timestamp)}
                                       >
                                         <p className="font-semibold text-indigo-400 text-sm">
-                                          {formatTranscriptTime(section.timestamp)} -{' '}
+                                          {formatDuration(section.timestamp)} -{' '}
                                           {section.title}
                                         </p>
                                         <p className="text-sm text-gray-400 mt-1">
@@ -1885,7 +1859,7 @@ export const ArticleModal: React.FC = () => {
                             >
                               {' '}
                               <span className="font-mono text-xs text-indigo-400 mr-2">
-                                {formatTranscriptTime(line.start)}
+                                {formatDuration(line.start)}
                               </span>{' '}
                               <span
                                 className={

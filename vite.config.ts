@@ -225,5 +225,8 @@ export default defineConfig(({ mode }) => {
       // This avoids inlining `process.env` directly, which gets flagged by secret scanners.
       __COMPRESSED_ENV__: JSON.stringify(compressedEnv),
     },
+    esbuild: {
+      drop: mode === 'production' ? ['console'] : [],
+    },
   };
 });

@@ -11,6 +11,7 @@ import {
 import { TRANSLATION_LANGUAGES } from '../types';
 import type { DetailedDigest, ThematicDigest, ThematicDigestGroup } from '../types';
 import { QuotaExceededError } from '../services/geminiService';
+import { formatDuration } from '../utils/dateUtils';
 
 const LoadingSpinner: React.FC<{ message: string | null }> = ({ message }) => (
   <div className="flex flex-col justify-center items-center h-full text-center">
@@ -59,14 +60,6 @@ const LanguageSelector: React.FC<{
       </div>
     </div>
   );
-};
-
-const formatTranscriptTime = (seconds: number): string => {
-  if (isNaN(seconds) || seconds < 0) return '00:00';
-  const date = new Date(0);
-  date.setSeconds(seconds);
-  const timeString = date.toISOString().substr(11, 8);
-  return timeString.startsWith('00:') ? timeString.substr(3) : timeString;
 };
 
 const ThematicGroup: React.FC<{ group: ThematicDigestGroup }> = ({ group }) => {
@@ -258,7 +251,7 @@ export const DigestModal: React.FC = () => {
                 item.summary.sections
                   .map(
                     section =>
-                      `- **${formatTranscriptTime(section.timestamp)} - ${section.title}**: ${section.summary}`
+                      `- **${formatDuration(section.timestamp)} - ${section.title}**: ${section.summary}`
                   )
                   .join('\n') + '\n\n';
             }
@@ -314,7 +307,7 @@ export const DigestModal: React.FC = () => {
               itemHtml += item.summary.sections
                 .map(
                   section =>
-                    `<li><strong>${formatTranscriptTime(section.timestamp)} - ${section.title}</strong>: ${section.summary}</li>`
+                    `<li><strong>${formatDuration(section.timestamp)} - ${section.title}</strong>: ${section.summary}</li>`
                 )
                 .join('');
               itemHtml += `</ul>`;
@@ -449,7 +442,7 @@ export const DigestModal: React.FC = () => {
                           <p className="font-semibold text-indigo-400 text-sm">
                             {' '}
                             <span className="font-mono">
-                              {formatTranscriptTime(section.timestamp)}
+                              {formatDuration(section.timestamp)}
                             </span>{' '}
                             - {section.title}{' '}
                           </p>

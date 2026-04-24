@@ -168,7 +168,7 @@ function hexToBase64(hex: string): string {
   // Ensure hex string has an even length
   if (hex.length % 2 !== 0) hex = '0' + hex;
   for (let i = 0; i < hex.length; i += 2) {
-    str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+    str += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16));
   }
   // URL-safe Base64: replace '+' with '-', '/' with '_', and remove '=' padding.
   return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');

@@ -192,8 +192,6 @@ export const fetchViaProxy = async (
   proxiesToUse = PROXIES,
   fetchOptions: RequestInit = {}
 ): Promise<{ content: string; proxyName: string }> => {
-  let lastError: unknown = null;
-  const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
   const currentStats: ProxyStats = JSON.parse(JSON.stringify(proxyStats || {}));
   console.log(
     `[Proxy] Initializing fetchViaProxy for ${url}. proxies available: ${proxiesToUse.length} (${proxiesToUse.map(p => p.name).join(', ')})`
@@ -258,7 +256,6 @@ export const fetchViaProxy = async (
       const errorMsg = error instanceof Error ? error.message : String(error);
 
       console.warn(`[Proxy] ${proxy.name} FAILED: ${errorMsg}`);
-      lastError = error;
       onAttempt?.(proxy.name, 'failure', feedType);
 
       // Log stats
@@ -298,44 +295,46 @@ export const fetchViaProxy = async (
     }
   }
 
-  // 2. Fallback to trying all proxies
-  const remainingProxies = [...proxiesToUse];
-  while (remainingProxies.length > 0) {
-    const getSuccessRate = (name: string) => {
-      const stats = currentStats[name]?.[feedType];
-      if (!stats || stats.success + stats.failure === 0) return Infinity;
-      return stats.success / (stats.success + stats.failure);
-    };
-    remainingProxies.sort((a, b) => getSuccessRate(b.name) - getSuccessRate(a.name));
+  // 2. Fallback: race all proxies in parallel with Promise.any()
+  const getSuccessRate = (name: string) => {
+    const stats = currentStats[name]?.[feedType];
+    if (!stats || stats.success + stats.failure === 0) return Infinity;
+    return stats.success / (stats.success + stats.failure);
+  };
+  const sortedProxies = [...proxiesToUse].sort(
+    (a, b) => getSuccessRate(b.name) - getSuccessRate(a.name),
+  );
 
-    const proxyToTry = remainingProxies.shift();
-    if (!proxyToTry) continue;
-
-    await wait(100);
-    const result = await tryRequest(proxyToTry, url);
-    if (result !== null) {
-      console.log(`[Proxy] Successful retrieval using ${proxyToTry.name}`);
-      // If successful and it's a YouTube request, store the successful config
-      if (feedType === 'youtube') {
-        const instance = INVIDIOUS_INSTANCES.find(inst => url.startsWith(inst));
-        if (instance) {
-          setStoredConfig(proxyToTry.name, instance);
-        }
+  // Wrap each proxy attempt in a promise that resolves with the result
+  // or rejects on failure (null result or thrown error)
+  const proxyPromises = sortedProxies.map(proxy =>
+    tryRequest(proxy, url).then(result => {
+      if (result !== null) {
+        return { content: result, proxyName: proxy.name };
       }
-      return { content: result, proxyName: proxyToTry.name };
-    } else {
-      console.warn(`[Proxy] ${proxyToTry.name} failed (returned null), trying next alternate...`);
-    }
-  }
+      console.warn(`[Proxy] ${proxy.name} failed (returned null)`);
+      throw new Error(`${proxy.name} returned null`);
+    }),
+  );
 
-  const errorMessage =
-    lastError instanceof Error
-      ? lastError.message
-      : lastError
-        ? String(lastError)
-        : 'None (all sources exhausted)';
-  console.error(`[Proxy] FAILED after trying all sources: ${errorMessage}`);
-  throw new Error(`Failed to fetch content from all sources. Last error: ${errorMessage}`);
+  try {
+    const winner = await Promise.any(proxyPromises);
+    console.log(`[Proxy] Successful retrieval using ${winner.proxyName}`);
+    // If successful and it's a YouTube request, store the successful config
+    if (feedType === 'youtube') {
+      const instance = INVIDIOUS_INSTANCES.find(inst => url.startsWith(inst));
+      if (instance) {
+        setStoredConfig(winner.proxyName, instance);
+      }
+    }
+    return winner;
+  } catch (aggregateError: any) {
+    // Promise.any throws AggregateError when ALL promises reject
+    const errors = aggregateError?.errors?.map(String).join('; ')
+      ?? 'All sources exhausted';
+    console.error(`[Proxy] FAILED: all ${sortedProxies.length} proxies exhausted. Errors: ${errors}`);
+    throw new Error(`Failed to fetch content from all sources. Errors: ${errors}`);
+  }
 };
 
 export interface SourceTestResult {

@@ -104,7 +104,13 @@ async function fetchUrl(url, extraHeaders = {}) {
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────
-exports.handler = async function (event, context) {
+// ── Request Body Size Limit (1MB) ────────────────────────────────────────
+const MAX_BODY_SIZE = 1_048_576;
+
+exports.handler = async (event, context) => {
+  if (event.body && event.body.length > MAX_BODY_SIZE) {
+    return { statusCode: 413, body: JSON.stringify({ error: 'Request body too large (max 1MB)' }) };
+  }
     const requestHeaders = event.headers || {};
 
     // OPTIONS preflight

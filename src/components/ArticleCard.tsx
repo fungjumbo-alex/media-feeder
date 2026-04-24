@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Article, GridZoomLevel } from '../types';
 import { BookmarkIcon, EyeIcon, ClockIcon, CalendarIcon } from './icons';
-import { formatRelativeDate } from '../utils/dateUtils';
+import { formatRelativeDate, formatDuration } from '../utils/dateUtils';
 
 interface ArticleCardProps {
   article: Article;
@@ -19,17 +19,6 @@ interface ArticleCardProps {
   onDragEnd: (e: React.DragEvent<HTMLAnchorElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>, articleId: string) => void;
 }
-
-const formatDuration = (seconds: number): string => {
-  if (isNaN(seconds) || seconds < 0) return '';
-  const date = new Date(0);
-  date.setSeconds(seconds);
-  const timeString = date.toISOString().substr(11, 8);
-  if (timeString.startsWith('00:')) {
-    return timeString.substr(3);
-  }
-  return timeString;
-};
 
 const formatViews = (views: number | null | undefined): string => {
   if (views === null || views === undefined) return '';
