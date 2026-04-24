@@ -38,6 +38,7 @@ import {
 import { FeedGrid } from './components/FeedGrid';
 import { SearchInput } from './components/SearchInput';
 import { InactiveFeedsContent } from './components/InactiveFeedsContent';
+import { FeedHealthDashboard } from './components/FeedHealthDashboard';
 import { ExportModal } from './components/ExportModal';
 import { ExportTextModal } from './components/ExportTextModal';
 import { AiSettingsModal } from './components/AiSettingsModal';
@@ -836,6 +837,8 @@ const App: React.FC = () => {
             />
           ) : contentView === 'inactiveFeeds' ? (
             <InactiveFeedsContent />
+          ) : contentView === 'feedHealth' ? (
+            <FeedHealthDashboard />
           ) : contentView === 'dump' ? (
             <DumpContent />
           ) : contentView === 'privacyPolicy' ? (

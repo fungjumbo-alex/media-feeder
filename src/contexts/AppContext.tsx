@@ -15,6 +15,7 @@ import React, {
 } from 'react';
 import { fetchAndParseRss } from '../services/rssService';
 import { findArticleIdsForTopic } from '../utils/mindmapUtils';
+import { buildSearchIndex, searchArticles } from '../utils/searchService';
 import {
   generateRecommendations,
   generateRelatedChannels,
@@ -68,6 +69,7 @@ import type {
   NoteFolder,
   ArticleViewMode,
   MindmapHierarchy,
+  Highlight,
 } from '../types';
 import { ZOOM_LEVELS, AVAILABLE_MODELS } from '../types';
 import * as LZString from 'lz-string';
@@ -127,6 +129,7 @@ const AUTO_AI_TIME_WINDOW_DAYS_KEY = 'media-feeder-auto-ai-time-window-days';
 const NOTES_KEY = 'media-feeder-notes-v1';
 const NOTE_FOLDERS_KEY = 'media-feeder-note-folders-v1';
 const NOTES_COLLAPSED_KEY = 'media-feeder-notes-collapsed-v1';
+const HIGHLIGHTS_KEY = 'media-feeder-highlights-v1';
 const TRENDING_KEYWORDS_KEY = 'media-feeder-trending-keywords-v2';
 const AI_DISABLED_KEY = 'media-feeder-ai-disabled-v1';
 
@@ -412,6 +415,7 @@ interface AppContextType {
     | 'articles'
     | 'feedsGrid'
     | 'inactiveFeeds'
+    | 'feedHealth'
     | 'dump'
     | 'privacyPolicy'
     | 'about'
@@ -811,6 +815,10 @@ interface AppContextType {
   handleSaveViewAsNote: () => Promise<void>;
   isSavingSelectionAsNote: boolean;
   handleSaveSelectionAsNote: () => Promise<void>;
+  highlights: Highlight[];
+  handleAddHighlight: (highlight: Omit<Highlight, 'id' | 'createdAt'>) => void;
+  handleRemoveHighlight: (id: string) => void;
+  handleUpdateHighlightNote: (id: string, note: string) => void;
   isEpubSettingsModalOpen: boolean;
   setIsEpubSettingsModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   epubDefaults: { title: string; filename: string; source: 'selection' | 'view' } | null;
@@ -1338,6 +1346,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const [driveSyncStatus, setDriveSyncStatus] = useState<DriveSyncStatus>({ status: 'checking' });
   const [triggerAutoUpload, setTriggerAutoUpload] = useState<boolean>(false);
   const [notes, setNotes] = useState<Note[]>(() => getStoredData(NOTES_KEY, []));
+  const [highlights, setHighlights] = useState<Highlight[]>(() => getStoredData(HIGHLIGHTS_KEY, []));
   const [noteFolders, setNoteFolders] = useState<NoteFolder[]>(() =>
     getStoredData(NOTE_FOLDERS_KEY, [])
   );
@@ -1474,6 +1483,18 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     () => new Map(deduplicateArticles(allArticles).map(article => [article.id, article])),
     [allArticles]
   );
+
+  // MiniSearch full-text index — rebuilds when articles change (debounced)
+  const searchIndexReadyRef = React.useRef(false);
+  useEffect(() => {
+    searchIndexReadyRef.current = false;
+    buildSearchIndex(deduplicateArticles(allArticles));
+    // The index build is debounced; mark ready after debounce + a tick
+    const timer = setTimeout(() => {
+      searchIndexReadyRef.current = true;
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [allArticles]);
 
   const handleFetchComments = useCallback(async (videoId: string) => {
     setCommentsState({ comments: null, isLoading: true, error: null });
@@ -2129,6 +2150,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     | 'articles'
     | 'feedsGrid'
     | 'inactiveFeeds'
+    | 'feedHealth'
     | 'dump'
     | 'privacyPolicy'
     | 'about'
@@ -2136,6 +2158,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     | 'notes' = useMemo(() => {
     if (currentView.type === 'all-subscriptions') return 'feedsGrid';
     if (currentView.type === 'inactive-feeds') return 'inactiveFeeds';
+    if (currentView.type === 'feed-health') return 'feedHealth';
     if (currentView.type === 'dump') return 'dump';
     if (currentView.type === 'privacy-policy') return 'privacyPolicy';
     if (currentView.type === 'about') return 'about';
@@ -2182,24 +2205,37 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (!viewForFiltering.value) {
           rawArticles = [];
         } else {
-          let articlesToSearch = allArticles;
+          const query = viewForFiltering.value;
+          // Use MiniSearch full-text index
+          const searchResults = searchArticles(query, 500);
+          // Convert search results back to full Article objects
+          let matchedIds = new Set(searchResults.map(r => r.id));
+          // If index not ready, fall back to basic title/description matching
+          if (searchResults.length === 0 && !searchIndexReadyRef.current) {
+            const lowerQuery = query.toLowerCase();
+            rawArticles = allArticles.filter(
+              a =>
+                a.title.toLowerCase().includes(lowerQuery) ||
+                a.description.toLowerCase().includes(lowerQuery)
+            );
+          } else {
+            rawArticles = allArticles.filter(a => matchedIds.has(a.id));
+            // Sort by search score (relevance)
+            const scoreMap = new Map(searchResults.map(r => [r.id, r.score]));
+            rawArticles.sort((a, b) => (scoreMap.get(b.id) ?? 0) - (scoreMap.get(a.id) ?? 0));
+          }
+          // Filter by sidebar tab (yt/rss)
           if (sidebarTab === 'yt') {
-            articlesToSearch = allArticles.filter(a => {
+            rawArticles = rawArticles.filter(a => {
               const feed = feedsById.get(a.feedId);
               return feed ? feed.url.toLowerCase().includes('youtube.com') : false;
             });
           } else {
-            // sidebarTab === 'rss'
-            articlesToSearch = allArticles.filter(a => {
+            rawArticles = rawArticles.filter(a => {
               const feed = feedsById.get(a.feedId);
               return feed ? !feed.url.toLowerCase().includes('youtube.com') : false;
             });
           }
-          const query = viewForFiltering.value.toLowerCase();
-          rawArticles = articlesToSearch.filter(
-            a =>
-              a.title.toLowerCase().includes(query) || a.description.toLowerCase().includes(query)
-          );
         }
         needsDeduplication = true;
         break;
@@ -2426,6 +2462,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         return 'All Subscriptions';
       case 'inactive-feeds':
         return 'Inactive Feeds';
+      case 'feed-health':
+        return 'Feed Health Dashboard';
       case 'dump':
         return 'URL Dump';
       case 'privacy-policy':
@@ -2806,6 +2844,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         setFavoritesOrderRss([]);
         setNotes([]);
         setNoteFolders([]);
+        setHighlights([]);
 
         let newFeedsCount = 0;
         const allImportedArticles: Article[] = [];
@@ -2864,6 +2903,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (data.favoritesOrderRss) setFavoritesOrderRss(data.favoritesOrderRss);
         if (data.notes) setNotes(data.notes);
         if (data.noteFolders) setNoteFolders(data.noteFolders);
+        if (data.highlights) setHighlights(data.highlights);
 
         if (data.gridZoomLevel) setGridZoomLevel(data.gridZoomLevel);
         if (data.articleZoomLevel) setArticleZoomLevel(data.articleZoomLevel);
@@ -3224,8 +3264,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         favoritesOrderRss,
         notes,
         noteFolders,
+        highlights,
       };
-
       const jsonString = JSON.stringify(dataToExport);
       const compressedData = LZString.compressToBase64(jsonString);
       const compressed = `media-feeder-compressed:v2:${compressedData}`;
@@ -4398,8 +4438,8 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         favoritesOrderRss,
         notes,
         noteFolders,
+        highlights,
       };
-
       try {
         const { modifiedTime } = await saveDataToDrive(dataToExport, accessToken);
         const fileId =
@@ -5921,6 +5961,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         favoritesOrderRss,
         notes,
         noteFolders,
+        highlights,
       };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -6888,6 +6929,27 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     [articlesForEpub, epubDefaults, setToast, setIsEpubSettingsModalOpen]
   );
 
+  // --- Highlight handlers ---
+  const handleAddHighlight = useCallback(
+    (highlight: Omit<Highlight, 'id' | 'createdAt'>) => {
+      const newHighlight: Highlight = {
+        ...highlight,
+        id: crypto.randomUUID(),
+        createdAt: Date.now(),
+      };
+      setHighlights(prev => [...prev, newHighlight]);
+    },
+    []
+  );
+
+  const handleRemoveHighlight = useCallback((id: string) => {
+    setHighlights(prev => prev.filter(h => h.id !== id));
+  }, []);
+
+  const handleUpdateHighlightNote = useCallback((id: string, note: string) => {
+    setHighlights(prev => prev.map(h => (h.id === id ? { ...h, note } : h)));
+  }, []);
+
   const handleOpenRefreshOptionsModal = useCallback(
     (initialState?: { favoritesOnly?: boolean }) => {
       setRefreshModalInitialState(initialState || null);
@@ -6930,6 +6992,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
       safeSetLocalStorage(RECENT_SHARE_CODES_KEY, recentShareCodes);
       safeSetLocalStorage(NOTES_KEY, notes);
       safeSetLocalStorage(NOTE_FOLDERS_KEY, noteFolders);
+      safeSetLocalStorage(HIGHLIGHTS_KEY, highlights);
 
       // Sidebar collapse state
       safeSetLocalStorage(VIEWS_COLLAPSED_KEY, isViewsCollapsed);
@@ -7305,6 +7368,10 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     handleDeleteNoteFolder,
     handleSaveSummaryAsNote,
     handleSaveDigestAsNote,
+    highlights,
+    handleAddHighlight,
+    handleRemoveHighlight,
+    handleUpdateHighlightNote,
     notesForView,
     isSavingViewAsNote,
     handleSaveViewAsNote,

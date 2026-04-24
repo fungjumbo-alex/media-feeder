@@ -159,6 +159,17 @@ export interface NoteFolder {
   createdAt: number;
 }
 
+export interface Highlight {
+  id: string;
+  articleId: string;
+  feedId: string;
+  text: string;           // the highlighted text
+  prefix: string;          // ~30 chars before highlight for context
+  color: string;           // 'yellow', 'green', 'blue', 'pink', 'purple'
+  note?: string;           // optional annotation
+  createdAt: number;
+}
+
 export interface SyncData {
   feeds: Omit<Feed, 'id' | 'items' | 'error'>[];
   articlesByFeedUrl?: Record<string, Article[]>; // Key is feed.url
@@ -176,6 +187,7 @@ export interface SyncData {
   favoritesOrderRss?: string[];
   notes?: Note[];
   noteFolders?: NoteFolder[];
+  highlights?: Highlight[];
 }
 
 export interface UserProfile {

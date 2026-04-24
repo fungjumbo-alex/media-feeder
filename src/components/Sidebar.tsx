@@ -25,6 +25,7 @@ import {
   FolderIcon,
   TrendingUpIcon,
   AiSummaryIcon,
+  HeartIcon,
 } from './icons';
 import { SearchInput } from './SearchInput';
 import type { Feed, MindmapHierarchy } from '../types';
@@ -998,6 +999,13 @@ export const Sidebar: React.FC<{
               />
             </>
           )}
+          <NavItem
+            type="feed-health"
+            icon={HeartIcon}
+            label="Feed Health"
+            forceInactive={isMindmapOpen}
+            onCloseMindmap={onCloseMindmap}
+          />
           <Tooltip text="AI Grouping" isVisible={isSidebarCollapsed && !isMobileView}>
             <button
               onClick={onOpenMindmap}

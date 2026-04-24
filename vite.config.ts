@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 import lzString from 'lz-string';
 
 // https://vitejs.dev/config/
@@ -219,6 +220,54 @@ export default defineConfig(({ mode }) => {
           });
         },
       },
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['favicon.ico', 'robots.txt'],
+        manifest: {
+          name: 'Media Feeder',
+          short_name: 'MediaFeeder',
+          description: 'YouTube & RSS feed reader with AI summaries',
+          theme_color: '#0f172a',
+          background_color: '#0f172a',
+          display: 'standalone',
+          start_url: '/',
+          icons: [
+            { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+            { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+            { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ],
+        },
+        workbox: {
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/i\.ytimg\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'youtube-images',
+                expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/yt3\.ggpht\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'youtube-avatars',
+                expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              },
+            },
+            {
+              urlPattern: /\/api\/proxy\?url=/i,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'api-proxy',
+                expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 },
+                networkTimeoutSeconds: 10,
+              },
+            },
+          ],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        },
+      }),
     ],
     define: {
       // Define a global constant with the compressed keys.
