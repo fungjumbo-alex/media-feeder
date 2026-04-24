@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import { useAppContext } from '../contexts/AppContext';
 import {
   XIcon,
@@ -131,7 +132,7 @@ const CommentItem: React.FC<{ comment: YouTubeComment }> = ({ comment }) => {
         </div>
         <div
           className="text-sm text-gray-300 mt-1 prose prose-invert prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: comment.contentHtml }}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(comment.contentHtml) }}
         />
         {comment.likeCount > 0 && (
           <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
@@ -1352,7 +1353,7 @@ export const ArticleModal: React.FC = () => {
                 {article.hasIframe && !videoId && (
                   <div
                     className="w-full h-full"
-                    dangerouslySetInnerHTML={{ __html: parsedIframeContent.playerHtml }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parsedIframeContent.playerHtml) }}
                   />
                 )}{' '}
               </div>
@@ -1378,7 +1379,7 @@ export const ArticleModal: React.FC = () => {
                 ) : (
                   <div
                     className="prose prose-invert max-w-none prose-p:text-gray-300 prose-headings:text-gray-100 prose-a:text-indigo-400 prose-strong:text-gray-200"
-                    dangerouslySetInnerHTML={{ __html: processedContentForDisplay }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(processedContentForDisplay) }}
                   />
                 )}{' '}
               </div>
@@ -1934,9 +1935,11 @@ export const ArticleModal: React.FC = () => {
                       <div
                         className="prose prose-invert max-w-none prose-p:text-gray-300 prose-headings:text-gray-100 prose-a:text-indigo-400 prose-strong:text-gray-200"
                         dangerouslySetInnerHTML={{
-                          __html: article.hasIframe
-                            ? parsedIframeContent.descriptionHtml
-                            : processedContentForDisplay,
+                          __html: DOMPurify.sanitize(
+                            article.hasIframe
+                              ? parsedIframeContent.descriptionHtml
+                              : processedContentForDisplay
+                          ),
                         }}
                       />
                     ))}

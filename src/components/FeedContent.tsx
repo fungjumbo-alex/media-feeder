@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import type { Article, GridZoomLevel } from '../types';
 import { ArticleCard } from './ArticleCard.tsx';
 import { ArticleListItem } from './ArticleListItem.tsx';
@@ -287,7 +288,7 @@ export const ArticleReaderView: React.FC<{
 
               <div
                 className="prose prose-invert max-w-none prose-p:text-gray-300 prose-headings:text-gray-100 prose-a:text-indigo-400 prose-img:rounded-lg"
-                dangerouslySetInnerHTML={{ __html: setLinksToOpenInNewTab(article.content) }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(setLinksToOpenInNewTab(article.content)) }}
               />
             </article>
           );

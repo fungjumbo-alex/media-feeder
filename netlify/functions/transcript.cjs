@@ -1,3 +1,71 @@
+// ── CORS Helpers ─────────────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  'https://media-feeder.netlify.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
+function getAllowedOrigin(requestHeaders) {
+  const origin = requestHeaders.origin || requestHeaders.Origin || '';
+  return ALLOWED_ORIGINS.includes(origin) ? origin : '';
+}
+
+function corsHeaders(requestHeaders, extra = {}) {
+  const origin = getAllowedOrigin(requestHeaders);
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json',
+    ...(origin ? { 'Vary': 'Origin' } : {}),
+    ...extra,
+  };
+}
+
+// ── Rate Limiting ────────────────────────────────────────────────────────────
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 30;
+
+function rateLimitKey(event) {
+  return event.headers['x-nf-client-connection-ip']
+    || event.headers['x-forwarded-for']?.split(',')[0]?.trim()
+    || 'unknown';
+}
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  let entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.start > RATE_LIMIT_WINDOW_MS) {
+    entry = { start: now, count: 1 };
+    rateLimitMap.set(ip, entry);
+    return true;
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) return false;
+  return true;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateLimitMap) {
+    if (now - v.start > RATE_LIMIT_WINDOW_MS) rateLimitMap.delete(k);
+  }
+}, 300_000);
+
+// ── Hardcoded Cookie Fallbacks ───────────────────────────────────────────────
+// These should be overridden via Netlify environment variables for production.
+// Set YT_CONSENT_COOKIE, YT_SOCS_COOKIE, YT_VISITOR_COOKIE in the Netlify UI.
+const YT_COOKIE = [
+  process.env.YT_CONSENT_COOKIE  || 'PENDING+987',
+  process.env.YT_SOCS_COOKIE     || 'CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg',
+  process.env.YT_VISITOR_COOKIE  || 'ztLpX-Pq_2Y',
+].map((v, i) => {
+  const names = ['CONSENT', 'SOCS', 'VISITOR_INFO1_LIVE'];
+  return `${names[i]}=${v}`;
+}).join('; ');
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 const USER_AGENTS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -18,32 +86,43 @@ async function fetchUrl(url, extraHeaders = {}) {
             'Sec-Fetch-Mode': 'navigate',
             'Sec-Fetch-Site': 'none',
             ...(isYouTube && {
-                'Cookie': 'CONSENT=YES+yt.20250101-00-p0.en+FX+123; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; VISITOR_INFO1_LIVE=ztLpX-Pq_2Y;',
+                'Cookie': YT_COOKIE,
             }),
             ...extraHeaders
         }
     });
 
     if (!response.ok && response.status !== 429) {
-        throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch URL: ${response.status}`);
     }
 
     if (response.status === 429) {
-        throw new Error('Bot detection triggered (429). YouTube is blocking this server.');
+        throw new Error('Bot detection triggered (429)');
     }
 
     return await response.text();
 }
 
+// ── Handler ──────────────────────────────────────────────────────────────────
 exports.handler = async function (event, context) {
-    const headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Content-Type': 'application/json'
-    };
+    const requestHeaders = event.headers || {};
 
-    if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
+    // OPTIONS preflight
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 204, headers: corsHeaders(requestHeaders), body: '' };
+    }
+
+    const headers = corsHeaders(requestHeaders);
+
+    // Rate limiting
+    const ip = rateLimitKey(event);
+    if (!checkRateLimit(ip)) {
+        return {
+            statusCode: 429,
+            headers,
+            body: JSON.stringify({ error: 'Rate limit exceeded. Try again later.' }),
+        };
+    }
 
     try {
         const { url } = JSON.parse(event.body);
@@ -53,7 +132,6 @@ exports.handler = async function (event, context) {
             throw new Error('This endpoint is for direct YouTube scraping only. Use the proxy endpoint for Invidious URLs.');
         }
 
-        // Broaden Regex to handle shorts and unconventional YouTube URLs
         const videoIdMatch = url.match(/(?:v=|v\/|embed\/|shorts\/|youtu\.be\/|\/v\/)([a-zA-Z0-9_-]{11})/);
         const videoId = videoIdMatch ? videoIdMatch[1] : null;
 
@@ -75,7 +153,6 @@ exports.handler = async function (event, context) {
             if (match) {
                 try {
                     const parsed = JSON.parse(match[1]);
-                    // If it's the full ytInitialPlayerResponse, extract captions from it
                     captionsData = parsed.captions || parsed;
                     if (captionsData && captionsData.playerCaptionsTracklistRenderer) break;
                 } catch (e) { }
@@ -85,19 +162,18 @@ exports.handler = async function (event, context) {
         if (!captionsData || !captionsData.playerCaptionsTracklistRenderer) {
             // Diagnostic check: is it a bot block?
             if (html.includes('id="captcha-form"') || html.includes('recaptcha')) {
-                throw new Error('Bot detection triggered (CAPTCHA). YouTube is blocking this server.');
+                throw new Error('Bot detection triggered');
             }
             if (html.includes('consent.youtube.com')) {
-                throw new Error('Redirected to consent page. YouTube is blocking this server.');
+                throw new Error('Consent page redirect');
             }
 
-            const snippet = html.substring(0, 1000).replace(/\s+/g, ' ');
-            throw new Error(`Captions data not found in page. HTML Snippet: ${snippet}`);
+            throw new Error('Captions data not found in page');
         }
 
         const tracklist = captionsData.playerCaptionsTracklistRenderer;
         const tracks = tracklist.captionTracks;
-        if (!tracks || tracks.length === 0) throw new Error('Cations allowed but no tracks available (Check if video has subtitles)');
+        if (!tracks || tracks.length === 0) throw new Error('No subtitle tracks available');
 
         // Prefer English, then English (auto), then first available
         const track =
@@ -113,12 +189,10 @@ exports.handler = async function (event, context) {
         try {
             data = JSON.parse(transcriptJson);
         } catch (e) {
-            // If it's not JSON, it's likely a block/redirect page
             if (transcriptJson.includes('id="captcha-form"') || transcriptJson.includes('recaptcha')) {
-                throw new Error('Bot detection triggered while fetching transcript segments.');
+                throw new Error('Bot detection triggered');
             }
-            const snippet = transcriptJson.substring(0, 500).replace(/\s+/g, ' ');
-            throw new Error(`YouTube returned invalid transcript format (Not JSON). Snippet: ${snippet}`);
+            throw new Error('Invalid transcript format received');
         }
 
         if (!data.events) throw new Error('Transcript format unknown or empty');
@@ -139,17 +213,20 @@ exports.handler = async function (event, context) {
         };
 
     } catch (e) {
-        console.error(`[Backend] Error for ${event.body}: ${e.message}`);
+        // Log full details server-side only (include message for debugging)
+        console.error(`[Backend] Error for video request: ${e.message}`);
 
-        // Use 429 for bot detection to signal to frontend that this IP is compromised
-        const isBotBlock = e.message.includes('Bot detection') || e.message.includes('blocking this server');
+        const isBotBlock = e.message.includes('Bot detection') || e.message.includes('blocking');
         const statusCode = isBotBlock ? 429 : 500;
 
+        // Sanitized error response — no URLs, HTML snippets, or DNS codes leaked
         return {
             statusCode: statusCode,
             headers,
             body: JSON.stringify({
-                error: e.message,
+                error: isBotBlock
+                    ? 'External service is temporarily blocking requests'
+                    : 'Transcript request failed',
                 code: isBotBlock ? 'IP_BLOCKED' : 'GENERIC_ERROR'
             })
         };

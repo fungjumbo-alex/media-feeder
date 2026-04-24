@@ -51,7 +51,13 @@ export const checkForBotChallenge = (text: string): string | null => {
 };
 
 // List of proxies to try in order.
-// Each proxy has a function to construct its URL and a function to parse its response.
+// Updated 2026-04-24: Removed dead/unreliable third-party services:
+//   - AllOrigins / AllOriginsRaw (api.allorigins.win) — connection timeout, service dead
+//   - Codetabs (api.codetabs.com) — 301 redirect breaks browser fetch, unreliable
+//   - cors.sh (proxy.cors.sh) — 429 rate limit, requires paid API key
+//   - Browser Direct — CORS blocks nearly all RSS feeds, wastes time in fallback chain
+// The App Proxy (Netlify serverless function) is the primary and most reliable proxy
+// since it runs server-side with no CORS restrictions. corsproxy.io is kept as a backup.
 export const PROXIES = [
   {
     name: 'App Proxy',
@@ -67,57 +73,18 @@ export const PROXIES = [
         throw new Error(`App Proxy blocked by ${reason}.`);
       }
 
+      // Treat 5xx status from the proxy itself (not the target) as a hard failure
+      // so we can immediately try the next proxy. 4xx from the target is passed through.
+      if (response.status === 502 || response.status === 504 || response.status === 500) {
+        throw new Error(`App Proxy responded with status ${response.status}.`);
+      }
+
       if (!response.ok) {
         throw new Error(`App Proxy responded with status ${response.status}.`);
       }
 
       if (!text || text.length === 0) {
         throw new Error('App Proxy returned empty content.');
-      }
-      return text;
-    },
-  },
-  {
-    name: 'AllOrigins',
-    buildUrl: (url: string) => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      if (!response.ok) {
-        throw new Error(`Proxy AllOrigins responded with status ${response.status}`);
-      }
-      const data = await response.json();
-
-      if (typeof data.contents === 'string') {
-        const botReason = checkForBotChallenge(data.contents);
-        if (botReason) {
-          throw new Error(`Proxy AllOrigins (nest) blocked by ${botReason}.`);
-        }
-      }
-
-      if (data.status?.http_code && data.status.http_code >= 400) {
-        throw new Error(
-          `Target server responded with status ${data.status.http_code} via AllOrigins`
-        );
-      }
-      if (data.contents === null || data.contents === undefined) {
-        throw new Error('Proxy AllOrigins returned null/undefined content.');
-      }
-      return data.contents;
-    },
-  },
-  {
-    name: 'AllOriginsRaw',
-    buildUrl: (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      if (!response.ok) {
-        throw new Error(`Proxy AllOriginsRaw responded with status ${response.status}`);
-      }
-      const text = await response.text();
-      if (!text || text.length === 0) {
-        throw new Error('Proxy AllOriginsRaw returned empty content.');
-      }
-      const botReason = checkForBotChallenge(text);
-      if (botReason) {
-        throw new Error(`Proxy AllOriginsRaw blocked by ${botReason}.`);
       }
       return text;
     },
@@ -135,29 +102,6 @@ export const PROXIES = [
       }
       const botReason = checkForBotChallenge(text);
       if (botReason) throw new Error(`Proxy corsproxy.io blocked by ${botReason}.`);
-      return text;
-    },
-  },
-  {
-    name: 'Codetabs',
-    buildUrl: (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      if (!response.ok) throw new Error(`Proxy Codetabs responded with status ${response.status}`);
-      const text = await response.text();
-      const botReason = checkForBotChallenge(text);
-      if (botReason) throw new Error(`Proxy Codetabs blocked by ${botReason}.`);
-      return text;
-    },
-  },
-  {
-    name: 'cors.sh',
-    buildUrl: (url: string) => `https://proxy.cors.sh/${url}`,
-    parseResponse: async (response: Response): Promise<string> => {
-      if (!response.ok) throw new Error(`Proxy cors.sh responded with status ${response.status}`);
-      const text = await response.text();
-      if (!text || text.length === 0) {
-        throw new Error('Proxy cors.sh returned empty content.');
-      }
       return text;
     },
   },

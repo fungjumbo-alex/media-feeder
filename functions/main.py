@@ -3,8 +3,19 @@ from firebase_admin import initialize_app
 from youtube_transcript_api import YouTubeTranscriptApi
 import re
 import json
+import os
 
 initialize_app()
+
+ALLOWED_ORIGINS = [
+    'https://media-feeder.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+]
+
+def get_allowed_origin(request):
+    origin = request.headers.get('Origin', '')
+    return origin if origin in ALLOWED_ORIGINS else ''
 
 def get_video_id(url):
     """
@@ -18,45 +29,67 @@ def get_video_id(url):
 
 @https_fn.on_request()
 def transcript(req: https_fn.Request) -> https_fn.Response:
+    origin = get_allowed_origin(req)
+    cors_headers = {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '3600',
+    }
+    if origin:
+        cors_headers['Vary'] = 'Origin'
+
     # Set CORS headers for the preflight request
     if req.method == 'OPTIONS':
-        headers = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST',
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Access-Control-Max-Age': '3600'
-        }
-        return https_fn.Response('', status=204, headers=headers)
-
-    # Set CORS headers for the main request
-    headers = {
-        'Access-Control-Allow-Origin': '*'
-    }
+        return https_fn.Response('', status=204, headers=cors_headers)
 
     if req.method != 'POST':
-        return https_fn.Response("Method not allowed", status=405, headers=headers)
+        return https_fn.Response("Method not allowed", status=405, headers=cors_headers)
 
     try:
         data = req.get_json()
         if not data or 'url' not in data:
-            return https_fn.Response(json.dumps({'error': 'Missing URL in request body'}), status=400, headers=headers, mimetype='application/json')
-            
+            return https_fn.Response(
+                json.dumps({'error': 'Missing URL in request body'}),
+                status=400,
+                headers=cors_headers,
+                mimetype='application/json',
+            )
+
         url = data['url']
         video_id = get_video_id(url)
-        
+
         if not video_id:
-            return https_fn.Response(json.dumps({'error': 'Invalid YouTube URL'}), status=400, headers=headers, mimetype='application/json')
-            
+            return https_fn.Response(
+                json.dumps({'error': 'Invalid YouTube URL'}),
+                status=400,
+                headers=cors_headers,
+                mimetype='application/json',
+            )
+
         # Instantiate the API
         transcript_list = YouTubeTranscriptApi().list(video_id)
-        
+
         try:
             transcript = transcript_list.find_transcript(['en'])
         except:
             transcript = next(iter(transcript_list))
-            
+
         transcript_data = transcript.fetch()
-        return https_fn.Response(json.dumps(transcript_data), status=200, headers=headers, mimetype='application/json')
-        
+        return https_fn.Response(
+            json.dumps(transcript_data),
+            status=200,
+            headers=cors_headers,
+            mimetype='application/json',
+        )
+
     except Exception as e:
-        return https_fn.Response(json.dumps({'error': str(e)}), status=500, headers=headers, mimetype='application/json')
+        # Log full error server-side only
+        print(f"[Firebase transcript] Error: {e}")
+        # Return sanitized error to client
+        return https_fn.Response(
+            json.dumps({'error': 'Transcript request failed', 'code': 'GENERIC_ERROR'}),
+            status=500,
+            headers=cors_headers,
+            mimetype='application/json',
+        )

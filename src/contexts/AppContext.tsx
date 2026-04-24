@@ -1408,18 +1408,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     trendingKeywordsRef.current = trendingKeywords;
   }, [trendingKeywords]);
 
-  // Persist AI hierarchies
-  useEffect(() => {
-    localStorage.setItem('media-feeder-ai-hierarchy', JSON.stringify(aiHierarchy));
-  }, [aiHierarchy]);
-
-  useEffect(() => {
-    localStorage.setItem('media-feeder-yt-ai-hierarchy', JSON.stringify(ytAiHierarchy));
-  }, [ytAiHierarchy]);
-
-  useEffect(() => {
-    localStorage.setItem('media-feeder-non-yt-ai-hierarchy', JSON.stringify(nonYtAiHierarchy));
-  }, [nonYtAiHierarchy]);
+  // AI hierarchy persistence is handled by consolidated debounced effect below
 
   const [isRefreshOptionsModalOpen, setIsRefreshOptionsModalOpen] = useState(false);
   const [refreshModalInitialState, setRefreshModalInitialState] = useState<{
@@ -1469,6 +1458,7 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
         const allCurrentTags = new Set([...feedTags, ...articleSpecificTags]);
         return {
           ...item,
+          feedId: feed.id,
           tags: allCurrentTags.size > 0 ? Array.from(allCurrentTags).sort() : undefined,
           isReddit: isReddit,
         };
@@ -6912,166 +6902,93 @@ export const AppProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }
   }, [isAiDisabled, setIsAiDisabled]);
 
-  // --- Persistence Effects ---
+  // --- Consolidated Persistence Effect (debounced) ---
+  // Replaces 46 individual useEffect writers with a single debounced batch writer.
+  // Reduces localStorage write amplification during batch refreshes.
   useEffect(() => {
-    safeSetLocalStorage(FEEDS_STORAGE_KEY, feeds);
-  }, [feeds, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(READ_ARTICLES_KEY, readArticleIds);
-  }, [readArticleIds, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(READ_LATER_KEY, readLaterArticleIds);
-  }, [readLaterArticleIds, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(LIKED_YOUTUBE_VIDEOS_KEY, likedVideoIds);
-  }, [likedVideoIds, safeSetLocalStorage]);
-  useEffect(() => {
-    if (!isMobileView) safeSetLocalStorage(SIDEBAR_COLLAPSED_KEY, isSidebarCollapsed);
-  }, [isSidebarCollapsed, isMobileView, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(SIDEBAR_TAB_KEY, sidebarTab);
-  }, [sidebarTab, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(SIDEBAR_FEEDS_VIEW_KEY, sidebarFeedsView);
-  }, [sidebarFeedsView, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(VIEWS_COLLAPSED_KEY, isViewsCollapsed);
-  }, [isViewsCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(YOUTUBE_FEEDS_COLLAPSED_KEY, isYoutubeFeedsCollapsed);
-  }, [isYoutubeFeedsCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(YOUTUBE_PLAYLISTS_COLLAPSED_KEY, isYoutubePlaylistsCollapsed);
-  }, [isYoutubePlaylistsCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(REDDIT_FEEDS_COLLAPSED_KEY, isRedditFeedsCollapsed);
-  }, [isRedditFeedsCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(RSS_FEEDS_COLLAPSED_KEY, isRssFeedsCollapsed);
-  }, [isRssFeedsCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(TAGS_COLLAPSED_KEY, isTagsCollapsed);
-  }, [isTagsCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(YOUTUBE_TAGS_COLLAPSED_KEY, isYoutubeTagsCollapsed);
-  }, [isYoutubeTagsCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(RSS_TAGS_COLLAPSED_KEY, isRssTagsCollapsed);
-  }, [isRssTagsCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(EXPANDED_TAGS_KEY, expandedTags);
-  }, [expandedTags, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(EXPANDED_VIEWS_KEY, expandedViews);
-  }, [expandedViews, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(GRID_ZOOM_LEVEL_KEY, gridZoomLevel);
-  }, [gridZoomLevel, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(ARTICLE_ZOOM_LEVEL_KEY, articleZoomLevel);
-  }, [articleZoomLevel, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(ARTICLE_VIEW_MODE_KEY, articleViewMode);
-  }, [articleViewMode, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(PROXY_STATS_KEY, proxyStats);
-  }, [proxyStats, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(DISABLED_PROXIES_KEY, disabledProxies);
-  }, [disabledProxies, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(AUTOPLAY_MODE_KEY, autoplayMode);
-  }, [autoplayMode, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(AUTO_LIKE_YOUTUBE_VIDEOS_KEY, autoLikeYouTubeVideos);
-  }, [autoLikeYouTubeVideos, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(AUTO_LIKE_DELAY_SECONDS_KEY, autoLikeDelaySeconds);
-  }, [autoLikeDelaySeconds, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(REFRESH_BATCH_SIZE_KEY, refreshBatchSize);
-  }, [refreshBatchSize, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(REFRESH_DELAY_SECONDS_KEY, refreshDelaySeconds);
-  }, [refreshDelaySeconds, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(ENABLE_RSS_REDDIT_KEY, enableRssAndReddit);
-  }, [enableRssAndReddit, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(DEFAULT_AI_LANGUAGE_KEY, defaultAiLanguage);
-  }, [defaultAiLanguage, safeSetLocalStorage]);
+    const timer = setTimeout(() => {
+      // UI state
+      safeSetLocalStorage(FEEDS_STORAGE_KEY, feeds);
+      if (!isMobileView) safeSetLocalStorage(SIDEBAR_COLLAPSED_KEY, isSidebarCollapsed);
+      safeSetLocalStorage(SIDEBAR_TAB_KEY, sidebarTab);
+      safeSetLocalStorage(SIDEBAR_FEEDS_VIEW_KEY, sidebarFeedsView);
+      safeSetLocalStorage(GRID_ZOOM_LEVEL_KEY, gridZoomLevel);
+      safeSetLocalStorage(ARTICLE_ZOOM_LEVEL_KEY, articleZoomLevel);
+      safeSetLocalStorage(ARTICLE_VIEW_MODE_KEY, articleViewMode);
+      safeSetLocalStorage(HAS_ENTERED_KEY, hasEnteredApp);
 
-  useEffect(() => {
-    safeSetLocalStorage('media-feeder-personal-interests', personalInterests);
-  }, [personalInterests, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(RECENT_SHARE_CODES_KEY, recentShareCodes);
-  }, [recentShareCodes, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(HAS_ENTERED_KEY, hasEnteredApp);
-  }, [hasEnteredApp, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(ARTICLE_TAGS_KEY, articleTags);
-  }, [articleTags, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(READ_LATER_ORDER_YT_KEY, readLaterOrderYt);
-  }, [readLaterOrderYt, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(READ_LATER_ORDER_RSS_KEY, readLaterOrderRss);
-  }, [readLaterOrderRss, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(TAG_ORDERS_KEY, tagOrders);
-  }, [tagOrders, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(FAVORITES_ORDER_YT_KEY, favoritesOrderYt);
-  }, [favoritesOrderYt, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(FAVORITES_ORDER_RSS_KEY, favoritesOrderRss);
-  }, [favoritesOrderRss, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(AUTO_UPLOAD_AFTER_REFRESH_KEY, autoUploadAfterRefresh);
-  }, [autoUploadAfterRefresh, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(AUTO_SUMMARIZE_ON_REFRESH_KEY, autoSummarizeOnRefresh);
-  }, [autoSummarizeOnRefresh, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(AUTO_CLUSTER_ON_REFRESH_KEY, autoClusterOnRefresh);
-  }, [autoClusterOnRefresh, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(AUTO_TRANSCRIBE_ON_REFRESH_KEY, autoTranscribeOnRefresh);
-  }, [autoTranscribeOnRefresh, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(AUTO_AI_TIME_WINDOW_DAYS_KEY, autoAiTimeWindowDays);
-  }, [autoAiTimeWindowDays, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(NOTES_KEY, notes);
-  }, [notes, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(NOTE_FOLDERS_KEY, noteFolders);
-  }, [noteFolders, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(NOTES_COLLAPSED_KEY, isNotesCollapsed);
-  }, [isNotesCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage('media-feeder-ai-hierarchy', aiHierarchy);
-  }, [aiHierarchy, safeSetLocalStorage]);
+      // Article/bookmark state
+      safeSetLocalStorage(READ_ARTICLES_KEY, readArticleIds);
+      safeSetLocalStorage(READ_LATER_KEY, readLaterArticleIds);
+      safeSetLocalStorage(LIKED_YOUTUBE_VIDEOS_KEY, likedVideoIds);
+      safeSetLocalStorage(ARTICLE_TAGS_KEY, articleTags);
+      safeSetLocalStorage(READ_LATER_ORDER_YT_KEY, readLaterOrderYt);
+      safeSetLocalStorage(READ_LATER_ORDER_RSS_KEY, readLaterOrderRss);
+      safeSetLocalStorage(FAVORITES_ORDER_YT_KEY, favoritesOrderYt);
+      safeSetLocalStorage(FAVORITES_ORDER_RSS_KEY, favoritesOrderRss);
+      safeSetLocalStorage(TAG_ORDERS_KEY, tagOrders);
+      safeSetLocalStorage(RECENT_SHARE_CODES_KEY, recentShareCodes);
+      safeSetLocalStorage(NOTES_KEY, notes);
+      safeSetLocalStorage(NOTE_FOLDERS_KEY, noteFolders);
 
-  useEffect(() => {
-    safeSetLocalStorage('media-feeder-yt-ai-hierarchy', ytAiHierarchy);
-  }, [ytAiHierarchy, safeSetLocalStorage]);
+      // Sidebar collapse state
+      safeSetLocalStorage(VIEWS_COLLAPSED_KEY, isViewsCollapsed);
+      safeSetLocalStorage(YOUTUBE_FEEDS_COLLAPSED_KEY, isYoutubeFeedsCollapsed);
+      safeSetLocalStorage(YOUTUBE_PLAYLISTS_COLLAPSED_KEY, isYoutubePlaylistsCollapsed);
+      safeSetLocalStorage(REDDIT_FEEDS_COLLAPSED_KEY, isRedditFeedsCollapsed);
+      safeSetLocalStorage(RSS_FEEDS_COLLAPSED_KEY, isRssFeedsCollapsed);
+      safeSetLocalStorage(TAGS_COLLAPSED_KEY, isTagsCollapsed);
+      safeSetLocalStorage(YOUTUBE_TAGS_COLLAPSED_KEY, isYoutubeTagsCollapsed);
+      safeSetLocalStorage(RSS_TAGS_COLLAPSED_KEY, isRssTagsCollapsed);
+      safeSetLocalStorage(EXPANDED_TAGS_KEY, expandedTags);
+      safeSetLocalStorage(EXPANDED_VIEWS_KEY, expandedViews);
+      safeSetLocalStorage(NOTES_COLLAPSED_KEY, isNotesCollapsed);
 
-  useEffect(() => {
-    safeSetLocalStorage('media-feeder-non-yt-ai-hierarchy', nonYtAiHierarchy);
-  }, [nonYtAiHierarchy, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage('media-feeder-ai-topics-collapsed', isAiTopicsCollapsed);
-  }, [isAiTopicsCollapsed, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(TRENDING_KEYWORDS_KEY, trendingKeywords);
-  }, [trendingKeywords, safeSetLocalStorage]);
-  useEffect(() => {
-    safeSetLocalStorage(AI_DISABLED_KEY, isAiDisabled);
-  }, [isAiDisabled, safeSetLocalStorage]);
+      // Proxy & settings
+      safeSetLocalStorage(PROXY_STATS_KEY, proxyStats);
+      safeSetLocalStorage(DISABLED_PROXIES_KEY, disabledProxies);
+      safeSetLocalStorage(AUTOPLAY_MODE_KEY, autoplayMode);
+      safeSetLocalStorage(AUTO_LIKE_YOUTUBE_VIDEOS_KEY, autoLikeYouTubeVideos);
+      safeSetLocalStorage(AUTO_LIKE_DELAY_SECONDS_KEY, autoLikeDelaySeconds);
+      safeSetLocalStorage(REFRESH_BATCH_SIZE_KEY, refreshBatchSize);
+      safeSetLocalStorage(REFRESH_DELAY_SECONDS_KEY, refreshDelaySeconds);
+      safeSetLocalStorage(ENABLE_RSS_REDDIT_KEY, enableRssAndReddit);
+      safeSetLocalStorage(DEFAULT_AI_LANGUAGE_KEY, defaultAiLanguage);
+      safeSetLocalStorage('media-feeder-personal-interests', personalInterests);
+      safeSetLocalStorage(AUTO_UPLOAD_AFTER_REFRESH_KEY, autoUploadAfterRefresh);
+      safeSetLocalStorage(AUTO_SUMMARIZE_ON_REFRESH_KEY, autoSummarizeOnRefresh);
+      safeSetLocalStorage(AUTO_CLUSTER_ON_REFRESH_KEY, autoClusterOnRefresh);
+      safeSetLocalStorage(AUTO_TRANSCRIBE_ON_REFRESH_KEY, autoTranscribeOnRefresh);
+      safeSetLocalStorage(AUTO_AI_TIME_WINDOW_DAYS_KEY, autoAiTimeWindowDays);
+
+      // AI state
+      safeSetLocalStorage('media-feeder-ai-hierarchy', aiHierarchy);
+      safeSetLocalStorage('media-feeder-yt-ai-hierarchy', ytAiHierarchy);
+      safeSetLocalStorage('media-feeder-non-yt-ai-hierarchy', nonYtAiHierarchy);
+      safeSetLocalStorage('media-feeder-ai-topics-collapsed', isAiTopicsCollapsed);
+      safeSetLocalStorage(TRENDING_KEYWORDS_KEY, trendingKeywords);
+      safeSetLocalStorage(AI_DISABLED_KEY, isAiDisabled);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [
+    safeSetLocalStorage,
+    feeds, isMobileView, isSidebarCollapsed, sidebarTab, sidebarFeedsView,
+    gridZoomLevel, articleZoomLevel, articleViewMode, hasEnteredApp,
+    readArticleIds, readLaterArticleIds, likedVideoIds, articleTags,
+    readLaterOrderYt, readLaterOrderRss, favoritesOrderYt, favoritesOrderRss,
+    tagOrders, recentShareCodes, notes, noteFolders,
+    isViewsCollapsed, isYoutubeFeedsCollapsed, isYoutubePlaylistsCollapsed,
+    isRedditFeedsCollapsed, isRssFeedsCollapsed, isTagsCollapsed,
+    isYoutubeTagsCollapsed, isRssTagsCollapsed, expandedTags, expandedViews,
+    isNotesCollapsed,
+    proxyStats, disabledProxies, autoplayMode, autoLikeYouTubeVideos,
+    autoLikeDelaySeconds, refreshBatchSize, refreshDelaySeconds,
+    enableRssAndReddit, defaultAiLanguage, personalInterests,
+    autoUploadAfterRefresh, autoSummarizeOnRefresh, autoClusterOnRefresh,
+    autoTranscribeOnRefresh, autoAiTimeWindowDays,
+    aiHierarchy, ytAiHierarchy, nonYtAiHierarchy, isAiTopicsCollapsed,
+    trendingKeywords, isAiDisabled,
+  ]);
 
   const contextValue: AppContextType = {
     feeds,

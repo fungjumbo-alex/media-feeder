@@ -100,15 +100,20 @@ export default defineConfig(({ mode }) => {
               }
 
               try {
-                // Use dynamic import for node-fetch if needed, or global fetch if Node 18+
-                // Assuming Node 18+ or node-fetch is available.
-
                 // Adapt headers based on target domain to avoid bot detection
                 const isYouTube =
                   targetUrl.includes('youtube.com') || targetUrl.includes('youtu.be');
                 const isInvidious = targetUrl.includes('invidious');
 
                 const noCookies = req.headers['x-proxy-no-cookies'] === 'true';
+
+                // Hardcoded cookie fallbacks — override via .env.local for development
+                // Set YT_CONSENT_COOKIE, YT_SOCS_COOKIE, YT_VISITOR_COOKIE
+                const devCookie = [
+                  `${'CONSENT'}=${env.YT_CONSENT_COOKIE || 'PENDING+987'}`,
+                  `${'SOCS'}=${env.YT_SOCS_COOKIE || 'CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg'}`,
+                  `${'VISITOR_INFO1_LIVE'}=${env.YT_VISITOR_COOKIE || 'ztLpX-Pq_2Y'}`,
+                ].join('; ');
 
                 // Rotate common User-Agents to avoid pattern detection
                 const userAgents = [
@@ -138,10 +143,9 @@ export default defineConfig(({ mode }) => {
                         (req.headers['x-proxy-referer'] as string) || 'https://www.google.com/',
                       Origin:
                         (req.headers['x-proxy-origin'] as string) || 'https://www.youtube.com',
-                      ...(!noCookies && {
-                        Cookie:
-                          'CONSENT=YES+yt.20250101-00-p0.en+FX+123; SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; VISITOR_INFO1_LIVE=ztLpX-Pq_2Y;',
-                      }),
+                    ...(!noCookies && {
+                        Cookie: devCookie,
+                    }),
                     }),
                   },
                   redirect: 'follow' as const,
@@ -149,9 +153,10 @@ export default defineConfig(({ mode }) => {
 
                 const fetch = (await import('node-fetch')).default;
                 const https = await import('https');
-                const agent = new https.Agent({
-                  rejectUnauthorized: false, // Allow expired certs for Invidious instances
-                });
+                // Only disable TLS verification in development for Invidious instances
+                const agent = mode === 'development'
+                  ? new https.Agent({ rejectUnauthorized: false })
+                  : undefined;
 
                 const response = await fetch(targetUrl, {
                   ...fetchOptions,
